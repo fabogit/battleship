@@ -1,0 +1,22 @@
+# Agent skills: installed content is restored from skills-lock.json
+.agents/
+.claude/skills/
+.claude/settings.local.json
+
+# Dependencies & build output
+node_modules/
+dist/
+.angular/
+coverage/
+*.tsbuildinfo
+
+# Environment & logs
+.env
+.env.*
+!.env.example
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
