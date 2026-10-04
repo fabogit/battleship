@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION } from '@battleship/core';
+import { PROTOCOL_VERSION, type ClientToServerEvents, type ServerToClientEvents } from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -8,9 +8,11 @@ const ALLOWED = 'https://battleship.example';
 const FOREIGN = 'https://evil.example';
 const TRANSPORTS = ['websocket', 'polling'] as const;
 
+type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+
 let server: CreatedServer;
 let baseUrl: string;
-const clients: Socket[] = [];
+const clients: ClientSocket[] = [];
 
 beforeEach(async () => {
   server = createServer({ allowedOrigins: [ALLOWED], logger: false });
@@ -24,8 +26,8 @@ afterEach(async () => {
   await server.app.close();
 });
 
-function client(transport: (typeof TRANSPORTS)[number], origin?: string): Socket {
-  const socket = connect(baseUrl, {
+function client(transport: (typeof TRANSPORTS)[number], origin?: string): ClientSocket {
+  const socket: ClientSocket = connect(baseUrl, {
     transports: [transport],
     reconnection: false,
     ...(origin === undefined ? {} : { extraHeaders: { origin } }),
@@ -34,8 +36,11 @@ function client(transport: (typeof TRANSPORTS)[number], origin?: string): Socket
   return socket;
 }
 
-function nextEvent(socket: Socket, event: string): Promise<unknown> {
-  return new Promise((resolve) => socket.once(event, resolve));
+type ClientEvent = 'connect' | 'connect_error' | 'disconnect' | keyof ServerToClientEvents;
+
+function nextEvent(socket: ClientSocket, event: ClientEvent): Promise<unknown> {
+  // The typed socket narrows listeners per event; the payload is asserted by each test instead.
+  return new Promise((resolve) => (socket as Socket).once(event, resolve));
 }
 
 describe('GET /health', () => {
@@ -81,6 +86,7 @@ describe.each(TRANSPORTS)('Socket.io over %s', (transport) => {
     await nextEvent(socket, 'connect');
 
     const payload = { hello: 'battleship', n: 42 };
+    // socket.io-client types `timeout().emitWithAck()` as Promise<any>; the assertion checks the shape.
     const response: unknown = await socket.timeout(2_000).emitWithAck('ECHO', payload);
 
     expect(response).toEqual({ ok: true, payload, protocolVersion: PROTOCOL_VERSION });
@@ -121,7 +127,8 @@ describe('ECHO without an ack', () => {
     const socket = client('websocket');
     await nextEvent(socket, 'connect');
 
-    socket.emit('ECHO', 'no ack', 'not a function');
+    // Bypasses the typed event map to send what a misbehaving client could.
+    (socket as Socket).emit('ECHO', 'no ack', 'not a function');
     const response: unknown = await socket.timeout(2_000).emitWithAck('ECHO', 'still alive');
 
     expect(response).toMatchObject({ ok: true, payload: 'still alive' });

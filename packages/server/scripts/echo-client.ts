@@ -3,7 +3,8 @@
 // Exits 0 when the echo comes back, 1 on connection error or timeout.
 import { parseArgs } from 'node:util';
 
-import { io } from 'socket.io-client';
+import type { ClientToServerEvents, ServerToClientEvents } from '@battleship/core';
+import { io, type Socket } from 'socket.io-client';
 
 const TIMEOUT_MS = 10_000;
 
@@ -18,7 +19,7 @@ const { values, positionals } = parseArgs({
 const url = positionals[0] ?? 'http://localhost:3000';
 const transport = values.transport === 'polling' ? 'polling' : 'websocket';
 
-const socket = io(url, {
+const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(url, {
   transports: [transport],
   reconnection: false,
   timeout: TIMEOUT_MS,

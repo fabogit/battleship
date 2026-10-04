@@ -1,25 +1,15 @@
 import { once } from 'node:events';
 
 import cors from '@fastify/cors';
-import { PROTOCOL_VERSION } from '@battleship/core';
+import {
+  PROTOCOL_VERSION,
+  type Ack,
+  type ClientToServerEvents,
+  type EchoResponse,
+  type ServerToClientEvents,
+} from '@battleship/core';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Server } from 'socket.io';
-
-// Spike-only event map (issue #3); the real contract will live in core/protocol.ts (ADR §7).
-export interface ClientToServerEvents {
-  /** `ack` is `unknown` because a client can emit without one; the handler checks before calling it. */
-  ECHO: (payload: unknown, ack: unknown) => void;
-}
-
-export interface ServerToClientEvents {
-  SERVER_SHUTDOWN: (payload: Record<string, never>) => void;
-}
-
-export interface EchoResponse {
-  readonly ok: true;
-  readonly payload: unknown;
-  readonly protocolVersion: number;
-}
 
 /** Upper bound for flushing `SERVER_SHUTDOWN`; Render sends SIGKILL 30 s after SIGTERM. */
 const SHUTDOWN_GRACE_MS = 3_000;
@@ -70,12 +60,13 @@ export function createServer(options: ServerOptions): CreatedServer {
   });
 
   io.on('connection', (socket) => {
-    socket.on('ECHO', (payload, ack) => {
+    // Inbound arguments are untrusted: a client can emit without an ack, so it is checked before use.
+    socket.on('ECHO', (payload: unknown, ack: unknown) => {
       if (typeof ack !== 'function') {
         return;
       }
       const response: EchoResponse = { ok: true, payload, protocolVersion: PROTOCOL_VERSION };
-      (ack as (response: EchoResponse) => void)(response);
+      (ack as Ack<EchoResponse>)(response);
     });
   });
 
