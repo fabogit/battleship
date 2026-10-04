@@ -1,0 +1,28 @@
+import { describe, expect, it } from 'vitest';
+
+import { loadConfig } from '../src/config.js';
+
+describe('loadConfig', () => {
+  it('defaults to port 3000 and no allowed origins', () => {
+    expect(loadConfig({})).toEqual({ port: 3000, allowedOrigins: [] });
+  });
+
+  it('reads PORT', () => {
+    expect(loadConfig({ PORT: '10000' }).port).toBe(10_000);
+  });
+
+  it.each(['abc', '-1', '70000', '3.5'])('rejects PORT=%s', (port) => {
+    expect(() => loadConfig({ PORT: port })).toThrow(/Invalid PORT/);
+  });
+
+  it('splits, trims and normalizes ALLOWED_ORIGINS', () => {
+    const { allowedOrigins } = loadConfig({
+      ALLOWED_ORIGINS: ' https://battleship.pages.dev/ , http://localhost:4200,,',
+    });
+    expect(allowedOrigins).toEqual(['https://battleship.pages.dev', 'http://localhost:4200']);
+  });
+
+  it.each(['not a url', 'file:///tmp'])('rejects ALLOWED_ORIGINS=%s', (origins) => {
+    expect(() => loadConfig({ ALLOWED_ORIGINS: origins })).toThrow(/Invalid origin/);
+  });
+});

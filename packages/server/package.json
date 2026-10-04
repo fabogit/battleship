@@ -1,0 +1,31 @@
+{
+  "name": "@battleship/server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Authoritative Fastify + Socket.io game server",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node --env-file-if-exists=.env dist/index.js",
+    "echo": "node scripts/echo-client.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@battleship/core": "workspace:*",
+    "@fastify/cors": "^11.3.0",
+    "fastify": "^5.12.5",
+    "socket.io": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "socket.io-client": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
