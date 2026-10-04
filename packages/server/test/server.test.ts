@@ -2,7 +2,9 @@ import { PROTOCOL_VERSION, type ClientToServerEvents, type ServerToClientEvents 
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createServer, type CreatedServer } from '../src/server.js';
+import type { FastifyInstance } from 'fastify';
+
+import { createServer } from '../src/server.js';
 
 const ALLOWED = 'https://battleship.example';
 const FOREIGN = 'https://evil.example';
@@ -10,20 +12,20 @@ const TRANSPORTS = ['websocket', 'polling'] as const;
 
 type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-let server: CreatedServer;
+let app: FastifyInstance;
 let baseUrl: string;
 const clients: ClientSocket[] = [];
 
 beforeEach(async () => {
-  server = createServer({ allowedOrigins: [ALLOWED], logger: false });
-  baseUrl = await server.app.listen({ port: 0, host: '127.0.0.1' });
+  app = createServer({ allowedOrigins: [ALLOWED], logger: false });
+  baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
 });
 
 afterEach(async () => {
   for (const client of clients.splice(0)) {
     client.close();
   }
-  await server.app.close();
+  await app.close();
 });
 
 function client(transport: (typeof TRANSPORTS)[number], origin?: string): ClientSocket {
@@ -74,6 +76,7 @@ describe('HTTP CORS', () => {
     });
     expect(response.status).toBe(403);
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    expect(await response.json()).toEqual({ statusCode: 403, error: 'Forbidden', message: 'Origin not allowed' });
   });
 });
 
@@ -96,7 +99,7 @@ describe.each(TRANSPORTS)('Socket.io over %s', (transport) => {
     const socket = client(transport, FOREIGN);
     await nextEvent(socket, 'connect_error');
     expect(socket.connected).toBe(false);
-    expect(server.io.engine.clientsCount).toBe(0);
+    expect(app.io.engine.clientsCount).toBe(0);
   });
 
   it('sends SERVER_SHUTDOWN before closing', async () => {
@@ -105,7 +108,7 @@ describe.each(TRANSPORTS)('Socket.io over %s', (transport) => {
 
     const shutdown = nextEvent(socket, 'SERVER_SHUTDOWN');
     const disconnected = nextEvent(socket, 'disconnect');
-    await server.app.close();
+    await app.close();
 
     expect(await shutdown).toEqual({});
     await disconnected;

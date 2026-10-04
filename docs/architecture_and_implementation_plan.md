@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACCEPTED** — Revision 2 (2026-10-03), after requirements analysis session.
+**ACCEPTED** — Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
 
 ---
 
@@ -69,6 +69,10 @@ Verified against Render documentation:
 | D18 | i18n | Small in-house, typed, signal-based translation service (no build-per-locale). |
 | D19 | Backend deploy | Native Node build on Render with filtered install (no Docker in v1). Docker multi-stage image with `pnpm deploy` kept as fallback. |
 | D20 | Delivery | Phase 0 deploy spike, then vertical slices (see §8). |
+| D21 | Origin policy | `ALLOWED_ORIGINS` is enforced, not just advertised: a foreign `Origin` gets `403` on HTTP and its Socket.io handshake (polling and WebSocket) is refused via `allowRequest`. Requests without an `Origin` header (health checks, CLI clients) are allowed. |
+| D22 | Workspace type resolution | For now dependents read `@battleship/core` through its `dist/` typings, so CI runs `build` before `typecheck`/`lint`. Planned switch to a source export condition (live types) once the client consumes core: #46. |
+| D23 | Socket.io integration | Socket.io is attached directly to Fastify's HTTP server and exposed as `app.io` (Fastify decorator); no `fastify-socket.io` plugin. Shutdown waits for `SERVER_SHUTDOWN` to flush before closing. |
+| D24 | Preview origins | `ALLOWED_ORIGINS` accepts single-label wildcards (`https://*.<project>.pages.dev`) so Cloudflare Pages previews work without touching Render (implemented in #5). |
 
 ### 2.1 Alternatives Considered
 
@@ -79,6 +83,10 @@ Verified against Render documentation:
 * **`@angular/localize` vs. runtime i18n:** `@angular/localize` produces one build per locale, which complicates the Cloudflare Pages output and prevents in-app switching. Runtime chosen (D18).
 * **Dockerfile vs. native build on Render:** Docker gives reproducibility and portability to other hosts, but a pnpm monorepo image needs `pnpm deploy` and extra config, and builds are slower on the free tier. Native build is simpler and sufficient as long as the install is filtered to the server and its dependencies; Docker remains the fallback if Phase 0 hits a blocker or we need to leave Render (D19).
 * **Layer-by-layer roadmap vs. vertical slices:** layer-by-layer only yields a playable game at the end and tests the client/server contract late (D20).
+* **Origin enforcement (403) vs. standard CORS vs. no check:** browsers block a foreign origin either way, but standard CORS still executes the HTTP request and does not apply to WebSocket upgrades at all, so any site could open sockets and spend the free tier's resources. Enforcing on both channels gives one rule, testable from outside a browser. The players' data is not at stake (no cookies; credentials travel in the handshake `auth`), so this guards resources, not sessions (D21).
+* **`dist/` typings vs. source export condition vs. TypeScript project references:** `dist/` needs no config and tests the same artefact Render runs, but core must be rebuilt after every change. A `"@battleship/source"` condition removes the rebuild at the cost of configuring every consumer (tsconfig, Vitest, Angular) while keeping production builds on `dist/`. Project references (`tsc -b`) add `composite`/build-info constraints that Angular CLI and Vitest ignore anyway. `dist/` now, source condition when the client lands (D22, #46).
+* **`fastify-socket.io` plugin vs. direct attach:** the plugin's last release (5.1.0, Aug 2024) requires Fastify 4, has open Fastify 5 typing bugs, is reported abandoned, and its default shutdown disconnects sockets without flushing, which loses `SERVER_SHUTDOWN` for polling clients. It is ~30 lines; the one useful idea, decorating the instance with `io`, is kept (D23).
+* **Cloudflare Pages preview origins — manual list vs. CI automation vs. wildcard:** every preview commit gets a new `<hash>.<project>.pages.dev`; Render applies env var changes only on a new deploy. Pushing each preview origin to Render via its API would restart the single shared server (production included) on every branch push, need a Render API key in GitHub secrets, and grow the list forever. A manual list only covers stable branch aliases. A wildcard limited to one label under our own `pages.dev` project is safe, since only our project can publish there, and needs no redeploys (D24).
 
 ---
 
@@ -116,8 +124,10 @@ battleship/
     │   │   │   ├── connection.ts      # Handshake (auth, protocol version), session binding
     │   │   │   ├── handlers.ts        # Validate → dispatch to room → emit snapshots
     │   │   │   └── rate-limit.ts
-    │   │   ├── server.ts              # Fastify bootstrap, /health, CORS, graceful shutdown
-    │   │   └── index.ts
+    │   │   ├── config.ts              # PORT / ALLOWED_ORIGINS parsing, validated at startup
+    │   │   ├── server.ts              # Fastify bootstrap, /health, origin policy, Socket.io (app.io), graceful shutdown
+    │   │   └── index.ts               # Entry point: listen, SIGTERM/SIGINT → app.close()
+    │   ├── scripts/echo-client.ts     # Smoke test against a running server (Phase 0)
     │   └── test/                      # Room unit tests (fake clock) + socket integration tests
     │
     └── client/
@@ -140,10 +150,10 @@ battleship/
   ```
   (`...` selects the package plus its workspace dependencies, so the server build never installs Angular.)
 * **Start command:** `node packages/server/dist/index.js`
-* **Environment:** `PORT` (provided by Render), `ALLOWED_ORIGINS` (comma-separated; Cloudflare Pages production + preview origins).
+* **Environment:** `PORT` (provided by Render), `ALLOWED_ORIGINS` (comma-separated; Cloudflare Pages production origin plus a `https://*.<project>.pages.dev` wildcard for previews, D24). Malformed values fail the startup.
 * **`GET /health`** → `200 { status: "ok", uptime: number }`.
-* **CORS:** configured twice — `@fastify/cors` for HTTP routes and the `cors` option of the Socket.io server. Both read `ALLOWED_ORIGINS`.
-* **Graceful shutdown:** on `SIGTERM` the server emits `SERVER_SHUTDOWN` to every socket before closing, so clients can say "the server restarted, the match was lost" instead of looping on reconnect.
+* **CORS:** configured twice — `@fastify/cors` for HTTP routes and the `cors` option of the Socket.io server. Both read `ALLOWED_ORIGINS`. A foreign `Origin` is rejected outright: `403` on HTTP (an `onRequest` hook, before any route) and a refused Socket.io handshake (`allowRequest`), since CORS headers alone do not stop WebSocket upgrades (D21).
+* **Graceful shutdown:** on `SIGTERM` the server emits `SERVER_SHUTDOWN` to every socket before closing, so clients can say "the server restarted, the match was lost" instead of looping on reconnect. It waits (up to 3 s) for each connection to flush and close first: a long-polling client only receives the message on its next poll (D23).
 
 ### 4.2 Frontend (Cloudflare Pages)
 
@@ -447,6 +457,7 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 | `SURRENDER` | `{}` | — | `IN_PROGRESS` |
 | `REMATCH_CHOICE` | `{ choice: RematchChoice }` | — | `GAME_OVER` |
 | `LEAVE_ROOM` | `{}` | — | any |
+| `ECHO` | any | `{ payload, protocolVersion }` | Phase 0 connectivity check only |
 
 ### 7.2 Server → Client
 

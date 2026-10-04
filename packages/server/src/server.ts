@@ -16,35 +16,41 @@ const SHUTDOWN_GRACE_MS = 3_000;
 
 export type GameServer = Server<ClientToServerEvents, ServerToClientEvents>;
 
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** Socket.io server sharing this instance's HTTP server (ADR D23). */
+    readonly io: GameServer;
+  }
+}
+
 export interface ServerOptions {
   readonly allowedOrigins: readonly string[];
   readonly logger: boolean;
 }
 
-export interface CreatedServer {
-  readonly app: FastifyInstance;
-  readonly io: GameServer;
-}
-
 /**
- * Builds the HTTP + Socket.io server without listening. `app.close()` performs the graceful
- * shutdown: every socket gets `SERVER_SHUTDOWN` and is disconnected before the HTTP server closes.
+ * Builds the HTTP + Socket.io server without listening; Socket.io is available as `app.io`.
+ * `app.close()` performs the graceful shutdown: every socket gets `SERVER_SHUTDOWN` and is
+ * disconnected before the HTTP server closes.
  */
-export function createServer(options: ServerOptions): CreatedServer {
+export function createServer(options: ServerOptions): FastifyInstance {
   const allowedOrigins = new Set(options.allowedOrigins);
+  // No Origin header: not a browser cross-origin request (health checks, CLI clients), so CORS does not apply.
+  const isOriginAllowed = (origin: string | undefined): boolean => origin === undefined || allowedOrigins.has(origin);
+
   const app = Fastify({ logger: options.logger });
+
+  // Foreign origins get a plain 403 before any route runs (ADR D21).
+  app.addHook('onRequest', async (request, reply) => {
+    if (!isOriginAllowed(request.headers.origin)) {
+      await reply.code(403).send({ statusCode: 403, error: 'Forbidden', message: 'Origin not allowed' });
+    }
+  });
 
   // Socket.io handles /socket.io/ requests before Fastify sees them, so CORS is configured on both.
   void app.register(cors, {
     origin: (origin, callback) => {
-      if (origin === undefined) {
-        // Not a browser cross-origin request (health checks, CLI clients): no CORS headers needed.
-        callback(null, false);
-      } else if (allowedOrigins.has(origin)) {
-        callback(null, origin);
-      } else {
-        callback(Object.assign(new Error('Origin not allowed'), { statusCode: 403 }), false);
-      }
+      callback(null, origin ?? false);
     },
   });
 
@@ -54,10 +60,10 @@ export function createServer(options: ServerOptions): CreatedServer {
     cors: { origin: [...allowedOrigins] },
     // CORS headers alone do not stop WebSocket upgrades, so the handshake is rejected outright.
     allowRequest: (request, callback) => {
-      const { origin } = request.headers;
-      callback(null, origin === undefined || allowedOrigins.has(origin));
+      callback(null, isOriginAllowed(request.headers.origin));
     },
   });
+  app.decorate('io', io);
 
   io.on('connection', (socket) => {
     // Inbound arguments are untrusted: a client can emit without an ack, so it is checked before use.
@@ -83,5 +89,5 @@ export function createServer(options: ServerOptions): CreatedServer {
     await io.close();
   });
 
-  return { app, io };
+  return app;
 }
