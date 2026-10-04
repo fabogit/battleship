@@ -3,7 +3,7 @@ import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
-  { ignores: ['**/dist/', '**/coverage/'] },
+  { ignores: ['**/dist/', '**/coverage/', '**/.angular/'] },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
   {
@@ -11,6 +11,13 @@ export default defineConfig(
       parserOptions: {
         projectService: true,
       },
+    },
+  },
+  {
+    // Angular components, services and the like are classes whose content lives in their decorator.
+    files: ['packages/client/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-extraneous-class': ['error', { allowWithDecorator: true }],
     },
   },
   {

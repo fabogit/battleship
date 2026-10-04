@@ -1,6 +1,14 @@
 packages:
   - packages/*
 
+# Install scripts of dependencies (pnpm 11 fails the install on any not listed here, ADR D26).
+# Only esbuild runs its own (binary check); the others fall back to their prebuilt binaries.
+allowBuilds:
+  '@parcel/watcher': false
+  esbuild: true
+  lmdb: false
+  msgpackr-extract: false
+
 # Shared dependency versions, referenced as "catalog:" from package.json files.
 # TypeScript stays on 6.0.x: Angular 22 and typescript-eslint require >=6.0 <6.1.
 catalog:

@@ -1,0 +1,48 @@
+<main>
+  <h1>Battleship</h1>
+
+  <section aria-live="polite">
+    @switch (wake.status()) {
+      @case ('waking') {
+        <p class="status pending">Waking up the server…</p>
+        <p class="hint">A sleeping server takes about a minute to start.</p>
+      }
+      @case ('unreachable') {
+        <p class="status error">The server is not responding.</p>
+        <button type="button" (click)="start()">Try again</button>
+      }
+      @case ('awake') {
+        @switch (socket.status()) {
+          @case ('connected') {
+            <p class="status ok">Connected</p>
+          }
+          @case ('connecting') {
+            <p class="status pending">Connecting…</p>
+          }
+          @case ('disconnected') {
+            <p class="status error">Connection refused</p>
+          }
+        }
+      }
+    }
+  </section>
+
+  @if (socket.status() === 'connected') {
+    <section>
+      @if (echo(); as result) {
+        @if (result.ok) {
+          <p data-testid="echo">
+            Echo round-trip: <strong>{{ result.roundTripMs }} ms</strong>
+            · protocol v{{ result.protocolVersion }}
+            @if (result.protocolVersion !== protocolVersion) {
+              <span class="error">(client expects v{{ protocolVersion }})</span>
+            }
+          </p>
+        } @else {
+          <p class="error" data-testid="echo">Echo failed: {{ result.message }}</p>
+        }
+      }
+      <button type="button" (click)="sendEcho()">Send echo</button>
+    </section>
+  }
+</main>
