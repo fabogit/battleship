@@ -3,6 +3,13 @@
 /** Callback a client passes as the last argument of a command to receive the server's reply. */
 export type Ack<T> = (response: T) => void;
 
+/** Body of `GET /health` (ADR §4.1); the client polls it to wake the server (ADR §4.3). */
+export interface HealthResponse {
+  readonly status: 'ok';
+  /** Seconds since the server process started. */
+  readonly uptime: number;
+}
+
 /** Reply to the Phase 0 `ECHO` connectivity check. */
 export interface EchoResponse {
   readonly ok: true;
