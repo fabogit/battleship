@@ -578,5 +578,6 @@ Every phase ends deployed and playable on the production URLs.
 * **Restart = lost matches** (Render free restarts and deploys). Accepted; mitigated only by `SERVER_SHUTDOWN` messaging.
 * **Platform versions:** Node 24 / pnpm support on the Render and Cloudflare Pages build images must be confirmed in Phase 0.
 * **Angular 22 ecosystem compatibility** (Socket.io client, build tooling) must be confirmed in Phase 0.
+* **TypeScript held at 6.0.x:** the workspace pins `typescript ~6.0.3` in the pnpm catalog because Angular 22 (`@angular/compiler-cli`) and `typescript-eslint` both require `>=6.0 <6.1`. TypeScript 7 (native compiler) is preferred; upgrade once both accept it. Splitting versions per package was rejected, since lint already ties every package to 6.0.x.
 * **Placement time on mobile:** 60 s may be tight with touch placement; tune after playtesting.
 * **Empty rooms cannot outlive Render's 15-minute spin-down**, regardless of TTL settings.
