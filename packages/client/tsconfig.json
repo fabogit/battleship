@@ -8,7 +8,9 @@
     "experimentalDecorators": true,
     "importHelpers": true,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    // Resolve @battleship/core from its sources (D22).
+    "customConditions": ["@battleship/source"]
   },
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,

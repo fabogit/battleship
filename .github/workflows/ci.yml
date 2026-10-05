@@ -30,8 +30,8 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      # Build first: dependents resolve workspace packages (e.g. @battleship/core) through their dist/ typings.
-      - run: pnpm build
+      # Typecheck, lint and tests read @battleship/core from its sources (ADR D22): no build needed before them.
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - run: pnpm build
