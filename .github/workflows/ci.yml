@@ -30,7 +30,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
-      # Typecheck, lint and tests read @battleship/core from its sources (ADR D22): no build needed before them.
+      # Typecheck, lint and tests read @battleship/core from its sources (ADR-0022): no build needed before them.
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test

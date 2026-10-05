@@ -1,7 +1,7 @@
 packages:
   - packages/*
 
-# Install scripts of dependencies (pnpm 11 fails the install on any not listed here, ADR D26).
+# Install scripts of dependencies (pnpm 11 fails the install on any not listed here, ADR-0026).
 # Only esbuild runs its own (binary check); the others fall back to their prebuilt binaries.
 allowBuilds:
   '@parcel/watcher': false

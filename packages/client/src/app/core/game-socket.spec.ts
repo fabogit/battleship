@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 
 describe('GameSocketService', () => {
-  it('tries WebSocket first and falls back to polling (ADR §4.2)', () => {
+  it('tries WebSocket first and falls back to polling (docs/deployment.md#frontend-cloudflare-pages)', () => {
     service.connect();
 
     expect(io).toHaveBeenCalledExactlyOnceWith('https://server.test', {

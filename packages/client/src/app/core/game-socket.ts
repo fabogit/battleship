@@ -10,7 +10,7 @@ type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 const ACK_TIMEOUT_MS = 5_000;
 
-/** Owns the Socket.io connection to the game server and exposes its status as a signal (ADR §8.1). */
+/** Owns the Socket.io connection to the game server and exposes its status as a signal (docs/client.md#reactive-model). */
 @Service()
 export class GameSocketService {
   private readonly serverUrl = inject(SERVER_URL);
@@ -24,12 +24,12 @@ export class GameSocketService {
     inject(DestroyRef).onDestroy(() => this.socket?.close());
   }
 
-  /** Opens the connection; call it only once `ServerWakeService` reports the server awake (ADR §4.3). */
+  /** Opens the connection; call it only once `ServerWakeService` reports the server awake (docs/client.md#cold-start-handling). */
   connect(): void {
     if (this.socket !== undefined) {
       return;
     }
-    // WebSocket first: the server URL is https in production, so this is `wss://` (ADR §4.2).
+    // WebSocket first: the server URL is https in production, so this is `wss://` (docs/deployment.md#frontend-cloudflare-pages).
     // Polling is the fallback for networks that block WebSocket: without `tryAllTransports` the client
     // never moves past the first transport and keeps retrying WebSocket.
     const socket: GameSocket = io(this.serverUrl, { transports: ['websocket', 'polling'], tryAllTransports: true });

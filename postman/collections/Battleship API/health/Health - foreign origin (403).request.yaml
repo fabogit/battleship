@@ -1,6 +1,6 @@
 $kind: http-request
 name: 'Health — foreign origin (403)'
-description: 'Foreign origins get a plain 403 from the `onRequest` hook (ADR D21).'
+description: 'Foreign origins get a plain 403 from the `onRequest` hook (ADR-0021).'
 url: '{{baseUrl}}/health'
 method: GET
 order: 4000

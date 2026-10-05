@@ -29,7 +29,7 @@ function parsePort(value: string | undefined): number {
 
 /**
  * Normalizes each entry to its URL origin, so `https://example.com/` matches the browser's `Origin: https://example.com`.
- * Wildcard entries (`https://*.<project>.pages.dev`) are kept as patterns (ADR D24).
+ * Wildcard entries (`https://*.<project>.pages.dev`) are kept as patterns (ADR-0024).
  */
 function parseOrigins(value: string | undefined): string[] {
   const origins = (value ?? '')

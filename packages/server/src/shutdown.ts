@@ -23,7 +23,7 @@ export interface ShutdownOptions {
 }
 
 /**
- * Closes the app on the first `SIGTERM`/`SIGINT` and ignores the ones that follow (ADR D27): pnpm and
+ * Closes the app on the first `SIGTERM`/`SIGINT` and ignores the ones that follow (ADR-0027): pnpm and
  * npm forward Ctrl+C to the script, which also gets it from the terminal, so node sees SIGINT twice.
  * Exits with code 1 when the close fails or does not finish within the deadline; a clean close lets the
  * process exit on its own.

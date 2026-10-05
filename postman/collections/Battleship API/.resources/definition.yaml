@@ -10,7 +10,7 @@ description: |-
 
   **Variables**
   - `baseUrl`, `allowedOrigin` (environment): server root, and an origin listed in the server's `ALLOWED_ORIGINS`
-  - `foreignOrigin`: any origin not in `ALLOWED_ORIGINS`, to check the 403s (ADR D21)
+  - `foreignOrigin`: any origin not in `ALLOWED_ORIGINS`, to check the 403s (ADR-0021)
 variables:
   - key: foreignOrigin
     value: 'http://evil.example'

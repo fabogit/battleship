@@ -21,13 +21,13 @@ export type GameServer = Server<ClientToServerEvents, ServerToClientEvents>;
 
 declare module 'fastify' {
   interface FastifyInstance {
-    /** Socket.io server sharing this instance's HTTP server (ADR D23). */
+    /** Socket.io server sharing this instance's HTTP server (ADR-0023). */
     readonly io: GameServer;
   }
 }
 
 export interface ServerOptions {
-  /** Exact origins and `https://*.<domain>` wildcards, as validated by `loadConfig` (ADR D21, D24). */
+  /** Exact origins and `https://*.<domain>` wildcards, as validated by `loadConfig` (ADR-0021, ADR-0024). */
   readonly allowedOrigins: readonly string[];
   readonly logger: boolean;
 }
@@ -44,7 +44,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
 
   const app = Fastify({ logger: options.logger });
 
-  // Foreign origins get a plain 403 before any route runs (ADR D21).
+  // Foreign origins get a plain 403 before any route runs (ADR-0021).
   app.addHook('onRequest', async (request, reply) => {
     if (!isOriginAllowed(request.headers.origin)) {
       return reply.code(403).send({ statusCode: 403, error: 'Forbidden', message: 'Origin not allowed' });

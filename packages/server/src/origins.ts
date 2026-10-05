@@ -1,5 +1,5 @@
 /**
- * Browser origins allowed by `ALLOWED_ORIGINS` (ADR D21, D24).
+ * Browser origins allowed by `ALLOWED_ORIGINS` (ADR-0021, ADR-0024).
  *
  * An entry is either an exact origin (`https://battleship.pages.dev`) or an `https` wildcard whose `*` stands for
  * exactly one subdomain label (`https://*.battleship.pages.dev`), so every Cloudflare Pages preview
