@@ -2,17 +2,19 @@ import { describe, expect, it } from 'vitest';
 
 import { loadConfig } from '../src/config.js';
 
+const ORIGIN = 'http://localhost:4200';
+
 describe('loadConfig', () => {
-  it('defaults to port 3000 and no allowed origins', () => {
-    expect(loadConfig({})).toEqual({ port: 3000, allowedOrigins: [] });
+  it('defaults to port 3000', () => {
+    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN })).toEqual({ port: 3000, allowedOrigins: [ORIGIN] });
   });
 
   it('reads PORT', () => {
-    expect(loadConfig({ PORT: '10000' }).port).toBe(10_000);
+    expect(loadConfig({ PORT: '10000', ALLOWED_ORIGINS: ORIGIN }).port).toBe(10_000);
   });
 
-  it.each(['abc', '-1', '70000', '3.5'])('rejects PORT=%s', (port) => {
-    expect(() => loadConfig({ PORT: port })).toThrow(/Invalid PORT/);
+  it.each(['abc', '-1', '70000', '3.5', '0', '0x10', '1e3', ' 3000'])('rejects PORT=%s', (port) => {
+    expect(() => loadConfig({ PORT: port, ALLOWED_ORIGINS: ORIGIN })).toThrow(/Invalid PORT/);
   });
 
   it('splits, trims and normalizes ALLOWED_ORIGINS', () => {
@@ -20,6 +22,10 @@ describe('loadConfig', () => {
       ALLOWED_ORIGINS: ' https://battleship.pages.dev/ , http://localhost:4200,,',
     });
     expect(allowedOrigins).toEqual(['https://battleship.pages.dev', 'http://localhost:4200']);
+  });
+
+  it.each([undefined, '', ' ', ',,'])('rejects ALLOWED_ORIGINS=%j and points to .env.example', (origins) => {
+    expect(() => loadConfig({ ALLOWED_ORIGINS: origins })).toThrow(/ALLOWED_ORIGINS is not set: .*\.env\.example/);
   });
 
   it.each(['not a url', 'file:///tmp'])('rejects ALLOWED_ORIGINS=%s', (origins) => {
