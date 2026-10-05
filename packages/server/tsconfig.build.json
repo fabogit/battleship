@@ -3,7 +3,10 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "types": ["node"]
+    "types": ["node"],
+    // Nothing imports the server, so its type declarations would be dead output.
+    "declaration": false,
+    "declarationMap": false
   },
   "include": ["src"]
 }

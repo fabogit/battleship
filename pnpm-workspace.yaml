@@ -22,5 +22,17 @@ catalog:
   typescript-eslint: ^8.71.0
   vitest: ^5.0.3
 
+# Angular packages move in lockstep, referenced as "catalog:angular".
+catalogs:
+  angular:
+    '@angular/build': ^22.2.1
+    '@angular/cli': ^22.2.1
+    '@angular/common': ^22.2.1
+    '@angular/compiler': ^22.2.1
+    '@angular/compiler-cli': ^22.2.1
+    '@angular/core': ^22.2.1
+    '@angular/platform-browser': ^22.2.1
+    '@angular/router': ^22.2.1
+
 # Fail the install on a Node version outside the root "engines" range.
 engineStrict: true

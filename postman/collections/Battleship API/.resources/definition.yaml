@@ -11,11 +11,7 @@ description: |-
   **Variables**
   - `baseUrl`, `allowedOrigin` (environment): server root, and an origin listed in the server's `ALLOWED_ORIGINS`
   - `foreignOrigin`: any origin not in `ALLOWED_ORIGINS`, to check the 403s (ADR D21)
-  - `protocolVersion`: must match `PROTOCOL_VERSION` in `@battleship/core`
 variables:
   - key: foreignOrigin
     value: 'http://evil.example'
     description: 'An origin NOT in ALLOWED_ORIGINS, used to verify the 403s'
-  - key: protocolVersion
-    value: '1'
-    description: 'Must match PROTOCOL_VERSION in @battleship/core'
