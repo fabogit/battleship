@@ -56,7 +56,8 @@ export function createServer(options: ServerOptions): FastifyInstance {
     },
   });
 
-  app.get('/health', (): HealthResponse => ({ status: 'ok', uptime: process.uptime() }));
+  // Render's health check hits this every few seconds: keep it out of the logs unless something goes wrong.
+  app.get('/health', { logLevel: 'warn' }, (): HealthResponse => ({ status: 'ok', uptime: process.uptime() }));
 
   const io: GameServer = new Server(app.server, {
     cors: {
