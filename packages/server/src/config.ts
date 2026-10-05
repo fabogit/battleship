@@ -20,7 +20,8 @@ function parsePort(value: string | undefined): number {
     return DEFAULT_PORT;
   }
   const port = Number(value);
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+  // Digits only: `Number` also accepts `0x10` and `1e3`. Port 0 would bind a random port that Render cannot reach.
+  if (!/^\d+$/.test(value) || port < 1 || port > 65_535) {
     throw new Error(`Invalid PORT: "${value}"`);
   }
   return port;

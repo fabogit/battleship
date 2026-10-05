@@ -13,7 +13,7 @@ describe('loadConfig', () => {
     expect(loadConfig({ PORT: '10000', ALLOWED_ORIGINS: ORIGIN }).port).toBe(10_000);
   });
 
-  it.each(['abc', '-1', '70000', '3.5'])('rejects PORT=%s', (port) => {
+  it.each(['abc', '-1', '70000', '3.5', '0', '0x10', '1e3', ' 3000'])('rejects PORT=%s', (port) => {
     expect(() => loadConfig({ PORT: port, ALLOWED_ORIGINS: ORIGIN })).toThrow(/Invalid PORT/);
   });
 
