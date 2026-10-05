@@ -1,9 +1,9 @@
-// Socket.io event maps shared by server and client (ADR §7). Type-only: core keeps zero runtime dependencies.
+// Socket.io event maps shared by server and client (docs/protocol.md). Type-only: core keeps zero runtime dependencies.
 
 /** Callback a client passes as the last argument of a command to receive the server's reply. */
 export type Ack<T> = (response: T) => void;
 
-/** Body of `GET /health` (ADR §4.1); the client polls it to wake the server (ADR §4.3). */
+/** Body of `GET /health` (docs/deployment.md#41-backend-render-free-web-service); the client polls it to wake the server (docs/client.md#43-cold-start-handling-client-serverwakeservice). */
 export interface HealthResponse {
   readonly status: 'ok';
   /** Seconds since the server process started. */
@@ -23,6 +23,6 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
-  /** The server is restarting; any match in progress is lost (ADR §4.1). */
+  /** The server is restarting; any match in progress is lost (docs/deployment.md#41-backend-render-free-web-service). */
   SERVER_SHUTDOWN: (payload: Record<string, never>) => void;
 }
