@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACCEPTED** — Revision 5 (2026-10-05): Phase 0 findings measured on the production URLs (#8): §1.4, §4.1, §4.3, §10. Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
+**ACCEPTED** — Revision 6 (2026-10-05): D22 switched to a source export condition for `@battleship/core` (#46): §2, §2.1, §3. Revision 5 (2026-10-05): Phase 0 findings measured on the production URLs (#8): §1.4, §4.1, §4.3, §10. Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
 
 ---
 
@@ -71,7 +71,7 @@ Verified against Render documentation, then measured on the deployed service (#8
 | D19 | Backend deploy | Native Node build on Render with filtered install (no Docker in v1). Docker multi-stage image with `pnpm deploy` kept as fallback. |
 | D20 | Delivery | Phase 0 deploy spike, then vertical slices (see §8). |
 | D21 | Origin policy | `ALLOWED_ORIGINS` is enforced, not just advertised: a foreign `Origin` gets `403` on HTTP and its Socket.io handshake (polling and WebSocket) is refused via `allowRequest`. Requests without an `Origin` header (health checks, CLI clients) are allowed. |
-| D22 | Workspace type resolution | For now dependents read `@battleship/core` through its `dist/` typings, so CI runs `build` before `typecheck`/`lint`. Planned switch to a source export condition (live types) once the client consumes core: #46. |
+| D22 | Workspace type resolution | Typecheck, lint, tests and `ng serve` resolve `@battleship/core` from its sources through a `"@battleship/source"` export condition, so changes to core need no rebuild. Production builds (server `tsconfig.build.json`, client `production` configuration) keep reading `dist/`. CI runs typecheck → lint → test → build. Per-consumer setup in §3 (#46). |
 | D23 | Socket.io integration | Socket.io is attached directly to Fastify's HTTP server and exposed as `app.io` (Fastify decorator); no `fastify-socket.io` plugin. Shutdown waits for `SERVER_SHUTDOWN` to flush before closing. |
 | D24 | Preview origins | `ALLOWED_ORIGINS` accepts single-label wildcards (`https://*.<project>.pages.dev`) so Cloudflare Pages previews work without touching Render (implemented in #5). |
 | D25 | Client server URL | The server URL lives in Angular environment files: `environment.ts` holds the Render URL for every Pages build (production and previews share one server), `environment.development.ts` points `ng serve`/`ng test` at `http://localhost:3000`. Planned switch to a `SERVER_URL` build-time variable (set on Pages and in CI, build fails when missing): #48. |
@@ -87,7 +87,7 @@ Verified against Render documentation, then measured on the deployed service (#8
 * **Dockerfile vs. native build on Render:** Docker gives reproducibility and portability to other hosts, but a pnpm monorepo image needs `pnpm deploy` and extra config, and builds are slower on the free tier. Native build is simpler and sufficient as long as the install is filtered to the server and its dependencies; Docker remains the fallback if Phase 0 hits a blocker or we need to leave Render (D19).
 * **Layer-by-layer roadmap vs. vertical slices:** layer-by-layer only yields a playable game at the end and tests the client/server contract late (D20).
 * **Origin enforcement (403) vs. standard CORS vs. no check:** browsers block a foreign origin either way, but standard CORS still executes the HTTP request and does not apply to WebSocket upgrades at all, so any site could open sockets and spend the free tier's resources. Enforcing on both channels gives one rule, testable from outside a browser. The players' data is not at stake (no cookies; credentials travel in the handshake `auth`), so this guards resources, not sessions (D21).
-* **`dist/` typings vs. source export condition vs. TypeScript project references:** `dist/` needs no config and tests the same artefact Render runs, but core must be rebuilt after every change. A `"@battleship/source"` condition removes the rebuild at the cost of configuring every consumer (tsconfig, Vitest, Angular) while keeping production builds on `dist/`. Project references (`tsc -b`) add `composite`/build-info constraints that Angular CLI and Vitest ignore anyway. `dist/` now, source condition when the client lands (D22, #46).
+* **`dist/` typings vs. source export condition vs. TypeScript project references:** `dist/` needs no config and tests the same artefact Render runs, but core must be rebuilt after every change. A `"@battleship/source"` condition removes the rebuild at the cost of configuring every consumer (tsconfig, Vitest, Angular) while keeping production builds on `dist/`. Project references (`tsc -b`) add `composite`/build-info constraints that Angular CLI and Vitest ignore anyway. The source condition was chosen once the client consumed core; production builds still use `dist/`, so the artefact Render runs is unchanged (D22, #46).
 * **`fastify-socket.io` plugin vs. direct attach:** the plugin's last release (5.1.0, Aug 2024) requires Fastify 4, has open Fastify 5 typing bugs, is reported abandoned, and its default shutdown disconnects sockets without flushing, which loses `SERVER_SHUTDOWN` for polling clients. It is ~30 lines; the one useful idea, decorating the instance with `io`, is kept (D23).
 * **Client server URL — environment files vs. a Pages environment variable:** a `SERVER_URL` variable passed to `ng build --define` keeps the URL out of the repo, so previews could target a staging server and forks could deploy against their own, all without a code change. It splits the configuration across Pages (Production and Preview) and CI, and an unset variable silently becomes `''` in the bundle, so the build must validate it. With a single server, environment files are enough for Phase 0. The variable is the intended end state, with fail-fast validation and `ng serve` keeping its local default through the `development` configuration (D25, #48).
 * **Dependency install scripts — allow all vs. deny all vs. per package:** allowing every script (`dangerouslyAllowAllBuilds`) gives up the supply-chain protection pnpm 11 enables by default; denying all would also skip esbuild's binary check. The native packages Angular pulls in ship prebuilt binaries as optional dependencies, so their scripts are only a compile-from-source fallback (D26).
@@ -136,6 +136,7 @@ battleship/
     │   └── test/                      # Room unit tests (fake clock) + socket integration tests
     │
     └── client/                    # Angular 22, @angular/build (esbuild), unit tests on Vitest + jsdom
+        ├── vitest-base.config.ts  # `ng test` runnerConfig: resolves core from source (D22)
         └── src/
             ├── environments/      # serverUrl per build: production (Render) / development (localhost), D25
             └── app/
@@ -144,6 +145,21 @@ battleship/
                 │                  # (Phase 0: connection-check test page, replaced by home in Phase 1)
                 └── shared/        # Board grid, timer, dice, modal, language switch
 ```
+
+### 3.1 Resolving `@battleship/core` (D22)
+
+`packages/core/package.json` lists `"@battleship/source": "./src/index.ts"` ahead of `types`/`default` in its `exports`. Tools that enable the condition read the TypeScript sources; everything else (Node at runtime, production builds) gets `dist/`. Each consumer enables it separately:
+
+| Consumer | Setting | Notes |
+|----------|---------|-------|
+| `tsc` typecheck, ESLint `projectService` | `customConditions: ["@battleship/source"]` in the dependent's `tsconfig.json` | Server `tsconfig.build.json` does not extend `tsconfig.json`, so `pnpm build` still reads `dist/` and `packages/server/dist` holds only server code. |
+| Server tests (Vitest) | `ssr.resolve.conditions` in `vitest.config.ts` | Node tests run in Vite's SSR environment; the list replaces Vite's server defaults (`module`, `node`, `development\|production`), so it repeats them. |
+| Client app build and `ng serve` | `conditions` in the `development` build configuration of `angular.json` | Replaces Angular's defaults, so it repeats `module` and `development`. Angular passes the same list to its TypeScript compiler as `customConditions`, overriding the tsconfig, so types and bundle always agree. The `production` configuration has no `conditions` and bundles `dist/`; the filtered Pages build compiles core first (§4.2). |
+| `ng serve` prebundling | `prebundle.exclude: ["@battleship/core"]` on the `serve` target | Prebundled packages are resolved by Vite, which ignores the build `conditions`; excluded, core is bundled by esbuild with them and rebuilt on every change. |
+| Client tests (`ng test`) | `runnerConfig: "vitest-base.config.ts"` with `resolve.conditions` | The unit-test build leaves packages external and Vitest resolves them at runtime; its conditions are added to the builder's own. |
+| `ngc`/`tsc` typecheck of the client | `customConditions` in `packages/client/tsconfig.json` | Inherited by `tsconfig.app.json` and `tsconfig.spec.json`. |
+
+A new consumer of core (or a new workspace package consumed the same way) needs the matching row before it works on a checkout without `dist/`.
 
 ---
 
