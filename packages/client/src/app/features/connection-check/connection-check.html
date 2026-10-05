@@ -5,7 +5,7 @@
     @switch (wake.status()) {
       @case ('waking') {
         <p class="status pending">Waking up the server…</p>
-        <p class="hint">A sleeping server takes about a minute to start.</p>
+        <p class="hint">A sleeping server usually takes about half a minute to start.</p>
       }
       @case ('unreachable') {
         <p class="status error">The server is not responding.</p>

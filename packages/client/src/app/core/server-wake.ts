@@ -10,10 +10,8 @@ export type WakeStatus = 'idle' | 'waking' | 'awake' | 'unreachable';
 /** Delay before the first retry; doubles after every failed attempt up to `MAX_RETRY_DELAY_MS`. */
 export const FIRST_RETRY_DELAY_MS = 500;
 export const MAX_RETRY_DELAY_MS = 5_000;
-/** Render needs about a minute to spin up a free service (ADR §1.4). */
+/** Render's free tier wakes up in ~24 s as measured (ADR §1.4); 90 s leaves room for slow starts. */
 export const GIVE_UP_AFTER_MS = 90_000;
-/** Per attempt, so the last one can end slightly after `GIVE_UP_AFTER_MS`. */
-const REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * Polls `GET /health` until the server answers, so the Socket.io connection is only opened on a
@@ -45,22 +43,24 @@ export class ServerWakeService {
     this.statusSignal.set('waking');
     const deadline = Date.now() + GIVE_UP_AFTER_MS;
     for (let delay = FIRST_RETRY_DELAY_MS; ; delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS)) {
-      if (await this.isHealthy()) {
-        this.statusSignal.set('awake');
-        return true;
-      }
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
         this.statusSignal.set('unreachable');
         return false;
       }
-      await sleep(Math.min(delay, remaining));
+      // Render holds `/health` open until the instance is ready, so an attempt may use all the time left;
+      // the backoff only spaces out fast failures (CORS errors, its loading page).
+      if (await this.isHealthy(remaining)) {
+        this.statusSignal.set('awake');
+        return true;
+      }
+      await sleep(Math.min(delay, deadline - Date.now()));
     }
   }
 
-  private async isHealthy(): Promise<boolean> {
+  private async isHealthy(timeoutMs: number): Promise<boolean> {
     try {
-      const body = await firstValueFrom(this.http.get<unknown>(this.healthUrl, { timeout: REQUEST_TIMEOUT_MS }));
+      const body = await firstValueFrom(this.http.get<unknown>(this.healthUrl, { timeout: timeoutMs }));
       return isHealthResponse(body);
     } catch {
       return false;
