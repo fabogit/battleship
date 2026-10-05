@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACCEPTED** — Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
+**ACCEPTED** — Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
 
 ---
 
@@ -73,6 +73,8 @@ Verified against Render documentation:
 | D22 | Workspace type resolution | For now dependents read `@battleship/core` through its `dist/` typings, so CI runs `build` before `typecheck`/`lint`. Planned switch to a source export condition (live types) once the client consumes core: #46. |
 | D23 | Socket.io integration | Socket.io is attached directly to Fastify's HTTP server and exposed as `app.io` (Fastify decorator); no `fastify-socket.io` plugin. Shutdown waits for `SERVER_SHUTDOWN` to flush before closing. |
 | D24 | Preview origins | `ALLOWED_ORIGINS` accepts single-label wildcards (`https://*.<project>.pages.dev`) so Cloudflare Pages previews work without touching Render (implemented in #5). |
+| D25 | Client server URL | The server URL lives in Angular environment files: `environment.ts` holds the Render URL for every Pages build (production and previews share one server), `environment.development.ts` points `ng serve`/`ng test` at `http://localhost:3000`. Planned switch to a `SERVER_URL` build-time variable (set on Pages and in CI, build fails when missing): #48. |
+| D26 | Dependency install scripts | pnpm 11 fails the install on unreviewed dependency build scripts, so `pnpm-workspace.yaml` lists them in `allowBuilds`: only `esbuild` runs its script; `lmdb`, `msgpackr-extract` and `@parcel/watcher` (Angular build tooling) use their prebuilt binaries. New entries are reviewed when they appear. |
 
 ### 2.1 Alternatives Considered
 
@@ -86,6 +88,8 @@ Verified against Render documentation:
 * **Origin enforcement (403) vs. standard CORS vs. no check:** browsers block a foreign origin either way, but standard CORS still executes the HTTP request and does not apply to WebSocket upgrades at all, so any site could open sockets and spend the free tier's resources. Enforcing on both channels gives one rule, testable from outside a browser. The players' data is not at stake (no cookies; credentials travel in the handshake `auth`), so this guards resources, not sessions (D21).
 * **`dist/` typings vs. source export condition vs. TypeScript project references:** `dist/` needs no config and tests the same artefact Render runs, but core must be rebuilt after every change. A `"@battleship/source"` condition removes the rebuild at the cost of configuring every consumer (tsconfig, Vitest, Angular) while keeping production builds on `dist/`. Project references (`tsc -b`) add `composite`/build-info constraints that Angular CLI and Vitest ignore anyway. `dist/` now, source condition when the client lands (D22, #46).
 * **`fastify-socket.io` plugin vs. direct attach:** the plugin's last release (5.1.0, Aug 2024) requires Fastify 4, has open Fastify 5 typing bugs, is reported abandoned, and its default shutdown disconnects sockets without flushing, which loses `SERVER_SHUTDOWN` for polling clients. It is ~30 lines; the one useful idea, decorating the instance with `io`, is kept (D23).
+* **Client server URL — environment files vs. a Pages environment variable:** a `SERVER_URL` variable passed to `ng build --define` keeps the URL out of the repo, so previews could target a staging server and forks could deploy against their own, all without a code change. It splits the configuration across Pages (Production and Preview) and CI, and an unset variable silently becomes `''` in the bundle, so the build must validate it. With a single server, environment files are enough for Phase 0. The variable is the intended end state, with fail-fast validation and `ng serve` keeping its local default through the `development` configuration (D25, #48).
+* **Dependency install scripts — allow all vs. deny all vs. per package:** allowing every script (`dangerouslyAllowAllBuilds`) gives up the supply-chain protection pnpm 11 enables by default; denying all would also skip esbuild's binary check. The native packages Angular pulls in ship prebuilt binaries as optional dependencies, so their scripts are only a compile-from-source fallback (D26).
 * **Cloudflare Pages preview origins — manual list vs. CI automation vs. wildcard:** every preview commit gets a new `<hash>.<project>.pages.dev`; Render applies env var changes only on a new deploy. Pushing each preview origin to Render via its API would restart the single shared server (production included) on every branch push, need a Render API key in GitHub secrets, and grow the list forever. A manual list only covers stable branch aliases. A wildcard limited to one label under our own `pages.dev` project is safe, since only our project can publish there, and needs no redeploys (D24).
 
 ---
@@ -130,11 +134,14 @@ battleship/
     │   ├── scripts/echo-client.ts     # Smoke test against a running server (Phase 0)
     │   └── test/                      # Room unit tests (fake clock) + socket integration tests
     │
-    └── client/
-        └── src/app/
-            ├── core/              # GameSocketService, GameStateService, SessionStore, I18nService, ServerWakeService
-            ├── features/          # home (nickname, create/join), lobby (waiting + rules), placement, battle, game-over
-            └── shared/            # Board grid, timer, dice, modal, language switch
+    └── client/                    # Angular 22, @angular/build (esbuild), unit tests on Vitest + jsdom
+        └── src/
+            ├── environments/      # serverUrl per build: production (Render) / development (localhost), D25
+            └── app/
+                ├── core/          # GameSocketService, GameStateService, SessionStore, I18nService, ServerWakeService
+                ├── features/      # home (nickname, create/join), lobby (waiting + rules), placement, battle, game-over
+                │                  # (Phase 0: connection-check test page, replaced by home in Phase 1)
+                └── shared/        # Board grid, timer, dice, modal, language switch
 ```
 
 ---
@@ -151,7 +158,7 @@ battleship/
   (`...` selects the package plus its workspace dependencies, so the server build never installs Angular.)
 * **Start command:** `node packages/server/dist/index.js`
 * **Environment:** `PORT` (provided by Render), `ALLOWED_ORIGINS` (comma-separated; Cloudflare Pages production origin plus a `https://*.<project>.pages.dev` wildcard for previews, D24). Malformed values fail the startup.
-* **`GET /health`** → `200 { status: "ok", uptime: number }`.
+* **`GET /health`** → `200 { status: "ok", uptime: number }` (`HealthResponse` in `core/protocol.ts`).
 * **CORS:** configured twice — `@fastify/cors` for HTTP routes and the `cors` option of the Socket.io server. Both read `ALLOWED_ORIGINS`. A foreign `Origin` is rejected outright: `403` on HTTP (an `onRequest` hook, before any route) and a refused Socket.io handshake (`allowRequest`), since CORS headers alone do not stop WebSocket upgrades (D21).
 * **Graceful shutdown:** on `SIGTERM` the server emits `SERVER_SHUTDOWN` to every socket before closing, so clients can say "the server restarted, the match was lost" instead of looping on reconnect. It waits (up to 3 s) for each connection to flush and close first: a long-polling client only receives the message on its next poll (D23).
 
@@ -163,13 +170,13 @@ battleship/
   corepack enable && pnpm install --frozen-lockfile --filter @battleship/client... && pnpm --filter @battleship/client... build
   ```
 * **Output directory:** `packages/client/dist/client/browser`
-* **Environment:** `NODE_VERSION=24`; the server URL is injected at build time (Angular environment / `define`).
+* **Environment:** `NODE_VERSION=24`; the server URL is fixed at build time by Angular environment files (D25), so Pages needs no other variable for now (switch to a `SERVER_URL` variable: #48).
 * **SPA routing:** Pages serves `index.html` for unknown paths when no `404.html` exists, so `/r/<roomId>` deep links work.
-* **Transport:** the client connects with `wss://` only (Pages is HTTPS; `ws://` is blocked as mixed content).
+* **Transport:** the client connects to an `https://` server URL, i.e. `wss://` (Pages is HTTPS; `ws://` is blocked as mixed content). Socket.io tries WebSocket first and falls back to HTTPS long-polling on networks that block upgrades.
 
 ### 4.3 Cold-Start Handling (client `ServerWakeService`)
 
-1. On app start, `GET /health` with exponential backoff (cap ~5 s between attempts, give up after ~90 s).
+1. On app start, `GET /health` with exponential backoff (500 ms doubling, cap 5 s between attempts, give up after 90 s; each attempt times out after 10 s). Giving up shows a retry button.
 2. While Render serves its loading page the request fails as a CORS/parse error: treat any non-JSON or failed response as "still waking".
 3. UI shows a "Waking up the server…" state; nickname entry stays usable meanwhile.
 4. The Socket.io connection is opened only after `/health` succeeds.
@@ -526,7 +533,8 @@ Timers are sent as **remaining milliseconds** (not absolute timestamps) to avoid
 
 ### 8.1 Reactive Model
 
-* `provideZonelessChangeDetection()`, all components `OnPush`, state in Signals.
+* `provideZonelessChangeDetection()`, all components `OnPush`, state in Signals. Both are Angular 22 defaults (no `zone.js` dependency; components omit `changeDetection`); the provider is still listed explicitly in `app.config.ts`.
+* Services use Angular 22's `@Service()` decorator (root-provided). The server URL is the `SERVER_URL` injection token, so tests can override it.
 * **Services:**
   * `ServerWakeService` — cold-start polling (§4.3).
   * `SessionStore` — credential persistence (§6.3); the only module touching `localStorage` for sessions.
@@ -588,7 +596,7 @@ Every phase ends deployed and playable on the production URLs.
 
 * **Restart = lost matches** (Render free restarts and deploys). Accepted; mitigated only by `SERVER_SHUTDOWN` messaging.
 * **Platform versions:** Node 24 / pnpm support on the Render and Cloudflare Pages build images must be confirmed in Phase 0.
-* **Angular 22 ecosystem compatibility** (Socket.io client, build tooling) must be confirmed in Phase 0.
+* **Angular 22 ecosystem compatibility:** `socket.io-client` 4.8 bundles with `@angular/build` (esbuild) without CommonJS warnings (#4). `@angular/build` 22 requires Node `^24.15`, so the Pages image must resolve `NODE_VERSION=24` to a recent 24.x (#6).
 * **TypeScript held at 6.0.x:** the workspace pins `typescript ~6.0.3` in the pnpm catalog because Angular 22 (`@angular/compiler-cli`) and `typescript-eslint` both require `>=6.0 <6.1`. TypeScript 7 (native compiler) is preferred; upgrade once both accept it. Splitting versions per package was rejected, since lint already ties every package to 6.0.x.
 * **Placement time on mobile:** 60 s may be tight with touch placement; tune after playtesting.
 * **Empty rooms cannot outlive Render's 15-minute spin-down**, regardless of TTL settings.

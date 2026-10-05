@@ -1,0 +1,14 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+
+  --color-muted: light-dark(#5f6368, #9aa0a6);
+  --color-pending: light-dark(#8a5a00, #f2c14e);
+  --color-ok: light-dark(#1e7d32, #6fcf7a);
+  --color-error: light-dark(#b3261e, #f28b82);
+}
+
+body {
+  margin: 0;
+}

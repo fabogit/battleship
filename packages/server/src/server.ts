@@ -6,6 +6,7 @@ import {
   type Ack,
   type ClientToServerEvents,
   type EchoResponse,
+  type HealthResponse,
   type ServerToClientEvents,
 } from '@battleship/core';
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -54,7 +55,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
     },
   });
 
-  app.get('/health', () => ({ status: 'ok', uptime: process.uptime() }));
+  app.get('/health', (): HealthResponse => ({ status: 'ok', uptime: process.uptime() }));
 
   const io: GameServer = new Server(app.server, {
     cors: { origin: [...allowedOrigins] },
