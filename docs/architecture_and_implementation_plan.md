@@ -168,10 +168,11 @@ battleship/
 * **Root directory:** repository root.
 * **Build command:**
   ```bash
-  corepack enable && pnpm install --frozen-lockfile --filter @battleship/client... && pnpm --filter @battleship/client... build
+  corepack pnpm --version && corepack pnpm install --frozen-lockfile --filter @battleship/client... && corepack pnpm --filter @battleship/client... build
   ```
+  The Pages image ships its own pnpm, which does not switch to `packageManager`; `corepack pnpm` runs exactly `11.21.0` without writing any shims.
 * **Output directory:** `packages/client/dist/client/browser`
-* **Environment:** `NODE_VERSION=24`; the server URL is fixed at build time by Angular environment files (D25), so Pages needs no other variable for now (switch to a `SERVER_URL` variable: #48).
+* **Environment:** `NODE_VERSION=24.21.0` (exact: the image resolves `24` to 24.13.1, below Angular 22's `^24.15.0`; the root `engines` field states the same floor), `SKIP_DEPENDENCY_INSTALL=1` (otherwise Pages runs its own unfiltered install before the build command), `COREPACK_ENABLE_DOWNLOAD_PROMPT=0`. Framework preset: none. Project `battleship-ac7` → `https://battleship-ac7.pages.dev`; Render's `ALLOWED_ORIGINS` lists it plus `https://*.battleship-ac7.pages.dev` for previews (D24). The server URL is fixed at build time by Angular environment files (D25), so Pages needs no other variable for now (switch to a `SERVER_URL` variable: #48).
 * **SPA routing:** Pages serves `index.html` for unknown paths when no `404.html` exists, so `/r/<roomId>` deep links work.
 * **Transport:** the client connects to an `https://` server URL, i.e. `wss://` (Pages is HTTPS; `ws://` is blocked as mixed content). Socket.io tries WebSocket first and falls back to HTTPS long-polling on networks that block upgrades.
 
@@ -596,8 +597,8 @@ Every phase ends deployed and playable on the production URLs.
 ## 10. Open Risks
 
 * **Restart = lost matches** (Render free restarts and deploys). Accepted; mitigated only by `SERVER_SHUTDOWN` messaging.
-* **Platform versions:** confirmed on Render (Node 24 from `.nvmrc`, pnpm 11 from `packageManager`, #5); Cloudflare Pages still to be confirmed in #6.
-* **Angular 22 ecosystem compatibility:** `socket.io-client` 4.8 bundles with `@angular/build` (esbuild) without CommonJS warnings (#4). `@angular/build` 22 requires Node `^24.15`, so the Pages image must resolve `NODE_VERSION=24` to a recent 24.x (#6).
+* **Platform versions:** confirmed on Render (Node 24 from `.nvmrc`, pnpm 11 from `packageManager`, #5) and Cloudflare Pages (exact `NODE_VERSION`, `corepack pnpm`, #6). `NODE_VERSION` on Pages is pinned, so it must be bumped by hand when Angular raises its Node floor again.
+* **Angular 22 ecosystem compatibility:** `socket.io-client` 4.8 bundles with `@angular/build` (esbuild) without CommonJS warnings (#4). `@angular/build` 22 requires Node `^24.15`, so the Pages image needs an exact recent `NODE_VERSION` (§4.2).x (#6).
 * **TypeScript held at 6.0.x:** the workspace pins `typescript ~6.0.3` in the pnpm catalog because Angular 22 (`@angular/compiler-cli`) and `typescript-eslint` both require `>=6.0 <6.1`. TypeScript 7 (native compiler) is preferred; upgrade once both accept it. Splitting versions per package was rejected, since lint already ties every package to 6.0.x.
 * **Placement time on mobile:** 60 s may be tight with touch placement; tune after playtesting.
 * **Empty rooms cannot outlive Render's 15-minute spin-down**, regardless of TTL settings.
