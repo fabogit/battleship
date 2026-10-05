@@ -73,6 +73,42 @@ describe('ServerWakeService', () => {
     expect(attemptsAt).toEqual([0, 500, 1_500, 3_500, 7_500, 12_500, 17_500]);
   });
 
+  it('gives every attempt the time left before giving up as its timeout', async () => {
+    void service.wake();
+
+    const first = http.expectOne(HEALTH_URL);
+    expect(first.request.timeout).toBe(GIVE_UP_AFTER_MS);
+    first.error(new ProgressEvent('error'), { status: 0 });
+    await vi.advanceTimersToNextTimerAsync();
+
+    expect(http.expectOne(HEALTH_URL).request.timeout).toBe(GIVE_UP_AFTER_MS - 500);
+  });
+
+  it('waits for a /health request that Render holds open while the instance starts', async () => {
+    const woken = service.wake();
+    const held = http.expectOne(HEALTH_URL);
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    http.expectNone(HEALTH_URL);
+    held.flush(HEALTHY);
+
+    await expect(woken).resolves.toBe(true);
+  });
+
+  it('gives up without a new attempt when a held request times out at the deadline', async () => {
+    let woken: boolean | undefined;
+    void service.wake().then((result) => (woken = result));
+    const held = http.expectOne(HEALTH_URL);
+
+    await vi.advanceTimersByTimeAsync(GIVE_UP_AFTER_MS);
+    held.error(new ProgressEvent('timeout'), { status: 0, statusText: 'Request timeout' });
+    await vi.runAllTimersAsync();
+
+    expect(woken).toBe(false);
+    expect(service.status()).toBe('unreachable');
+    http.expectNone(HEALTH_URL);
+  });
+
   it('gives up after about 90 s and can be retried', async () => {
     const start = Date.now();
     let woken: boolean | undefined;

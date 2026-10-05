@@ -30,15 +30,18 @@ export class GameSocketService {
       return;
     }
     // WebSocket first: the server URL is https in production, so this is `wss://` (ADR §4.2).
-    // Polling stays as a fallback for networks that block WebSocket upgrades.
-    const socket: GameSocket = io(this.serverUrl, { transports: ['websocket', 'polling'] });
+    // Polling is the fallback for networks that block WebSocket: without `tryAllTransports` the client
+    // never moves past the first transport and keeps retrying WebSocket.
+    const socket: GameSocket = io(this.serverUrl, { transports: ['websocket', 'polling'], tryAllTransports: true });
     this.socket = socket;
     this.statusSignal.set('connecting');
 
     socket.on('connect', () => {
       this.statusSignal.set('connected');
     });
-    // `active` is false once Socket.io stops reconnecting (e.g. the server refused the handshake).
+    // `active` drops to false only when the client closes the socket or a server middleware rejects the
+    // connection (`next(err)`). A handshake refused by `allowRequest` (foreign origin, HTTP 403) keeps it
+    // true, so the socket stays 'connecting' and retries.
     socket.on('disconnect', () => {
       this.statusSignal.set(socket.active ? 'connecting' : 'disconnected');
     });
