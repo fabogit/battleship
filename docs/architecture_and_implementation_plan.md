@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACCEPTED** — Revision 6 (2026-10-05): D22 switched to a source export condition for `@battleship/core` (#46): §2, §2.1, §3. Revision 5 (2026-10-05): Phase 0 findings measured on the production URLs (#8): §1.4, §4.1, §4.3, §10. Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
+**ACCEPTED** — Revision 7 (2026-10-05): D27 added after duplicate shutdown signals under pnpm (#59): §2, §2.1, §3, §4.1. Revision 6 (2026-10-05): D22 switched to a source export condition for `@battleship/core` (#46): §2, §2.1, §3. Revision 5 (2026-10-05): Phase 0 findings measured on the production URLs (#8): §1.4, §4.1, §4.3, §10. Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
 
 ---
 
@@ -76,6 +76,7 @@ Verified against Render documentation, then measured on the deployed service (#8
 | D24 | Preview origins | `ALLOWED_ORIGINS` accepts single-label wildcards (`https://*.<project>.pages.dev`) so Cloudflare Pages previews work without touching Render (implemented in #5). |
 | D25 | Client server URL | The server URL lives in Angular environment files: `environment.ts` holds the Render URL for every Pages build (production and previews share one server), `environment.development.ts` points `ng serve`/`ng test` at `http://localhost:3000`. Planned switch to a `SERVER_URL` build-time variable (set on Pages and in CI, build fails when missing): #48. |
 | D26 | Dependency install scripts | pnpm 11 fails the install on unreviewed dependency build scripts, so `pnpm-workspace.yaml` lists them in `allowBuilds`: only `esbuild` runs its script; `lmdb`, `msgpackr-extract` and `@parcel/watcher` (Angular build tooling) use their prebuilt binaries. New entries are reviewed when they appear. |
+| D27 | Shutdown signals | `SIGTERM`/`SIGINT` are handled in `shutdown.ts` with persistent listeners: the first signal starts `app.close()`, repeats are ignored (pnpm and npm forward Ctrl+C, so the process gets SIGINT twice). A 10 s deadline exits with code 1 if the close fails or hangs, below Render's SIGKILL at 30 s. No `close-with-grace` (#59). |
 
 ### 2.1 Alternatives Considered
 
@@ -92,6 +93,7 @@ Verified against Render documentation, then measured on the deployed service (#8
 * **Client server URL — environment files vs. a Pages environment variable:** a `SERVER_URL` variable passed to `ng build --define` keeps the URL out of the repo, so previews could target a staging server and forks could deploy against their own, all without a code change. It splits the configuration across Pages (Production and Preview) and CI, and an unset variable silently becomes `''` in the bundle, so the build must validate it. With a single server, environment files are enough for Phase 0. The variable is the intended end state, with fail-fast validation and `ng serve` keeping its local default through the `development` configuration (D25, #48).
 * **Dependency install scripts — allow all vs. deny all vs. per package:** allowing every script (`dangerouslyAllowAllBuilds`) gives up the supply-chain protection pnpm 11 enables by default; denying all would also skip esbuild's binary check. The native packages Angular pulls in ship prebuilt binaries as optional dependencies, so their scripts are only a compile-from-source fallback (D26).
 * **Cloudflare Pages preview origins — manual list vs. CI automation vs. wildcard:** every preview commit gets a new `<hash>.<project>.pages.dev`; Render applies env var changes only on a new deploy. Pushing each preview origin to Render via its API would restart the single shared server (production included) on every branch push, need a Render API key in GitHub secrets, and grow the list forever. A manual list only covers stable branch aliases. A wildcard limited to one label under our own `pages.dev` project is safe, since only our project can publish there, and needs no redeploys (D24).
+* **Shutdown signals — `close-with-grace` vs. hand-written handler:** `close-with-grace` is the usual choice with Fastify (fastify-cli uses it), but on a second signal during shutdown it always calls `process.exit(1)`. Under `pnpm start` the terminal and pnpm each deliver Ctrl+C, so the process died before `SERVER_SHUTDOWN` was sent (verified with v2.5.0). Its other features (graceful close on `uncaughtException`/`unhandledRejection`, eleven signals, `beforeExit`) add nothing here: state is in memory, so a crash exits with Node's default code 1 and Render restarts the service. The hand-written handler is about fifteen lines (D27).
 
 ---
 
@@ -131,7 +133,8 @@ battleship/
     │   │   │   └── rate-limit.ts
     │   │   ├── config.ts              # PORT / ALLOWED_ORIGINS parsing, validated at startup
     │   │   ├── server.ts              # Fastify bootstrap, /health, origin policy, Socket.io (app.io), graceful shutdown
-    │   │   └── index.ts               # Entry point: listen, SIGTERM/SIGINT → app.close()
+    │   │   ├── shutdown.ts            # SIGTERM/SIGINT → app.close(); repeats ignored, 10 s deadline (D27)
+    │   │   └── index.ts               # Entry point: config, server, signal handling, listen
     │   ├── scripts/echo-client.ts     # Smoke test against a running server (Phase 0)
     │   └── test/                      # Room unit tests (fake clock) + socket integration tests
     │
@@ -178,7 +181,7 @@ A new consumer of core (or a new workspace package consumed the same way) needs 
 * **Environment:** `PORT` (provided by Render), `ALLOWED_ORIGINS` (comma-separated; Cloudflare Pages production origin plus a `https://*.<project>.pages.dev` wildcard for previews, D24). Malformed values fail the startup.
 * **`GET /health`** → `200 { status: "ok", uptime: number }` (`HealthResponse` in `core/protocol.ts`).
 * **CORS:** configured twice — `@fastify/cors` for HTTP routes and the `cors` option of the Socket.io server. Both read `ALLOWED_ORIGINS`. A foreign `Origin` is rejected outright: `403` on HTTP (an `onRequest` hook, before any route) and a refused Socket.io handshake (`allowRequest`), since CORS headers alone do not stop WebSocket upgrades (D21).
-* **Graceful shutdown:** on `SIGTERM` the server emits `SERVER_SHUTDOWN` to every socket before closing, so clients can say "the server restarted, the match was lost" instead of looping on reconnect. It waits (up to 3 s) for each connection to flush and close first: a long-polling client only receives the message on its next poll (D23). *Measured on a Render deploy (#8):* `SERVER_SHUTDOWN` never reached the connected client: the socket closed silently about 10 s after `SIGTERM`, and Socket.io reconnected to the new instance on its own, which knows nothing of the old rooms. `SERVER_SHUTDOWN` is therefore best effort (it works on local shutdowns and in tests); the client must recognize a restart after reconnecting, when its session turns out to be unknown (`SESSION_INVALID`, §6.3; #22, #25). Conversely, when the message does arrive, the server-side disconnect (`io server disconnect`) stops Socket.io's automatic reconnection, so the client must reconnect itself.
+* **Graceful shutdown:** on `SIGTERM` the server emits `SERVER_SHUTDOWN` to every socket before closing, so clients can say "the server restarted, the match was lost" instead of looping on reconnect. `SIGINT` (Ctrl+C) does the same locally; repeated signals are ignored and a 10 s deadline exits with code 1 (D27). It waits (up to 3 s) for each connection to flush and close first: a long-polling client only receives the message on its next poll (D23). *Measured on a Render deploy (#8):* `SERVER_SHUTDOWN` never reached the connected client: the socket closed silently about 10 s after `SIGTERM`, and Socket.io reconnected to the new instance on its own, which knows nothing of the old rooms. `SERVER_SHUTDOWN` is therefore best effort (it works on local shutdowns and in tests); the client must recognize a restart after reconnecting, when its session turns out to be unknown (`SESSION_INVALID`, §6.3; #22, #25). Conversely, when the message does arrive, the server-side disconnect (`io server disconnect`) stops Socket.io's automatic reconnection, so the client must reconnect itself.
 
 ### 4.2 Frontend (Cloudflare Pages)
 
