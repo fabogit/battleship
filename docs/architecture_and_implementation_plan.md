@@ -599,7 +599,7 @@ Every phase ends deployed and playable on the production URLs.
 
 * **Restart = lost matches** (Render free restarts and deploys). Accepted. **Carried forward (#22, #25):** `SERVER_SHUTDOWN` does not reach clients on a Render deploy (§4.1, #8), so the client has to detect a restart from `SESSION_INVALID` after reconnecting.
 * **Cold start and spin-down:** **resolved (#8).** About 24 s end to end; an open socket keeps the instance awake; Render's health checks do not (§1.4, §4.3).
-* **Mobile:** **partly resolved (#8).** The production client connects on Android; iOS Safari is carried forward to the device playtest (#38).
+* **Mobile connectivity:** **resolved (#8).** The production client wakes the server and connects on Android and on iPhone; layout and touch play are covered by the device playtest (#38).
 * **Platform versions:** **resolved.** Confirmed on Render (Node 24 from `.nvmrc`, pnpm 11 from `packageManager`, #5) and Cloudflare Pages (exact `NODE_VERSION`, `corepack pnpm`, #6). **Carried forward:** `NODE_VERSION` on Pages is pinned, so it must be bumped by hand when Angular raises its Node floor again.
 * **Angular 22 ecosystem compatibility:** **resolved.** `socket.io-client` 4.8 bundles with `@angular/build` (esbuild) without CommonJS warnings (#4). `@angular/build` 22 requires Node `^24.15`, so the Pages image needs an exact recent `NODE_VERSION` (§4.2, #6).
 * **TypeScript held at 6.0.x:** **carried forward.** The workspace pins `typescript ~6.0.3` in the pnpm catalog because Angular 22 (`@angular/compiler-cli`) and `typescript-eslint` both require `>=6.0 <6.1`. TypeScript 7 (native compiler) is preferred; upgrade once both accept it. Splitting versions per package was rejected, since lint already ties every package to 6.0.x.
