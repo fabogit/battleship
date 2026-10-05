@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACCEPTED** — Revision 8 (2026-10-05): D28 added for local tooling: Postman collection and VS Code configuration (#61): §2, §2.1, §3.2. Revision 7 (2026-10-05): D27 added after duplicate shutdown signals under pnpm (#59): §2, §2.1, §3, §4.1. Revision 6 (2026-10-05): D22 switched to a source export condition for `@battleship/core` (#46): §2, §2.1, §3. Revision 5 (2026-10-05): Phase 0 findings measured on the production URLs (#8): §1.4, §4.1, §4.3, §10. Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
+**ACCEPTED** — Revision 9 (2026-10-05): M0 review & consolidation (#51): §1.3, §2, §3, §3.2, §4.1, §4.2, §4.3, §9. Revision 8 (2026-10-05): D28 added for local tooling: Postman collection and VS Code configuration (#61): §2, §2.1, §3.2. Revision 7 (2026-10-05): D27 added after duplicate shutdown signals under pnpm (#59): §2, §2.1, §3, §4.1. Revision 6 (2026-10-05): D22 switched to a source export condition for `@battleship/core` (#46): §2, §2.1, §3. Revision 5 (2026-10-05): Phase 0 findings measured on the production URLs (#8): §1.4, §4.1, §4.3, §10. Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
 
 ---
 
@@ -27,7 +27,7 @@ Players are assumed to be cooperating to play a match. The room is **symmetric**
 * **State lifecycle:** ephemeral, in-memory only. No database.
 * **Network topology:** server-authoritative WebSockets. The server holds the full game state; each client only receives its own fleet and the shot history (fog-of-war).
 * **Stack:**
-  * Package manager: `pnpm` workspaces, Node.js 24 (pinned via `packageManager` field and `.nvmrc`).
+  * Package manager: `pnpm` workspaces, pinned by the root `packageManager` field. Node.js 24: `.nvmrc` and the root `engines` range (enforced on install by `engineStrict`), plus an exact `NODE_VERSION` on Pages (§4.2).
   * All packages are ESM (`"type": "module"`).
   * Shared domain core: pure TypeScript, zero runtime dependencies (`packages/core`).
   * Backend: Fastify + Socket.io (`packages/server`) on Render Free.
@@ -69,7 +69,7 @@ Verified against Render documentation, then measured on the deployed service (#8
 | D17 | Protocol versioning | `PROTOCOL_VERSION` checked in the Socket.io handshake; mismatched clients are told to reload. |
 | D18 | i18n | Small in-house, typed, signal-based translation service (no build-per-locale). |
 | D19 | Backend deploy | Native Node build on Render with filtered install (no Docker in v1). Docker multi-stage image with `pnpm deploy` kept as fallback. |
-| D20 | Delivery | Phase 0 deploy spike, then vertical slices (see §8). |
+| D20 | Delivery | Phase 0 deploy spike, then vertical slices (see §9). |
 | D21 | Origin policy | `ALLOWED_ORIGINS` is enforced, not just advertised: a foreign `Origin` gets `403` on HTTP and its Socket.io handshake (polling and WebSocket) is refused via `allowRequest`. Requests without an `Origin` header (health checks, CLI clients) are allowed. |
 | D22 | Workspace type resolution | Typecheck, lint, tests and `ng serve` resolve `@battleship/core` from its sources through a `"@battleship/source"` export condition, so changes to core need no rebuild. Production builds (server `tsconfig.build.json`, client `production` configuration) keep reading `dist/`. CI runs typecheck → lint → test → build. Per-consumer setup in §3 (#46). |
 | D23 | Socket.io integration | Socket.io is attached directly to Fastify's HTTP server and exposed as `app.io` (Fastify decorator); no `fastify-socket.io` plugin. Shutdown waits for `SERVER_SHUTDOWN` to flush before closing. |
@@ -103,10 +103,16 @@ Verified against Render documentation, then measured on the deployed service (#8
 
 ```text
 battleship/
-├── package.json                   # Root scripts, "packageManager": "pnpm@<pinned>"
-├── pnpm-workspace.yaml            # packages: ['packages/*']
+├── package.json                   # Root scripts, "packageManager": "pnpm@<pinned>", "engines" (Node range)
+├── pnpm-workspace.yaml            # packages, allowBuilds (D26), catalogs (default + angular), engineStrict
 ├── tsconfig.base.json             # Strict compiler options
+├── eslint.config.js               # Flat config for every package (typescript-eslint strictTypeChecked)
+├── .editorconfig
 ├── .nvmrc                         # 24
+├── .github/workflows/ci.yml       # install → typecheck → lint → test → build, required on main
+├── .vscode/                       # Debug configurations, YAML schema override for postman/ (D28)
+├── .postman/                      # Postman Native Git workspace link (D28)
+├── postman/                       # Collection v3 YAML + localhost environment (§3.2, D28)
 ├── docs/
 │   └── architecture_and_implementation_plan.md
 └── packages/
@@ -134,10 +140,12 @@ battleship/
     │   │   │   ├── handlers.ts        # Validate → dispatch to room → emit snapshots
     │   │   │   └── rate-limit.ts
     │   │   ├── config.ts              # PORT / ALLOWED_ORIGINS parsing, validated at startup
+    │   │   ├── origins.ts             # Origin matcher: exact origins + https://*.<domain> wildcards (D21, D24)
     │   │   ├── server.ts              # Fastify bootstrap, /health, origin policy, Socket.io (app.io), graceful shutdown
     │   │   ├── shutdown.ts            # SIGTERM/SIGINT → app.close(); repeats ignored, 10 s deadline (D27)
     │   │   └── index.ts               # Entry point: config, server, signal handling, listen
     │   ├── scripts/echo-client.ts     # Smoke test against a running server (Phase 0)
+    │   ├── .env.example               # Local PORT / ALLOWED_ORIGINS: copy to .env (§3.2)
     │   └── test/                      # Room unit tests (fake clock) + socket integration tests
     │
     └── client/                    # Angular 22, @angular/build (esbuild), unit tests on Vitest + jsdom
@@ -168,7 +176,7 @@ A new consumer of core (or a new workspace package consumed the same way) needs 
 
 ### 3.2 Local Tooling (D28)
 
-* **Run:** `cp packages/server/.env.example packages/server/.env` (allows `http://localhost:4200`), then `pnpm --filter @battleship/server start` and `pnpm --filter @battleship/client start`.
+* **Run:** `cp packages/server/.env.example packages/server/.env` (allows `http://localhost:4200`; without it the server refuses to start, §4.1), then `pnpm build && pnpm --filter @battleship/server start` (`start` runs `dist/`, so rebuild after every change) and `pnpm --filter @battleship/client start`.
 * **Debug (VS Code, `.vscode/launch.json`):** `Server` (builds core and server, runs `dist/` with source maps in the integrated terminal), `Client` (`ng serve` + Chrome/Chromium), `Server + Client`, `Server tests: current file` (Vitest), `Client tests: current file` (`ng test --debug`, attach on port 9229).
 * **Manual checks (Postman):** open the repo folder in the Postman desktop app (Native Git, free plan) and select the `localhost` environment (`baseUrl`, `allowedOrigin`). The `health` folder runs in the Collection Runner; Socket.IO requests (`ECHO`, `ECHO — foreign origin`) are sent by hand. Outside the app: `npx postman-cli collection lint "postman/collections/Battleship API"` and `npx postman-cli collection run "postman/collections/Battleship API" -e postman/environments/localhost.environment.yaml -i health`.
 * **Keeping it current:** an issue that adds a REST route or a Socket.IO event adds the matching request, message or listener to the collection.
@@ -188,9 +196,9 @@ A new consumer of core (or a new workspace package consumed the same way) needs 
   (`...` selects the package plus its workspace dependencies, so the server build never installs Angular: the log shows `Scope: 2 of 4 workspace projects`.) Render's image ships `pnpm` and honours `packageManager` (the log prints `11.21.0`); `corepack enable` fails there because `/usr/bin` is read-only. Node comes from `.nvmrc`.
 * **Start command:** `node packages/server/dist/index.js`
 * **Service settings:** region Frankfurt; health check path `/health` (its request logs are silenced below `warn`, since Render polls it every few seconds); auto-deploy from `main`; build filters limited to `packages/server/**`, `packages/core/**` and the root workspace files, so client-only commits do not restart the server and drop live matches.
-* **Environment:** `PORT` (provided by Render), `ALLOWED_ORIGINS` (comma-separated; Cloudflare Pages production origin plus a `https://*.<project>.pages.dev` wildcard for previews, D24). Malformed values fail the startup.
+* **Environment:** `PORT` (provided by Render; decimal 1–65535, default 3000), `ALLOWED_ORIGINS` (required, comma-separated; Cloudflare Pages production origin plus a `https://*.<project>.pages.dev` wildcard for previews, D24). Missing or malformed values fail the startup: Render's health check sends no `Origin`, so a lost `ALLOWED_ORIGINS` would otherwise deploy as healthy while every browser gets 403. The error points to `packages/server/.env.example` for local runs.
 * **`GET /health`** → `200 { status: "ok", uptime: number }` (`HealthResponse` in `core/protocol.ts`).
-* **CORS:** configured twice — `@fastify/cors` for HTTP routes and the `cors` option of the Socket.io server. Both read `ALLOWED_ORIGINS`. A foreign `Origin` is rejected outright: `403` on HTTP (an `onRequest` hook, before any route) and a refused Socket.io handshake (`allowRequest`), since CORS headers alone do not stop WebSocket upgrades (D21).
+* **CORS:** configured twice — `@fastify/cors` for HTTP routes and the `cors` option of the Socket.io server. Both apply the same origin matcher to `ALLOWED_ORIGINS`, so the policy does not depend on hook order. A foreign `Origin` is rejected outright: `403` on HTTP (an `onRequest` hook, before any route) and a refused Socket.io handshake (`allowRequest`), since CORS headers alone do not stop WebSocket upgrades (D21).
 * **Graceful shutdown:** on `SIGTERM` the server emits `SERVER_SHUTDOWN` to every socket before closing, so clients can say "the server restarted, the match was lost" instead of looping on reconnect. `SIGINT` (Ctrl+C) does the same locally; repeated signals are ignored and a 10 s deadline exits with code 1 (D27). It waits (up to 3 s) for each connection to flush and close first: a long-polling client only receives the message on its next poll (D23). *Measured on a Render deploy (#8):* `SERVER_SHUTDOWN` never reached the connected client: the socket closed silently about 10 s after `SIGTERM`, and Socket.io reconnected to the new instance on its own, which knows nothing of the old rooms. `SERVER_SHUTDOWN` is therefore best effort (it works on local shutdowns and in tests); the client must recognize a restart after reconnecting, when its session turns out to be unknown (`SESSION_INVALID`, §6.3; #22, #25). Conversely, when the message does arrive, the server-side disconnect (`io server disconnect`) stops Socket.io's automatic reconnection, so the client must reconnect itself.
 
 ### 4.2 Frontend (Cloudflare Pages)
@@ -204,14 +212,16 @@ A new consumer of core (or a new workspace package consumed the same way) needs 
 * **Output directory:** `packages/client/dist/client/browser`
 * **Environment:** `NODE_VERSION=24.21.0` (exact: the image resolves `24` to 24.13.1, below Angular 22's `^24.15.0`; the root `engines` field states the same floor), `SKIP_DEPENDENCY_INSTALL=1` (otherwise Pages runs its own unfiltered install before the build command), `COREPACK_ENABLE_DOWNLOAD_PROMPT=0`. Framework preset: none. Project `battleship-ac7` → `https://battleship-ac7.pages.dev`; Render's `ALLOWED_ORIGINS` lists it plus `https://*.battleship-ac7.pages.dev` for previews (D24). The server URL is fixed at build time by Angular environment files (D25), so Pages needs no other variable for now (switch to a `SERVER_URL` variable: #48).
 * **SPA routing:** Pages serves `index.html` for unknown paths when no `404.html` exists, so `/r/<roomId>` deep links work.
-* **Transport:** the client connects to an `https://` server URL, i.e. `wss://` (Pages is HTTPS; `ws://` is blocked as mixed content). Socket.io tries WebSocket first and falls back to HTTPS long-polling on networks that block upgrades.
+* **Transport:** the client connects to an `https://` server URL, i.e. `wss://` (Pages is HTTPS; `ws://` is blocked as mixed content). Socket.io tries WebSocket first and falls back to HTTPS long-polling on networks that block upgrades. The fallback needs `tryAllTransports: true`: without it engine.io-client 6.6 keeps retrying WebSocket (#51).
 
 ### 4.3 Cold-Start Handling (client `ServerWakeService`)
 
-1. On app start, `GET /health` with exponential backoff (500 ms doubling, cap 5 s between attempts, give up after 90 s; each attempt times out after 10 s). Giving up shows a retry button.
-2. While Render serves its loading page the request fails as a CORS/parse error: treat any non-JSON or failed response as "still waking". *Measured (#8):* Render held `fetch` requests open until the instance was up rather than serving the loading page, so attempts ended by the 10 s per-attempt timeout; the third attempt succeeded about 23 s after the page opened. The non-JSON handling stays as a fallback; the timeout and the "about a minute" copy are up for review (#51).
+1. On app start, `GET /health` until it answers, giving up after 90 s. Each attempt may use all the time left before giving up, since Render holds the request open until the instance is ready (step 2); failed attempts are spaced by an exponential backoff (500 ms doubling, cap 5 s). Giving up shows a retry button.
+2. While Render serves its loading page the request fails as a CORS/parse error: treat any non-JSON or failed response as "still waking". *Measured (#8):* Render held `fetch` requests open until the instance was up rather than serving the loading page. With the original 10 s per-attempt timeout, the second attempt was aborted and the third succeeded about 23 s after the page opened; the timeout now spans the time left (#51). The non-JSON handling stays as a fallback. The waking hint says a sleeping server "usually takes about half a minute".
 3. UI shows a "Waking up the server…" state; nickname entry stays usable meanwhile.
 4. The Socket.io connection is opened only after `/health` succeeds.
+
+*A refused origin looks like a cold start (#51):* `/health` answers a foreign origin with a 403 without CORS headers (D21), which the browser cannot tell apart from Render's loading page, so the page shows "Waking up the server…" for 90 s and then "The server is not responding". A Socket.io handshake refused by `allowRequest` likewise keeps the socket active and retrying; only a middleware error (`next(err)`, used by #22 for `PROTOCOL_MISMATCH`/`SESSION_INVALID`) stops it. Telling "refused" apart from "retrying" is deferred to #25.
 
 ---
 
@@ -621,6 +631,15 @@ Every phase ends deployed and playable on the production URLs.
    * Surrender; rematch flow.
 5. **Polish**
    * i18n (IT/EN), mobile layout refinement, accessibility pass, animations (dice, shots).
+
+**Review & consolidation.** Every milestone (M0–M5) ends with a `Mn · Review & consolidation` issue (#51–#56) that depends on all its other issues:
+
+1. Read-only analysis of `main`: checks re-run, production smoke test, findings posted on the issue, each tagged bug, refactor, docs or defer.
+2. Triage: fix now only code the milestone delivered, without abstractions for later phases; deferred findings go into the issues that will touch that code, or into new ones.
+3. Small themed PRs, bugfixes separate from refactors; the ADR changes go in the last PR, which closes the issue and bumps the revision.
+4. After the deploy: re-measure in production what the fixes changed, then a retro comment on the issue.
+
+M0 (#51) piloted the step.
 
 ---
 
