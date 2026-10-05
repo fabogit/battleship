@@ -39,20 +39,23 @@ export interface ServerOptions {
  */
 export function createServer(options: ServerOptions): FastifyInstance {
   const isOriginAllowed = createOriginMatcher(options.allowedOrigins);
+  // CORS callback result: reflect an allowed `Origin`, send no CORS headers otherwise.
+  const corsOrigin = (origin: string | undefined): string | false => (isOriginAllowed(origin) ? (origin ?? false) : false);
 
   const app = Fastify({ logger: options.logger });
 
   // Foreign origins get a plain 403 before any route runs (ADR D21).
   app.addHook('onRequest', async (request, reply) => {
     if (!isOriginAllowed(request.headers.origin)) {
-      await reply.code(403).send({ statusCode: 403, error: 'Forbidden', message: 'Origin not allowed' });
+      return reply.code(403).send({ statusCode: 403, error: 'Forbidden', message: 'Origin not allowed' });
     }
   });
 
   // Socket.io handles /socket.io/ requests before Fastify sees them, so CORS is configured on both.
+  // Both apply the matcher, so the policy does not depend on the hook above running first.
   void app.register(cors, {
     origin: (origin, callback) => {
-      callback(null, origin ?? false);
+      callback(null, corsOrigin(origin));
     },
   });
 
@@ -62,7 +65,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
   const io: GameServer = new Server(app.server, {
     cors: {
       origin: (origin, callback) => {
-        callback(null, isOriginAllowed(origin) ? (origin ?? false) : false);
+        callback(null, corsOrigin(origin));
       },
     },
     // CORS headers alone do not stop WebSocket upgrades, so the handshake is rejected outright.
