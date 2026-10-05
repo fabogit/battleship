@@ -1,3 +1,5 @@
+import { parseOriginEntry } from './origins.js';
+
 export interface ServerConfig {
   readonly port: number;
   readonly allowedOrigins: readonly string[];
@@ -24,7 +26,10 @@ function parsePort(value: string | undefined): number {
   return port;
 }
 
-/** Normalizes each entry to its URL origin, so `https://example.com/` matches the browser's `Origin: https://example.com`. */
+/**
+ * Normalizes each entry to its URL origin, so `https://example.com/` matches the browser's `Origin: https://example.com`.
+ * Wildcard entries (`https://*.<project>.pages.dev`) are kept as patterns (ADR D24).
+ */
 function parseOrigins(value: string | undefined): string[] {
   if (value === undefined) {
     return [];
@@ -33,11 +38,5 @@ function parseOrigins(value: string | undefined): string[] {
     .split(',')
     .map((entry) => entry.trim())
     .filter((entry) => entry !== '')
-    .map((entry) => {
-      const origin = URL.parse(entry)?.origin;
-      if (origin === undefined || origin === 'null') {
-        throw new Error(`Invalid origin in ALLOWED_ORIGINS: "${entry}"`);
-      }
-      return origin;
-    });
+    .map(parseOriginEntry);
 }
