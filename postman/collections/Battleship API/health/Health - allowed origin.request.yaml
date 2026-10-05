@@ -1,0 +1,17 @@
+$kind: http-request
+name: 'Health — allowed origin'
+description: 'What the browser client sends. `allowedOrigin` must be listed in the server''s `ALLOWED_ORIGINS`.'
+url: '{{baseUrl}}/health'
+method: GET
+order: 2000
+headers:
+  - key: Origin
+    value: '{{allowedOrigin}}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('200 OK', () => pm.response.to.have.status(200));
+      pm.test('CORS echoes the origin', () => {
+        pm.expect(pm.response.headers.get('Access-Control-Allow-Origin')).to.eql(pm.variables.get('allowedOrigin'));
+      });
+    language: text/javascript

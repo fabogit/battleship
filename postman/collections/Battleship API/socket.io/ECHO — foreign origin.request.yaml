@@ -1,0 +1,13 @@
+$kind: socket.io-request
+id: a852768f4054be167849917c
+name: ECHO — foreign origin
+description: |-
+  Same connection with an `Origin` header that is not in `ALLOWED_ORIGINS`.
+  **Connect** must fail: `allowRequest` rejects the handshake with 403 before any upgrade (ADR D21).
+url: '{{baseUrl}}'
+headers:
+  - key: Origin
+    value: '{{foreignOrigin}}'
+settings:
+  version: '4'
+order: 2000

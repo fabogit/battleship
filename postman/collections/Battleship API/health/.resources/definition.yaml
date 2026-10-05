@@ -1,0 +1,9 @@
+$kind: collection
+name: Health
+description: |-
+  `GET /health` — Fastify route that returns `{ status: "ok", uptime: <seconds> }`.
+
+  Render's own health check hits this every few seconds (no `Origin` header).
+  Browser clients poll it to wake the server after a Render Free spin-down (~24 s cold start).
+  Foreign origins are rejected with 403 by the `onRequest` hook before the route runs (ADR D21).
+order: 1000

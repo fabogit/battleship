@@ -1,0 +1,27 @@
+$kind: socket.io-example
+request:
+  url: "{{baseUrl}}"
+  events:
+    - name: SERVER_SHUTDOWN
+      description: The server is restarting; any match in progress is lost (ADR §4.1).
+      subscribeOnConnect: true
+response:
+  events:
+    - id: 8e8e256d-2c76-4dd1-840d-eedc02a21f7b
+      type: success
+      requestUrl: http://localhost:3000/socket.io/?EIO=4&transport=websocket
+      statusCode: 101
+      system: true
+      responseHeaders:
+        Upgrade: websocket
+        Connection: Upgrade
+        Sec-WebSocket-Accept: 0A1njYAGo8RfkDwNjbJbkscNkfk=
+    - id: 7ec8dcb3-97a1-4d8b-903e-54f8a3a55af6
+      type: outgoing
+      content: '"[{\"id\":\"f939eb0d-5c0f-498b-859c-c9df7003796f\",\"name\":\"Arg 1\",\"value\":\"{\\n  \\\"hello\\\": \\\"postman\\\"\\n}\",\"meta\":{\"mimeType\":\"application/json\",\"size\":24}}]"'
+      eventName: ECHO
+    - id: cdfdbee8-2525-4a12-bd51-c915cae8f215
+      type: incoming
+      content: '"[{\"id\":\"64f76cf0-bfca-433d-9f7b-e29488d8af42\",\"name\":\"Arg 1\",\"value\":\"{\\\"ok\\\":true,\\\"payload\\\":{\\\"hello\\\":\\\"postman\\\"},\\\"protocolVersion\\\":1}\",\"meta\":{\"mimeType\":\"application/json\",\"size\":61}}]"'
+      eventName: ECHO
+order: 1791212961290

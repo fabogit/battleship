@@ -1,0 +1,19 @@
+$kind: http-request
+name: 'Health — CORS preflight'
+url: '{{baseUrl}}/health'
+method: OPTIONS
+order: 3000
+headers:
+  - key: Origin
+    value: '{{allowedOrigin}}'
+  - key: Access-Control-Request-Method
+    value: GET
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('204 No Content', () => pm.response.to.have.status(204));
+      pm.test('CORS allows the origin and GET', () => {
+        pm.expect(pm.response.headers.get('Access-Control-Allow-Origin')).to.eql(pm.variables.get('allowedOrigin'));
+        pm.expect(pm.response.headers.get('Access-Control-Allow-Methods')).to.include('GET');
+      });
+    language: text/javascript

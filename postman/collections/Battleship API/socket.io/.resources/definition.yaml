@@ -1,0 +1,6 @@
+$kind: collection
+description: |-
+  Socket.IO v4 requests over WebSocket, sent by hand: Socket.IO requests can't run in the Collection Runner.
+  The long-polling transport is covered by the server tests (`pnpm --filter @battleship/server test`)
+  and by `pnpm --filter @battleship/server echo --transport polling`.
+order: 2000
