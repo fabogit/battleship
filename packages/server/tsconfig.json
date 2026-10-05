@@ -2,7 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    // Resolve @battleship/core from its sources (D22); tsconfig.build.json keeps reading dist/.
+    "customConditions": ["@battleship/source"]
   },
   "include": ["src", "test", "scripts", "vitest.config.ts"]
 }
