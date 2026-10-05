@@ -7,8 +7,8 @@ Real-time 1v1 Battleship in the browser: two players meet in a private room, pla
 ### Rooms and players
 
 **Room**:
-A private space for exactly two players, shared via link (`/r/<roomId>`). It outlives a match: a rematch is played in the same room.
-_Avoid_: lobby, game
+A private space for exactly two players, shared via link (`/r/<roomId>`). It outlives a match: a rematch is played in the same room. "Lobby" names a client screen (`features/lobby`: waiting and rules), not the room.
+_Avoid_: lobby (for the room itself), game
 
 **Seat**:
 One of the two public positions in a room: `P1` for the creator, `P2` for the joiner. A disconnected player keeps their seat for `DISCONNECT_FORFEIT_MS`.
