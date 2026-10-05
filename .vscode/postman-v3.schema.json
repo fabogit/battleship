@@ -1,0 +1,5 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "Postman publishes no JSON schema for Collection v3 YAML; validate with `postman-cli collection lint`. This permissive schema only stops SchemaStore's CrowdSec schema (**/collections/*/*.yaml) from matching postman/.",
+  "type": "object"
+}
