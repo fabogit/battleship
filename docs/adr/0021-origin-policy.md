@@ -14,4 +14,4 @@ date: 2026-10-04
 ## Links
 
 * Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
-* Spec: [3. Monorepo Topology](../development.md#3-monorepo-topology) · [4.1 Backend (Render Free Web Service)](../deployment.md#41-backend-render-free-web-service) · [4.3 Cold-Start Handling (client `ServerWakeService`)](../client.md#43-cold-start-handling-client-serverwakeservice)
+* Spec: [Development: Monorepo topology](../development.md#monorepo-topology) · [Deployment: Backend (Render)](../deployment.md#backend-render) · [Client: Cold-start handling](../client.md#cold-start-handling)

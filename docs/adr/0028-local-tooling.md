@@ -5,7 +5,7 @@ date: 2026-10-05
 
 # ADR-0028: Local tooling
 
-Manual checks live in a Postman collection committed through Postman Native Git (Collection v3 YAML under `postman/`, workspace link in `.postman/`); every issue that adds a REST route or a Socket.IO event updates it. `.vscode/` is committed: debug configurations for server, client and their tests, and a YAML schema override for `postman/`. Details in [§3.2](../development.md#32-local-tooling-d28) (#61).
+Manual checks live in a Postman collection committed through Postman Native Git (Collection v3 YAML under `postman/`, workspace link in `.postman/`); every issue that adds a REST route or a Socket.IO event updates it. `.vscode/` is committed: debug configurations for server, client and their tests, and a YAML schema override for `postman/`. Details in [Local tooling](../development.md#local-tooling) (#61).
 
 ## Considered options
 
@@ -14,5 +14,5 @@ Manual checks live in a Postman collection committed through Postman Native Git 
 ## Links
 
 * Added on 2026-10-05 for local tooling: Postman collection and VS Code configuration ([#61](https://github.com/fabogit/battleship/issues/61)).
-* Spec: [3.2 Local Tooling (D28)](../development.md#32-local-tooling-d28) · [3. Monorepo Topology](../development.md#3-monorepo-topology)
+* Spec: [Development: Local tooling](../development.md#local-tooling) · [Development: Monorepo topology](../development.md#monorepo-topology)
 * Issues: [#61](https://github.com/fabogit/battleship/issues/61)

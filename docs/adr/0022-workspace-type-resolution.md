@@ -5,7 +5,7 @@ date: 2026-10-04
 
 # ADR-0022: Workspace type resolution
 
-Typecheck, lint, tests and `ng serve` resolve `@battleship/core` from its sources through a `"@battleship/source"` export condition, so changes to core need no rebuild. Production builds (server `tsconfig.build.json`, client `production` configuration) keep reading `dist/`. CI runs typecheck → lint → test → build. Per-consumer setup in [§3](../development.md#3-monorepo-topology) (#46).
+Typecheck, lint, tests and `ng serve` resolve `@battleship/core` from its sources through a `"@battleship/source"` export condition, so changes to core need no rebuild. Production builds (server `tsconfig.build.json`, client `production` configuration) keep reading `dist/`. CI runs typecheck → lint → test → build. Per-consumer setup in [Resolving `@battleship/core`](../development.md#resolving-battleshipcore) (#46).
 
 ## Considered options
 
@@ -22,5 +22,5 @@ and its alternative ended with "`dist/` now, source condition when the client la
 ## Links
 
 * Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
-* Spec: [3. Monorepo Topology](../development.md#3-monorepo-topology) · [3.1 Resolving `@battleship/core` (D22)](../development.md#31-resolving-battleshipcore-d22)
+* Spec: [Development: Resolving `@battleship/core`](../development.md#resolving-battleshipcore) · [Development: Monorepo topology](../development.md#monorepo-topology)
 * Issues: [#46](https://github.com/fabogit/battleship/issues/46)

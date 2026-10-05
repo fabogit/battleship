@@ -26,7 +26,7 @@ pnpm --filter @battleship/server start                 # http://localhost:3000 (
 pnpm --filter @battleship/client start                 # http://localhost:4200, in a second terminal
 ```
 
-The server's `start` runs `dist/`, so run `pnpm build` again after changing server or core code. Debug configurations for VS Code and the Postman collection are described in [Local tooling](docs/development.md#32-local-tooling-d28).
+The server's `start` runs `dist/`, so run `pnpm build` again after changing server or core code. Debug configurations for VS Code and the Postman collection are described in [Local tooling](docs/development.md#local-tooling).
 
 ## Checks
 
@@ -56,7 +56,7 @@ CI runs the same steps, in this order, on every pull request and on every push t
 
 ## How work is tracked
 
-* **Milestones:** GitHub [milestones](https://github.com/fabogit/battleship/milestones) M0–M5 follow the [roadmap](docs/roadmap.md#9-implementation-roadmap); each one ends with a review & consolidation issue.
+* **Milestones:** GitHub [milestones](https://github.com/fabogit/battleship/milestones) M0–M5 follow the [roadmap](docs/roadmap.md#implementation-roadmap); each one ends with a [review & consolidation](docs/roadmap.md#review--consolidation) issue.
 * **Board:** the [project board](https://github.com/users/fabogit/projects/3) shows every issue and its status.
 * **Flow:** one issue → one branch → one pull request, which closes the issue.
 * **CI:** required on `main`; a pull request merges only when it passes.

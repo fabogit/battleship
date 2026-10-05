@@ -14,4 +14,4 @@ Socket.io is attached directly to Fastify's HTTP server and exposed as `app.io` 
 ## Links
 
 * Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
-* Spec: [4.1 Backend (Render Free Web Service)](../deployment.md#41-backend-render-free-web-service)
+* Spec: [Deployment: Backend (Render)](../deployment.md#backend-render)

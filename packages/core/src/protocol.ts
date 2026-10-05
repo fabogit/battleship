@@ -3,7 +3,7 @@
 /** Callback a client passes as the last argument of a command to receive the server's reply. */
 export type Ack<T> = (response: T) => void;
 
-/** Body of `GET /health` (docs/deployment.md#41-backend-render-free-web-service); the client polls it to wake the server (docs/client.md#43-cold-start-handling-client-serverwakeservice). */
+/** Body of `GET /health` (docs/deployment.md#backend-render); the client polls it to wake the server (docs/client.md#cold-start-handling). */
 export interface HealthResponse {
   readonly status: 'ok';
   /** Seconds since the server process started. */
@@ -23,6 +23,6 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
-  /** The server is restarting; any match in progress is lost (docs/deployment.md#41-backend-render-free-web-service). */
+  /** The server is restarting; any match in progress is lost (docs/deployment.md#backend-render). */
   SERVER_SHUTDOWN: (payload: Record<string, never>) => void;
 }

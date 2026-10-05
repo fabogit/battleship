@@ -1,6 +1,8 @@
-# 6. Server Behaviour (`packages/server`)
+# Server
 
-## 6.1 Room State Machine
+Behaviour of the game server, `packages/server`.
+
+## Room state machine
 
 ```text
    CREATE_ROOM
@@ -36,7 +38,7 @@
                                           └──────────► PLACEMENT
 ```
 
-## 6.2 Transition Rules
+## Transition rules
 
 ### Room creation & joining
 
@@ -108,7 +110,7 @@
 * A room with no connected player is destroyed after `EMPTY_ROOM_TTL_MS`.
 * A room in `GAME_OVER` is destroyed after `GAME_OVER_TTL_MS` without a resolved rematch.
 
-## 6.3 Sessions & Reconnection
+## Sessions & reconnection
 
 * **Credentials:** on `CREATE_ROOM` / `JOIN_ROOM` the server returns a `playerSecret` (`crypto.randomUUID()`). Seats (`P1`/`P2`) are public; secrets are never sent to the other player.
 * **Room ids:** 8 characters of a URL-safe, unambiguous alphabet, generated with `crypto`.
@@ -120,14 +122,14 @@
 * **Latest connection wins:** binding a new socket to a seat emits `SESSION_REPLACED` to the previous socket and disconnects it.
 * **Mobile:** app switching kills sockets frequently. Reconnection is a primary flow and must be covered by integration tests.
 
-## 6.4 Hardening
+## Hardening
 
 * Every inbound payload passes the `core/validation.ts` guards before reaching room logic; failures → `INVALID_PAYLOAD`.
 * Socket.io `maxHttpBufferSize` is set to a small value (e.g. 16 KB).
 * Per-socket rate limit (`RATE_LIMIT_EVENTS_PER_SECOND`) → `RATE_LIMITED`.
 * `MAX_ROOMS` cap → `SERVER_FULL`.
 
-## 6.5 Testability
+## Testability
 
 * Room logic is a pure transition function `(state, command, now) → { state, effects }`; timers are scheduled effects executed by a thin `scheduler.ts` over an injectable `Clock`.
 * The `Rng` is injected (dice, auto shots, auto placement).

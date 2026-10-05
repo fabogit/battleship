@@ -33,4 +33,4 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0027](0027-shutdown-signals.md) | Shutdown signals | Accepted, 2026-10-05 |
 | [ADR-0028](0028-local-tooling.md) | Local tooling | Accepted, 2026-10-05 |
 
-A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#9-implementation-roadmap)).
+A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

@@ -3,7 +3,7 @@ request:
   url: "{{baseUrl}}"
   events:
     - name: SERVER_SHUTDOWN
-      description: The server is restarting; any match in progress is lost (docs/deployment.md#41-backend-render-free-web-service).
+      description: The server is restarting; any match in progress is lost (docs/deployment.md#backend-render).
       subscribeOnConnect: true
 response:
   events:

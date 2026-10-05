@@ -11,7 +11,7 @@ import { routes } from './app.routes';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    // Already the Angular 22 default; explicit because the app relies on it (no zone.js, docs/client.md#81-reactive-model).
+    // Already the Angular 22 default; explicit because the app relies on it (no zone.js, docs/client.md#reactive-model).
     provideZonelessChangeDetection(),
     provideHttpClient(),
     provideRouter(routes),

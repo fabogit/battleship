@@ -14,5 +14,5 @@ date: 2026-10-04
 ## Links
 
 * Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
-* Spec: [3. Monorepo Topology](../development.md#3-monorepo-topology) · [4.1 Backend (Render Free Web Service)](../deployment.md#41-backend-render-free-web-service) · [4.2 Frontend (Cloudflare Pages)](../deployment.md#42-frontend-cloudflare-pages)
+* Spec: [Development: Monorepo topology](../development.md#monorepo-topology) · [Deployment: Backend (Render)](../deployment.md#backend-render) · [Deployment: Frontend (Cloudflare Pages)](../deployment.md#frontend-cloudflare-pages)
 * Issues: [#5](https://github.com/fabogit/battleship/issues/5)

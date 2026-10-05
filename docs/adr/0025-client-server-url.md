@@ -14,5 +14,5 @@ The server URL lives in Angular environment files: `environment.ts` holds the Re
 ## Links
 
 * Added on 2026-10-05 during the Phase 0 client bootstrap ([#4](https://github.com/fabogit/battleship/issues/4)).
-* Spec: [3. Monorepo Topology](../development.md#3-monorepo-topology) · [4.2 Frontend (Cloudflare Pages)](../deployment.md#42-frontend-cloudflare-pages)
+* Spec: [Development: Monorepo topology](../development.md#monorepo-topology) · [Deployment: Frontend (Cloudflare Pages)](../deployment.md#frontend-cloudflare-pages)
 * Issues: [#48](https://github.com/fabogit/battleship/issues/48)

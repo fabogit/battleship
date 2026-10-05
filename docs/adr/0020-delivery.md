@@ -5,7 +5,7 @@ date: 2026-10-03
 
 # ADR-0020: Delivery
 
-Phase 0 deploy spike, then vertical slices (see [§9](../roadmap.md#9-implementation-roadmap)).
+Phase 0 deploy spike, then vertical slices (see [Implementation roadmap](../roadmap.md#implementation-roadmap)).
 
 ## Considered options
 
@@ -14,4 +14,4 @@ Phase 0 deploy spike, then vertical slices (see [§9](../roadmap.md#9-implementa
 ## Links
 
 * Added on 2026-10-03 after the requirements analysis session.
-* Spec: [9. Implementation Roadmap](../roadmap.md#9-implementation-roadmap)
+* Spec: [Roadmap: Implementation roadmap](../roadmap.md#implementation-roadmap)

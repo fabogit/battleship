@@ -10,14 +10,13 @@ export type WakeStatus = 'idle' | 'waking' | 'awake' | 'unreachable';
 /** Delay before the first retry; doubles after every failed attempt up to `MAX_RETRY_DELAY_MS`. */
 export const FIRST_RETRY_DELAY_MS = 500;
 export const MAX_RETRY_DELAY_MS = 5_000;
-/** Render's free tier wakes up in ~24 s as measured (docs/deployment.md#14-hosting-facts-that-shape-the-design-render-free); 90 s leaves room for slow starts. */
+/** Render's free tier wakes up in ~24 s as measured (docs/deployment.md#hosting-facts-render-free); 90 s leaves room for slow starts. */
 export const GIVE_UP_AFTER_MS = 90_000;
 
 /**
  * Polls `GET /health` until the server answers, so the Socket.io connection is only opened on a
- * running server (docs/client.md#43-cold-start-handling-client-serverwakeservice). While Render
- * spins up it serves its own HTML page without CORS headers: every failed, non-JSON or unexpected
- * response counts as "still waking".
+ * running server (docs/client.md#cold-start-handling). While Render spins up it serves its own HTML
+ * page without CORS headers: every failed, non-JSON or unexpected response counts as "still waking".
  */
 @Service()
 export class ServerWakeService {

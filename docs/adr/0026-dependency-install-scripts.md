@@ -14,4 +14,4 @@ pnpm 11 fails the install on unreviewed dependency build scripts, so `pnpm-works
 ## Links
 
 * Added on 2026-10-05 during the Phase 0 client bootstrap ([#4](https://github.com/fabogit/battleship/issues/4)).
-* Spec: [3. Monorepo Topology](../development.md#3-monorepo-topology)
+* Spec: [Development: Monorepo topology](../development.md#monorepo-topology)

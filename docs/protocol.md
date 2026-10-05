@@ -1,6 +1,8 @@
-# 7. Protocol Contract (`packages/core/src/protocol.ts`)
+# Protocol
 
-## 7.1 Client → Server
+The contract lives in `packages/core/src/protocol.ts`.
+
+## Client → server
 
 All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: false, error: ErrorCode })`.
 
@@ -21,7 +23,7 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 | `LEAVE_ROOM` | `{}` | — | any |
 | `ECHO` | any | `{ payload, protocolVersion }` | Phase 0 connectivity check only |
 
-## 7.2 Server → Client
+## Server → client
 
 | Event | Payload | Purpose |
 |---|---|---|
@@ -31,7 +33,7 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 | `SESSION_REPLACED` | `{}` | This socket was superseded by a newer one |
 | `SERVER_SHUTDOWN` | `{}` | Server restarting; the match is lost |
 
-## 7.3 Snapshot
+## Snapshot
 
 ```typescript
 export interface PlayerView {
@@ -78,6 +80,6 @@ export interface PlayerStateSnapshot {
 
 Timers are sent as **remaining milliseconds** (not absolute timestamps) to avoid client clock skew. The client counts down locally and re-syncs on every snapshot.
 
-## 7.4 Error Codes
+## Error codes
 
 `PROTOCOL_MISMATCH`, `INVALID_PAYLOAD`, `RATE_LIMITED`, `SERVER_FULL`, `ROOM_NOT_FOUND`, `ROOM_FULL`, `SESSION_INVALID`, `WRONG_PHASE`, `NOT_YOUR_TURN`, `NOT_ALLOWED`, `INVALID_RULES`, `STALE_RULES`, `INVALID_PLACEMENT`, `PLACEMENT_LOCKED`, `INVALID_TARGETS`.

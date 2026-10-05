@@ -14,5 +14,5 @@ date: 2026-10-05
 ## Links
 
 * Added on 2026-10-05 after duplicate shutdown signals under pnpm ([#59](https://github.com/fabogit/battleship/issues/59)).
-* Spec: [3. Monorepo Topology](../development.md#3-monorepo-topology) · [4.1 Backend (Render Free Web Service)](../deployment.md#41-backend-render-free-web-service)
+* Spec: [Development: Monorepo topology](../development.md#monorepo-topology) · [Deployment: Backend (Render)](../deployment.md#backend-render)
 * Issues: [#59](https://github.com/fabogit/battleship/issues/59)

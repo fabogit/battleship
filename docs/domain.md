@@ -1,6 +1,8 @@
-# 5. Domain Specification (`packages/core`)
+# Domain
 
-## 5.1 Constants (`constants.ts`)
+The domain lives in `packages/core`; each section covers one of its modules: `constants.ts`, `types.ts`, `rules.ts`, `placement.ts` and `engine.ts`.
+
+## Constants
 
 | Constant | Value | Notes |
 |---|---|---|
@@ -18,7 +20,7 @@
 | `RATE_LIMIT_EVENTS_PER_SECOND` | `20` | Per socket |
 | `SESSION_STORE_TTL_MS` | `86_400_000` | Client-side expiry of stored credentials |
 
-## 5.2 Domain Types (`types.ts`)
+## Domain types
 
 ```typescript
 export type Coordinate = {
@@ -91,12 +93,12 @@ export type GameOverReason =
 export type RematchChoice = 'SAME_RULES' | 'CHANGE_RULES' | 'LEAVE';
 ```
 
-## 5.3 Rules (`rules.ts`)
+## Rules
 
 * `DEFAULT_RULES`: no extra turn on hit, adjacency not allowed, 60 s turns, no salvo, `AUTO_RANDOM_SHOT`.
 * `validateRules(rules)`: checks enum membership and the salvo/extra-turn exclusivity. The client UI disables the incompatible toggle; the server still rejects with `INVALID_RULES`.
 
-## 5.4 Placement (`placement.ts`)
+## Placement
 
 * **Bounds:** every derived coordinate lies on the board.
 * **Linearity & length:** derived from `start` + `orientation` + `SHIP_LENGTH[type]`.
@@ -108,7 +110,7 @@ export type RematchChoice = 'SAME_RULES' | 'CHANGE_RULES' | 'LEAVE';
 * **`completeFleet(draft, rules, rng)`:** keeps the draft's ships and places the missing ones. If the remaining ships cannot fit (possible when adjacency is forbidden), it discards the draft and calls `generateRandomFleet`.
 * All randomness goes through an injected `Rng` so tests are deterministic with a fixed seed.
 
-## 5.5 Shot Engine (`engine.ts`)
+## Shot engine
 
 * **Unified model:** every turn fires a list of targets. Standard mode is a salvo of size 1.
 * **Shots allowed per turn:** standard → `1`; salvo → `min(shooter's surviving ships, opponent's unshot cells)`.
