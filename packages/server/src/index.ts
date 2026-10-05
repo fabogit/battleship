@@ -7,10 +7,6 @@ import { handleShutdownSignals } from './shutdown.js';
 const config = loadConfig(process.env);
 const app = createServer({ allowedOrigins: config.allowedOrigins, logger: true });
 
-if (config.allowedOrigins.length === 0) {
-  app.log.warn('ALLOWED_ORIGINS is empty: browser clients from any origin will be rejected');
-}
-
 handleShutdownSignals(app);
 
 // 0.0.0.0 is required on Render; the platform routes traffic to the container port.
