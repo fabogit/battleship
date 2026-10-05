@@ -12,6 +12,8 @@ import {
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Server } from 'socket.io';
 
+import { createOriginMatcher } from './origins.js';
+
 /** Upper bound for flushing `SERVER_SHUTDOWN`; Render sends SIGKILL 30 s after SIGTERM. */
 const SHUTDOWN_GRACE_MS = 3_000;
 
@@ -25,6 +27,7 @@ declare module 'fastify' {
 }
 
 export interface ServerOptions {
+  /** Exact origins and `https://*.<domain>` wildcards, as validated by `loadConfig` (ADR D21, D24). */
   readonly allowedOrigins: readonly string[];
   readonly logger: boolean;
 }
@@ -35,9 +38,7 @@ export interface ServerOptions {
  * disconnected before the HTTP server closes.
  */
 export function createServer(options: ServerOptions): FastifyInstance {
-  const allowedOrigins = new Set(options.allowedOrigins);
-  // No Origin header: not a browser cross-origin request (health checks, CLI clients), so CORS does not apply.
-  const isOriginAllowed = (origin: string | undefined): boolean => origin === undefined || allowedOrigins.has(origin);
+  const isOriginAllowed = createOriginMatcher(options.allowedOrigins);
 
   const app = Fastify({ logger: options.logger });
 
@@ -55,10 +56,15 @@ export function createServer(options: ServerOptions): FastifyInstance {
     },
   });
 
-  app.get('/health', (): HealthResponse => ({ status: 'ok', uptime: process.uptime() }));
+  // Render's health check hits this every few seconds: keep it out of the logs unless something goes wrong.
+  app.get('/health', { logLevel: 'warn' }, (): HealthResponse => ({ status: 'ok', uptime: process.uptime() }));
 
   const io: GameServer = new Server(app.server, {
-    cors: { origin: [...allowedOrigins] },
+    cors: {
+      origin: (origin, callback) => {
+        callback(null, isOriginAllowed(origin) ? (origin ?? false) : false);
+      },
+    },
     // CORS headers alone do not stop WebSocket upgrades, so the handshake is rejected outright.
     allowRequest: (request, callback) => {
       callback(null, isOriginAllowed(request.headers.origin));

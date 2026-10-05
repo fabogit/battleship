@@ -153,10 +153,11 @@ battleship/
 * **Root directory:** repository root (`packages/server` depends on `packages/core` via workspace link).
 * **Build command:**
   ```bash
-  corepack enable && pnpm install --frozen-lockfile --filter @battleship/server... && pnpm --filter @battleship/server... build
+  pnpm --version && pnpm install --frozen-lockfile --filter @battleship/server... && pnpm --filter @battleship/server... build
   ```
-  (`...` selects the package plus its workspace dependencies, so the server build never installs Angular.)
+  (`...` selects the package plus its workspace dependencies, so the server build never installs Angular: the log shows `Scope: 2 of 4 workspace projects`.) Render's image ships `pnpm` and honours `packageManager` (the log prints `11.21.0`); `corepack enable` fails there because `/usr/bin` is read-only. Node comes from `.nvmrc`.
 * **Start command:** `node packages/server/dist/index.js`
+* **Service settings:** region Frankfurt; health check path `/health` (its request logs are silenced below `warn`, since Render polls it every few seconds); auto-deploy from `main`; build filters limited to `packages/server/**`, `packages/core/**` and the root workspace files, so client-only commits do not restart the server and drop live matches.
 * **Environment:** `PORT` (provided by Render), `ALLOWED_ORIGINS` (comma-separated; Cloudflare Pages production origin plus a `https://*.<project>.pages.dev` wildcard for previews, D24). Malformed values fail the startup.
 * **`GET /health`** → `200 { status: "ok", uptime: number }` (`HealthResponse` in `core/protocol.ts`).
 * **CORS:** configured twice — `@fastify/cors` for HTTP routes and the `cors` option of the Socket.io server. Both read `ALLOWED_ORIGINS`. A foreign `Origin` is rejected outright: `403` on HTTP (an `onRequest` hook, before any route) and a refused Socket.io handshake (`allowRequest`), since CORS headers alone do not stop WebSocket upgrades (D21).
@@ -595,7 +596,7 @@ Every phase ends deployed and playable on the production URLs.
 ## 10. Open Risks
 
 * **Restart = lost matches** (Render free restarts and deploys). Accepted; mitigated only by `SERVER_SHUTDOWN` messaging.
-* **Platform versions:** Node 24 / pnpm support on the Render and Cloudflare Pages build images must be confirmed in Phase 0.
+* **Platform versions:** confirmed on Render (Node 24 from `.nvmrc`, pnpm 11 from `packageManager`, #5); Cloudflare Pages still to be confirmed in #6.
 * **Angular 22 ecosystem compatibility:** `socket.io-client` 4.8 bundles with `@angular/build` (esbuild) without CommonJS warnings (#4). `@angular/build` 22 requires Node `^24.15`, so the Pages image must resolve `NODE_VERSION=24` to a recent 24.x (#6).
 * **TypeScript held at 6.0.x:** the workspace pins `typescript ~6.0.3` in the pnpm catalog because Angular 22 (`@angular/compiler-cli`) and `typescript-eslint` both require `>=6.0 <6.1`. TypeScript 7 (native compiler) is preferred; upgrade once both accept it. Splitting versions per package was rejected, since lint already ties every package to 6.0.x.
 * **Placement time on mobile:** 60 s may be tight with touch placement; tune after playtesting.

@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { createServer } from '../src/server.js';
 
 const ALLOWED = 'https://battleship.example';
+const PREVIEW = 'https://3f9a1c2e.battleship.pages.dev';
 const FOREIGN = 'https://evil.example';
 const TRANSPORTS = ['websocket', 'polling'] as const;
 
@@ -17,7 +18,7 @@ let baseUrl: string;
 const clients: ClientSocket[] = [];
 
 beforeEach(async () => {
-  app = createServer({ allowedOrigins: [ALLOWED], logger: false });
+  app = createServer({ allowedOrigins: [ALLOWED, 'https://*.battleship.pages.dev'], logger: false });
   baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
 });
 
@@ -60,6 +61,12 @@ describe('HTTP CORS', () => {
     expect(response.headers.get('access-control-allow-origin')).toBe(ALLOWED);
   });
 
+  it('allows a preview origin matching the wildcard', async () => {
+    const response = await fetch(`${baseUrl}/health`, { headers: { origin: PREVIEW } });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('access-control-allow-origin')).toBe(PREVIEW);
+  });
+
   it('answers a preflight from a listed origin', async () => {
     const response = await fetch(`${baseUrl}/health`, {
       method: 'OPTIONS',
@@ -84,6 +91,7 @@ describe.each(TRANSPORTS)('Socket.io over %s', (transport) => {
   it.each([
     ['without an Origin header', undefined],
     ['from a listed origin', ALLOWED],
+    ['from a preview origin', PREVIEW],
   ])('echoes the payload %s', async (_label, origin) => {
     const socket = client(transport, origin);
     await nextEvent(socket, 'connect');
@@ -118,7 +126,9 @@ describe.each(TRANSPORTS)('Socket.io over %s', (transport) => {
 describe('Socket.io handshake over plain HTTP', () => {
   it.each([
     [ALLOWED, 200],
+    [PREVIEW, 200],
     [FOREIGN, 403],
+    ['https://a.b.battleship.pages.dev', 403],
   ])('responds to origin %s with %i', async (origin, status) => {
     const response = await fetch(`${baseUrl}/socket.io/?EIO=4&transport=polling`, { headers: { origin } });
     expect(response.status).toBe(status);
