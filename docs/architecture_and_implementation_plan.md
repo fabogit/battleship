@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACCEPTED** — Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
+**ACCEPTED** — Revision 5 (2026-10-05): Phase 0 findings measured on the production URLs (#8): §1.4, §4.1, §4.3, §10. Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
 
 ---
 
@@ -35,11 +35,12 @@ Players are assumed to be cooperating to play a match. The room is **symmetric**
 
 ### 1.4 Hosting Facts That Shape the Design (Render Free)
 
-Verified against Render documentation:
+Verified against Render documentation, then measured on the deployed service (#8, 2026-10-05):
 
-* The service spins down after **15 minutes without inbound traffic**; inbound WebSocket messages count, so Socket.io heartbeats keep the server awake while any client is connected.
-* Spin-up takes **about one minute**, during which Render serves its own HTML loading page (no CORS headers).
-* Render **may restart a free service at any time**, and every deploy restarts it. **All in-flight matches are lost on restart. This is an accepted risk.**
+* The service spins down after **15 minutes without inbound traffic**; inbound WebSocket messages count, so Socket.io heartbeats keep the server awake while any client is connected. *Measured:* Render's own health checks on `/health` do not count (an instance woken by outside traffic stopped exactly 15 minutes later), while one connected tab with no other HTTP traffic kept the instance up for 20 minutes.
+* Spin-up was documented as **about one minute**, with Render serving its own HTML loading page (no CORS headers). *Measured:* about **24 s** from opening the client to a connected socket (two samples); the Node process starts 10–13 s after the first request. Render held the client's `fetch` requests open until the instance was ready instead of answering with the loading page (§4.3).
+* The public URL receives crawler traffic (`GET /`, `/robots.txt`, `POST /`) that wakes the instance now and then. Harmless: it only spends free instance hours.
+* Render **may restart a free service at any time**, and every deploy restarts it. **All in-flight matches are lost on restart. This is an accepted risk.** *Measured on a deploy:* the old instance gets `SIGTERM` about 1 s before traffic switches to the new one; its open WebSockets receive no further frames and close about 10 s later, and Socket.io reconnects to the new instance within 2 s (§4.1).
 * Single instance only: no sticky sessions or Socket.io adapter needed.
 * If no client is connected, the service will spin down after 15 minutes and lose every room, so in-memory TTLs longer than that are meaningless for empty rooms.
 
@@ -161,7 +162,7 @@ battleship/
 * **Environment:** `PORT` (provided by Render), `ALLOWED_ORIGINS` (comma-separated; Cloudflare Pages production origin plus a `https://*.<project>.pages.dev` wildcard for previews, D24). Malformed values fail the startup.
 * **`GET /health`** → `200 { status: "ok", uptime: number }` (`HealthResponse` in `core/protocol.ts`).
 * **CORS:** configured twice — `@fastify/cors` for HTTP routes and the `cors` option of the Socket.io server. Both read `ALLOWED_ORIGINS`. A foreign `Origin` is rejected outright: `403` on HTTP (an `onRequest` hook, before any route) and a refused Socket.io handshake (`allowRequest`), since CORS headers alone do not stop WebSocket upgrades (D21).
-* **Graceful shutdown:** on `SIGTERM` the server emits `SERVER_SHUTDOWN` to every socket before closing, so clients can say "the server restarted, the match was lost" instead of looping on reconnect. It waits (up to 3 s) for each connection to flush and close first: a long-polling client only receives the message on its next poll (D23).
+* **Graceful shutdown:** on `SIGTERM` the server emits `SERVER_SHUTDOWN` to every socket before closing, so clients can say "the server restarted, the match was lost" instead of looping on reconnect. It waits (up to 3 s) for each connection to flush and close first: a long-polling client only receives the message on its next poll (D23). *Measured on a Render deploy (#8):* `SERVER_SHUTDOWN` never reached the connected client: the socket closed silently about 10 s after `SIGTERM`, and Socket.io reconnected to the new instance on its own, which knows nothing of the old rooms. `SERVER_SHUTDOWN` is therefore best effort (it works on local shutdowns and in tests); the client must recognize a restart after reconnecting, when its session turns out to be unknown (`SESSION_INVALID`, §6.3; #22, #25). Conversely, when the message does arrive, the server-side disconnect (`io server disconnect`) stops Socket.io's automatic reconnection, so the client must reconnect itself.
 
 ### 4.2 Frontend (Cloudflare Pages)
 
@@ -179,7 +180,7 @@ battleship/
 ### 4.3 Cold-Start Handling (client `ServerWakeService`)
 
 1. On app start, `GET /health` with exponential backoff (500 ms doubling, cap 5 s between attempts, give up after 90 s; each attempt times out after 10 s). Giving up shows a retry button.
-2. While Render serves its loading page the request fails as a CORS/parse error: treat any non-JSON or failed response as "still waking".
+2. While Render serves its loading page the request fails as a CORS/parse error: treat any non-JSON or failed response as "still waking". *Measured (#8):* Render held `fetch` requests open until the instance was up rather than serving the loading page, so attempts ended by the 10 s per-attempt timeout; the third attempt succeeded about 23 s after the page opened. The non-JSON handling stays as a fallback; the timeout and the "about a minute" copy are up for review (#51).
 3. UI shows a "Waking up the server…" state; nickname entry stays usable meanwhile.
 4. The Socket.io connection is opened only after `/health` succeeds.
 
@@ -596,9 +597,11 @@ Every phase ends deployed and playable on the production URLs.
 
 ## 10. Open Risks
 
-* **Restart = lost matches** (Render free restarts and deploys). Accepted; mitigated only by `SERVER_SHUTDOWN` messaging.
-* **Platform versions:** confirmed on Render (Node 24 from `.nvmrc`, pnpm 11 from `packageManager`, #5) and Cloudflare Pages (exact `NODE_VERSION`, `corepack pnpm`, #6). `NODE_VERSION` on Pages is pinned, so it must be bumped by hand when Angular raises its Node floor again.
-* **Angular 22 ecosystem compatibility:** `socket.io-client` 4.8 bundles with `@angular/build` (esbuild) without CommonJS warnings (#4). `@angular/build` 22 requires Node `^24.15`, so the Pages image needs an exact recent `NODE_VERSION` (§4.2).x (#6).
-* **TypeScript held at 6.0.x:** the workspace pins `typescript ~6.0.3` in the pnpm catalog because Angular 22 (`@angular/compiler-cli`) and `typescript-eslint` both require `>=6.0 <6.1`. TypeScript 7 (native compiler) is preferred; upgrade once both accept it. Splitting versions per package was rejected, since lint already ties every package to 6.0.x.
-* **Placement time on mobile:** 60 s may be tight with touch placement; tune after playtesting.
-* **Empty rooms cannot outlive Render's 15-minute spin-down**, regardless of TTL settings.
+* **Restart = lost matches** (Render free restarts and deploys). Accepted. **Carried forward (#22, #25):** `SERVER_SHUTDOWN` does not reach clients on a Render deploy (§4.1, #8), so the client has to detect a restart from `SESSION_INVALID` after reconnecting.
+* **Cold start and spin-down:** **resolved (#8).** About 24 s end to end; an open socket keeps the instance awake; Render's health checks do not (§1.4, §4.3).
+* **Mobile:** **partly resolved (#8).** The production client connects on Android; iOS Safari is carried forward to the device playtest (#38).
+* **Platform versions:** **resolved.** Confirmed on Render (Node 24 from `.nvmrc`, pnpm 11 from `packageManager`, #5) and Cloudflare Pages (exact `NODE_VERSION`, `corepack pnpm`, #6). **Carried forward:** `NODE_VERSION` on Pages is pinned, so it must be bumped by hand when Angular raises its Node floor again.
+* **Angular 22 ecosystem compatibility:** **resolved.** `socket.io-client` 4.8 bundles with `@angular/build` (esbuild) without CommonJS warnings (#4). `@angular/build` 22 requires Node `^24.15`, so the Pages image needs an exact recent `NODE_VERSION` (§4.2, #6).
+* **TypeScript held at 6.0.x:** **carried forward.** The workspace pins `typescript ~6.0.3` in the pnpm catalog because Angular 22 (`@angular/compiler-cli`) and `typescript-eslint` both require `>=6.0 <6.1`. TypeScript 7 (native compiler) is preferred; upgrade once both accept it. Splitting versions per package was rejected, since lint already ties every package to 6.0.x.
+* **Placement time on mobile:** **carried forward (#38).** 60 s may be tight with touch placement; tune after playtesting.
+* **Empty rooms cannot outlive Render's 15-minute spin-down**, regardless of TTL settings. **Confirmed (#8).**
