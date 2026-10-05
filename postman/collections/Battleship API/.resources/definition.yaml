@@ -5,7 +5,7 @@ description: |-
 
   1. `cp packages/server/.env.example packages/server/.env`
   2. `pnpm build && pnpm --filter @battleship/server start`
-  3. Select the **Local** environment.
+  3. Select the **localhost** environment.
   4. Run the `health` folder with the Collection Runner; send the `socket.io` requests by hand.
 
   **Variables**

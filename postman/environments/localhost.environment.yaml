@@ -1,4 +1,4 @@
-name: Local
+name: localhost
 values:
   - key: baseUrl
     value: 'http://localhost:3000'
