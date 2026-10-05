@@ -1,0 +1,15 @@
+$kind: http-request
+description: "No `Origin` header, like Render's health check and CLI clients: always allowed."
+url: '{{baseUrl}}/health'
+method: GET
+order: 1000
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('200 OK', () => pm.response.to.have.status(200));
+      pm.test('body is a HealthResponse', () => {
+        const body = pm.response.json();
+        pm.expect(body.status).to.eql('ok');
+        pm.expect(body.uptime).to.be.a('number').and.to.be.at.least(0);
+      });
+    language: text/javascript

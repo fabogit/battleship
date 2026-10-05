@@ -1,0 +1,19 @@
+$kind: socket.io-request
+description: |-
+  Phase 0 connectivity check (issue #3) over the WebSocket transport.
+
+  1. **Connect**: the `SERVER_SHUTDOWN` listener is armed on connect.
+  2. Send the saved `hello` message: `ECHO` with an ack.
+  3. The ack must be `{ "ok": true, "payload": { "hello": "postman" }, "protocolVersion": 1 }`.
+
+  Stop the server with Ctrl+C while connected: `SERVER_SHUTDOWN` arrives, then the server disconnects.
+url: "{{baseUrl}}"
+events:
+  - name: SERVER_SHUTDOWN
+    description: The server is restarting; any match in progress is lost (ADR §4.1).
+    subscribeOnConnect: true
+settings:
+  version: "4"
+examples: .resources/ECHO.resources/examples
+messages: .resources/ECHO.resources/messages
+order: 1000

@@ -1,0 +1,20 @@
+$kind: http-request
+name: 'Health — foreign origin (403)'
+description: 'Foreign origins get a plain 403 from the `onRequest` hook (ADR D21).'
+url: '{{baseUrl}}/health'
+method: GET
+order: 4000
+headers:
+  - key: Origin
+    value: '{{foreignOrigin}}'
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('403 Forbidden', () => pm.response.to.have.status(403));
+      pm.test('Fastify rejects before the route runs', () => {
+        pm.expect(pm.response.json().message).to.eql('Origin not allowed');
+      });
+      pm.test('no CORS header', () => {
+        pm.expect(pm.response.headers.has('Access-Control-Allow-Origin')).to.be.false;
+      });
+    language: text/javascript

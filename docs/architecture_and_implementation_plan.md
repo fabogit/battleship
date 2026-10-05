@@ -2,7 +2,7 @@
 
 ## Status
 
-**ACCEPTED** — Revision 7 (2026-10-05): D27 added after duplicate shutdown signals under pnpm (#59): §2, §2.1, §3, §4.1. Revision 6 (2026-10-05): D22 switched to a source export condition for `@battleship/core` (#46): §2, §2.1, §3. Revision 5 (2026-10-05): Phase 0 findings measured on the production URLs (#8): §1.4, §4.1, §4.3, §10. Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
+**ACCEPTED** — Revision 8 (2026-10-05): D28 added for local tooling: Postman collection and VS Code configuration (#61): §2, §2.1, §3.2. Revision 7 (2026-10-05): D27 added after duplicate shutdown signals under pnpm (#59): §2, §2.1, §3, §4.1. Revision 6 (2026-10-05): D22 switched to a source export condition for `@battleship/core` (#46): §2, §2.1, §3. Revision 5 (2026-10-05): Phase 0 findings measured on the production URLs (#8): §1.4, §4.1, §4.3, §10. Revision 4 (2026-10-05): D25–D26 added during the Phase 0 client bootstrap (#4). Revision 3 (2026-10-04): D21–D24 added during the Phase 0 server spike (#3). Revision 2 (2026-10-03) followed the requirements analysis session.
 
 ---
 
@@ -77,6 +77,7 @@ Verified against Render documentation, then measured on the deployed service (#8
 | D25 | Client server URL | The server URL lives in Angular environment files: `environment.ts` holds the Render URL for every Pages build (production and previews share one server), `environment.development.ts` points `ng serve`/`ng test` at `http://localhost:3000`. Planned switch to a `SERVER_URL` build-time variable (set on Pages and in CI, build fails when missing): #48. |
 | D26 | Dependency install scripts | pnpm 11 fails the install on unreviewed dependency build scripts, so `pnpm-workspace.yaml` lists them in `allowBuilds`: only `esbuild` runs its script; `lmdb`, `msgpackr-extract` and `@parcel/watcher` (Angular build tooling) use their prebuilt binaries. New entries are reviewed when they appear. |
 | D27 | Shutdown signals | `SIGTERM`/`SIGINT` are handled in `shutdown.ts` with persistent listeners: the first signal starts `app.close()`, repeats are ignored (pnpm and npm forward Ctrl+C, so the process gets SIGINT twice). A 10 s deadline exits with code 1 if the close fails or hangs, below Render's SIGKILL at 30 s. No `close-with-grace` (#59). |
+| D28 | Local tooling | Manual checks live in a Postman collection committed through Postman Native Git (Collection v3 YAML under `postman/`, workspace link in `.postman/`); every issue that adds a REST route or a Socket.IO event updates it. `.vscode/` is committed: debug configurations for server, client and their tests, and a YAML schema override for `postman/`. Details in §3.2 (#61). |
 
 ### 2.1 Alternatives Considered
 
@@ -94,6 +95,7 @@ Verified against Render documentation, then measured on the deployed service (#8
 * **Dependency install scripts — allow all vs. deny all vs. per package:** allowing every script (`dangerouslyAllowAllBuilds`) gives up the supply-chain protection pnpm 11 enables by default; denying all would also skip esbuild's binary check. The native packages Angular pulls in ship prebuilt binaries as optional dependencies, so their scripts are only a compile-from-source fallback (D26).
 * **Cloudflare Pages preview origins — manual list vs. CI automation vs. wildcard:** every preview commit gets a new `<hash>.<project>.pages.dev`; Render applies env var changes only on a new deploy. Pushing each preview origin to Render via its API would restart the single shared server (production included) on every branch push, need a Render API key in GitHub secrets, and grow the list forever. A manual list only covers stable branch aliases. A wildcard limited to one label under our own `pages.dev` project is safe, since only our project can publish there, and needs no redeploys (D24).
 * **Shutdown signals — `close-with-grace` vs. hand-written handler:** `close-with-grace` is the usual choice with Fastify (fastify-cli uses it), but on a second signal during shutdown it always calls `process.exit(1)`. Under `pnpm start` the terminal and pnpm each deliver Ctrl+C, so the process died before `SERVER_SHUTDOWN` was sent (verified with v2.5.0). Its other features (graceful close on `uncaughtException`/`unhandledRejection`, eleven signals, `beforeExit`) add nothing here: state is in memory, so a crash exits with Node's default code 1 and Render restarts the service. The hand-written handler is about fifteen lines (D27).
+* **Postman collection — cloud workspace with JSON export vs. Native Git files:** the free plan cannot export a multi-protocol collection, the Postman API only manages HTTP collections, and the v2.1 JSON format cannot hold Socket.IO requests. Native Git writes the collection as YAML files in the repo, so requests are diffed and reviewed with the code. A long-polling Socket.IO flow driven as plain HTTP requests (runnable in the Collection Runner) was tried and dropped: the server tests already cover both transports (D28).
 
 ---
 
@@ -163,6 +165,14 @@ battleship/
 | `ngc`/`tsc` typecheck of the client | `customConditions` in `packages/client/tsconfig.json` | Inherited by `tsconfig.app.json` and `tsconfig.spec.json`. |
 
 A new consumer of core (or a new workspace package consumed the same way) needs the matching row before it works on a checkout without `dist/`.
+
+### 3.2 Local Tooling (D28)
+
+* **Run:** `cp packages/server/.env.example packages/server/.env` (allows `http://localhost:4200`), then `pnpm --filter @battleship/server start` and `pnpm --filter @battleship/client start`.
+* **Debug (VS Code, `.vscode/launch.json`):** `Server` (builds core and server, runs `dist/` with source maps in the integrated terminal), `Client` (`ng serve` + Chrome/Chromium), `Server + Client`, `Server tests: current file` (Vitest), `Client tests: current file` (`ng test --debug`, attach on port 9229).
+* **Manual checks (Postman):** open the repo folder in the Postman desktop app (Native Git, free plan) and select the `Local` environment (`baseUrl`, `allowedOrigin`). The `health` folder runs in the Collection Runner; Socket.IO requests (`ECHO`, `ECHO — foreign origin`) are sent by hand. Outside the app: `npx postman-cli collection lint "postman/collections/Battleship API"` and `npx postman-cli collection run "postman/collections/Battleship API" -e postman/environments/Local.environment.yaml -i health`.
+* **Keeping it current:** an issue that adds a REST route or a Socket.IO event adds the matching request, message or listener to the collection.
+* **YAML schema:** SchemaStore's CrowdSec schema matches `**/collections/*/*.yaml`, so `.vscode/settings.json` maps `postman/**` to a permissive schema. Postman publishes no JSON schema for Collection v3; `postman-cli collection lint` is the real check.
 
 ---
 

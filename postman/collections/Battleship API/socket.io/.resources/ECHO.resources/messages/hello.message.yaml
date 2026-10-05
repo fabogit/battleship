@@ -1,0 +1,10 @@
+$kind: socket.io-message
+eventName: ECHO
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "hello": "postman"
+      }
+    contentType: json
+order: 1000
