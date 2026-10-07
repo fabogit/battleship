@@ -2,6 +2,7 @@ import {
   createSeededRng,
   MAX_ROOMS,
   PAYLOAD_PARSERS,
+  parseSessionCredentials,
   ROOM_ID_ALPHABET,
   ROOM_ID_LENGTH,
   type Rng,
@@ -10,12 +11,6 @@ import { describe, expect, it } from 'vitest';
 
 import { generateRoomId, RoomManager } from '../../src/room/room-manager.js';
 import { fleet, NOW } from './fixtures.js';
-
-/** A secret source that counts, so every secret is predictable and distinct. */
-function counterSecrets(): () => string {
-  let count = 0;
-  return () => `secret-${String(++count)}`;
-}
 
 /** An Rng whose `nextInt` replays a script and then repeats its last value. */
 function scriptedRng(values: readonly number[]): Rng {
@@ -28,8 +23,11 @@ function scriptedRng(values: readonly number[]): Rng {
   };
 }
 
+/** A well-formed id that no test room uses: managers in these tests draw from other seeds. */
+const UNKNOWN_ROOM_ID = generateRoomId(createSeededRng(99));
+
 function manager(rng: Rng = createSeededRng(1)): RoomManager {
-  return new RoomManager({ rng, createSecret: counterSecrets() });
+  return new RoomManager({ rng });
 }
 
 describe('generateRoomId', () => {
@@ -54,7 +52,7 @@ describe('RoomManager', () => {
     if (!created.ok) {
       expect.fail(created.error);
     }
-    expect(created.playerSecret).toBe('secret-1');
+    expect(parseSessionCredentials({ roomId: created.roomId, playerSecret: created.playerSecret })).not.toBeNull();
     expect(rooms.size).toBe(1);
     expect(rooms.get(created.roomId)).toBe(created.state);
     expect(created.state).toMatchObject({ phase: 'WAITING_FOR_OPPONENT', players: { P1: { nickname: 'Alice' } } });
@@ -86,7 +84,12 @@ describe('RoomManager', () => {
       expect.fail(created.error);
     }
     const joined = rooms.joinRoom({ roomId: created.roomId, nickname: 'Bob' }, NOW);
-    expect(joined).toMatchObject({ ok: true, playerSecret: 'secret-2', state: { phase: 'PLACEMENT' } });
+    expect(joined).toMatchObject({ ok: true, state: { phase: 'PLACEMENT' } });
+    if (!joined.ok) {
+      expect.fail(joined.error);
+    }
+    expect(joined.playerSecret).not.toBe(created.playerSecret);
+    expect(parseSessionCredentials({ roomId: created.roomId, playerSecret: joined.playerSecret })).not.toBeNull();
     expect(rooms.get(created.roomId)?.phase).toBe('PLACEMENT');
     expect(rooms.joinRoom({ roomId: created.roomId, nickname: 'Carol' }, NOW)).toEqual({
       ok: false,
@@ -96,11 +99,11 @@ describe('RoomManager', () => {
 
   it('answers ROOM_NOT_FOUND for an unknown room', () => {
     const rooms = manager();
-    expect(rooms.joinRoom({ roomId: 'zzzzzzzz', nickname: 'Bob' }, NOW)).toEqual({
+    expect(rooms.joinRoom({ roomId: UNKNOWN_ROOM_ID, nickname: 'Bob' }, NOW)).toEqual({
       ok: false,
       error: 'ROOM_NOT_FOUND',
     });
-    expect(rooms.dispatch('zzzzzzzz', { type: 'CONFIRM_PLACEMENT', seat: 'P1', payload: {} }, NOW)).toEqual({
+    expect(rooms.dispatch(UNKNOWN_ROOM_ID, { type: 'CONFIRM_PLACEMENT', seat: 'P1', payload: {} }, NOW)).toEqual({
       ok: false,
       error: 'ROOM_NOT_FOUND',
     });

@@ -19,11 +19,12 @@ import {
   type TransitionResult,
   type WaitingRoom,
 } from '../../src/room/room.js';
+import { createPlayerSecret, generateRoomId } from '../../src/room/room-manager.js';
 
 export const NOW = 1_700_000_000_000;
-export const ROOM_ID = 'abcd2345';
-export const P1_SECRET = '11111111-1111-4111-8111-111111111111';
-export const P2_SECRET = '22222222-2222-4222-8222-222222222222';
+export const ROOM_ID = generateRoomId(createSeededRng(0));
+export const P1_SECRET = createPlayerSecret();
+export const P2_SECRET = createPlayerSecret();
 
 /** A complete random fleet as the client would send it: placements without derived coordinates. */
 export function fleet(seed: number): ShipPlacement[] {

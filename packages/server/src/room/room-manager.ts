@@ -25,7 +25,7 @@ import {
 export interface RoomManagerOptions {
   /** Source of room ids; `createCryptoRng()` by default (ADR-0030). */
   readonly rng?: Rng;
-  /** Source of player secrets; `crypto.randomUUID` by default (docs/server.md#sessions--reconnection). */
+  /** Source of player secrets; `createPlayerSecret` by default. */
   readonly createSecret?: () => string;
 }
 
@@ -49,6 +49,15 @@ export interface JoinedRoom {
   readonly playerSecret: string;
   /** The room after the join, already stored. */
   readonly state: RoomState;
+}
+
+/**
+ * Generates a player secret (docs/server.md#sessions--reconnection): a lowercase `crypto.randomUUID()`, which the
+ * handshake's `parseSessionCredentials` accepts.
+ * @returns A new secret, never sent to the other player.
+ */
+export function createPlayerSecret(): string {
+  return randomUUID();
 }
 
 /**
@@ -80,7 +89,7 @@ export class RoomManager {
    */
   constructor(options: RoomManagerOptions = {}) {
     this.#rng = options.rng ?? createCryptoRng();
-    this.#createSecret = options.createSecret ?? randomUUID;
+    this.#createSecret = options.createSecret ?? createPlayerSecret;
   }
 
   /** How many rooms are open; at most `MAX_ROOMS`. */

@@ -16,6 +16,7 @@ import {
   type RoomState,
   type SeatCommand,
 } from '../../src/room/room.js';
+import { createPlayerSecret } from '../../src/room/room-manager.js';
 import {
   apply,
   battleRoom,
@@ -32,7 +33,11 @@ import {
   waitingRoom,
 } from './fixtures.js';
 
-const JOIN: RoomCommand = { type: 'JOIN_ROOM', payload: { roomId: ROOM_ID, nickname: 'Carol' }, playerSecret: 'x' };
+const JOIN: RoomCommand = {
+  type: 'JOIN_ROOM',
+  payload: { roomId: ROOM_ID, nickname: 'Carol' },
+  playerSecret: createPlayerSecret(),
+};
 
 /** Plays a whole match, both players firing random unshot cells, and returns the final room. */
 function playToGameOver(seed: number): { state: GameOverRoom; turns: number } {
