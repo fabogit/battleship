@@ -146,6 +146,7 @@ describe('validateDraft', () => {
       ['with a negative x', ship('DESTROYER', -1, 4)],
       ['with a negative y', ship('DESTROYER', 4, -1, 'VERTICAL')],
       ['starting off the board', ship('DESTROYER', BOARD_SIZE, 0, 'VERTICAL')],
+      ['starting between cells', ship('DESTROYER', 0.5, 4)],
     ])('rejects a ship %s', (_name, placement) => {
       expect(validateDraft([ship('SUBMARINE', 0, 9), placement], ADJACENT_ALLOWED)).toEqual({
         ok: false,
