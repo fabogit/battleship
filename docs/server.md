@@ -43,8 +43,8 @@ Behaviour of the game server, `packages/server`.
 ### Room creation & joining
 
 * `CREATE_ROOM` creates the room in `WAITING_FOR_OPPONENT` with `DEFAULT_RULES` and seats the creator as `P1`.
-* `JOIN_ROOM` seats the joiner as `P2` and moves to `RULES_NEGOTIATION`.
-  * Joining a full room → `ROOM_FULL`; unknown room (or lost after a restart) → `ROOM_NOT_FOUND`.
+* `JOIN_ROOM` seats the joiner as `P2` and moves to `RULES_NEGOTIATION`. Until rules negotiation lands (#26), it moves straight to `PLACEMENT` with `DEFAULT_RULES`.
+  * Joining a full room → `ROOM_FULL`, in any phase (never `WRONG_PHASE`); unknown room (or lost after a restart) → `ROOM_NOT_FOUND`.
 * A seated player who disconnected keeps the seat for `DISCONNECT_FORFEIT_MS`. This covers the common mobile case: the creator switches app to share the link and the friend joins meanwhile.
 
 ### Rules negotiation
@@ -58,15 +58,16 @@ Behaviour of the game server, `packages/server`.
 
 * The deadline is `PLACEMENT_TIME_LIMIT_MS` from phase entry.
 * `UPDATE_PLACEMENT { ships }` replaces the player's draft. It is rejected while confirmed (`PLACEMENT_LOCKED`) or invalid (`INVALID_PLACEMENT` when `validateDraft` fails, with the violation logged; see [Placement](domain.md#placement)).
-* `CONFIRM_PLACEMENT` requires a complete valid fleet (`validateFleet`); `UNLOCK_PLACEMENT` reverts to draft.
+* `CONFIRM_PLACEMENT` requires a complete valid fleet (`validateFleet`); `UNLOCK_PLACEMENT` reverts to draft. Confirming a confirmed fleet or unlocking a draft is accepted and changes nothing.
 * When both are confirmed, a start countdown runs for `min(START_COUNTDOWN_MS, time to deadline)`. An unlock cancels it; a new double confirmation restarts it, still capped by the deadline.
 * At the deadline, every unconfirmed fleet is completed with `completeFleet` and locked.
 * On phase end: server dice roll → `DICE_ROLLED` → `IN_PROGRESS`. The first turn timer starts after `DICE_ANIMATION_MS`.
 * If a player is disconnected at that moment, the match starts paused (see below).
+* Until the placement timer and the dice roll land (#28, #29), the deadline is only shown, never enforced, and the second confirmation starts the match at once with `P1` first.
 
 ### Turns
 
-* The active player edits a draft with `UPDATE_TARGETS { targets }` (any count up to the allowance, freely changeable) and commits with `FIRE { targets }`.
+* The active player edits a draft with `UPDATE_TARGETS { targets }` (any count up to the allowance, freely changeable) and commits with `FIRE { targets }`. Both are `NOT_YOUR_TURN` from the other player. A draft follows the shot rules except the exact count; a refused draft or shot (`resolveTurn` rejection) → `INVALID_TARGETS`. Firing clears the draft.
 * On turn timeout:
   * `AUTO_RANDOM_SHOT`: keep the valid draft targets, fill the rest randomly, resolve.
   * `PASS_TURN`: discard the draft, pass the turn.
@@ -110,10 +111,28 @@ Behaviour of the game server, `packages/server`.
 * A room with no connected player is destroyed after `EMPTY_ROOM_TTL_MS`.
 * A room in `GAME_OVER` is destroyed after `GAME_OVER_TTL_MS` without a resolved rematch.
 
+## Room logic
+
+`packages/server/src/room/`, without timers, sockets or I/O. Decisions: [ADR-0037](adr/0037-room-transition-shape.md), [ADR-0038](adr/0038-snapshot-projection.md), [ADR-0039](adr/0039-room-registry.md).
+
+| Module | Role |
+|---|---|
+| `room.ts` | `RoomState`, one variant per phase; `createRoom` for `CREATE_ROOM`; `applyCommand(state, command, now)` for every other command |
+| `snapshot.ts` | `projectSnapshot(state, seat, now)`: one player's `PlayerStateSnapshot`, with fog-of-war |
+| `room-manager.ts` | `RoomManager`: the open rooms by id, room ids and player secrets, `MAX_ROOMS` |
+
+* **Commands** are the event name, the sender's `seat` and the payload as its guard returned it. `JOIN_ROOM` has no seat yet; it carries the joiner's new secret instead.
+* **Results:** `{ ok: true, state, effects }` or `{ ok: false, error }`. A refused command returns no state and mutates nothing; `INVALID_PLACEMENT` and `INVALID_TARGETS` add the core `violation`, for the log only.
+* **After an accepted command** the caller stores the state (`RoomManager` does), sends `STATE` to every seated player and performs the effects in order. The only effect so far is `SHOT_RESOLVED`, for both players.
+* **Time:** `now` is epoch ms. Deadlines are stored as timestamps (`PlacementRoom.deadline`) and projected as remaining milliseconds.
+* **Phase checks:** a placement command outside `PLACEMENT` and a turn command outside `IN_PROGRESS` → `WRONG_PHASE`; the phase is checked before the seat or the payload.
+* **Projection:** the receiver's own fleet and both shot lists; the opponent's fleet only in `GAME_OVER`; never a secret. Fields whose feature is not built yet hold neutral values ([ADR-0038](adr/0038-snapshot-projection.md)).
+* **Registry:** `createRoom` → `SERVER_FULL` at `MAX_ROOMS`; `joinRoom` → `ROOM_NOT_FOUND` for an unknown id; `dispatch` runs a seated player's command. Rooms are not removed until the TTL sweeps (#24).
+
 ## Sessions & reconnection
 
 * **Credentials:** on `CREATE_ROOM` / `JOIN_ROOM` the server returns a `playerSecret` (`crypto.randomUUID()`). Seats (`P1`/`P2`) are public; secrets are never sent to the other player.
-* **Room ids:** `ROOM_ID_LENGTH` (8) characters of `ROOM_ID_ALPHABET`, a URL-safe alphabet without easily confused characters, generated with `crypto`.
+* **Room ids:** `ROOM_ID_LENGTH` (8) characters of `ROOM_ID_ALPHABET`, a URL-safe alphabet without easily confused characters, drawn with the injected `Rng` (`createCryptoRng()` in production); an id already in use is drawn again ([ADR-0039](adr/0039-room-registry.md)).
 * **Client storage:** `SessionStore` writes `{ roomId, playerSecret, expiresAt }` under a per-room key in `localStorage`.
 * **Handshake:** the Socket.io client passes `auth` as a callback, re-evaluated on every reconnect attempt: `{ protocolVersion, session?: { roomId, playerSecret } }`.
   * Version mismatch, a missing `protocolVersion` included → `connect_error` with `PROTOCOL_MISMATCH`; the client shows "please reload" ([Handshake](protocol.md#handshake)).
