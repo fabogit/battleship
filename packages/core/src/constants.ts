@@ -30,8 +30,17 @@ export const EMPTY_ROOM_TTL_MS = 300_000;
 /** Lifetime of a room idle in `GAME_OVER` without a rematch agreement. */
 export const GAME_OVER_TTL_MS = 120_000;
 
-/** Nicknames are trimmed, non-empty and rendered as text only. */
+/** Nicknames are trimmed, non-empty and rendered as text only. Counted in UTF-16 code units, like HTML `maxlength`. */
 export const NICKNAME_MAX_LENGTH = 20;
+
+/** Characters in a room id. */
+export const ROOM_ID_LENGTH = 8;
+
+/**
+ * Characters a room id is drawn from: digits and lowercase letters without `0`, `1`, `i`, `l` and `o`, which are easily
+ * confused; all of them are safe in a URL path.
+ */
+export const ROOM_ID_ALPHABET = '23456789abcdefghjkmnpqrstuvwxyz';
 
 /** New rooms are rejected with `SERVER_FULL` above this. */
 export const MAX_ROOMS = 50;

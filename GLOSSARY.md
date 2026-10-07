@@ -125,6 +125,10 @@ _Avoid_: delta, state update
 **Fog-of-war**:
 The rule that each client receives only its own fleet and the shot history; the opponent's fleet is revealed at game over.
 
+**Payload guard**:
+A hand-written check in `core/validation.ts` that every client→server payload passes before room logic sees it; it returns a normalized copy, and a failure is `INVALID_PAYLOAD`. It checks shape only, never room state.
+_Avoid_: schema, validator (`validateRules` and placement validation check the domain, not the shape)
+
 **Protocol version**:
 The `PROTOCOL_VERSION` constant, bumped on any breaking protocol change and checked in the Socket.io handshake; a mismatched client is told to reload.
 

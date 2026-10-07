@@ -113,18 +113,18 @@ Behaviour of the game server, `packages/server`.
 ## Sessions & reconnection
 
 * **Credentials:** on `CREATE_ROOM` / `JOIN_ROOM` the server returns a `playerSecret` (`crypto.randomUUID()`). Seats (`P1`/`P2`) are public; secrets are never sent to the other player.
-* **Room ids:** 8 characters of a URL-safe, unambiguous alphabet, generated with `crypto`.
+* **Room ids:** `ROOM_ID_LENGTH` (8) characters of `ROOM_ID_ALPHABET`, a URL-safe alphabet without easily confused characters, generated with `crypto`.
 * **Client storage:** `SessionStore` writes `{ roomId, playerSecret, expiresAt }` under a per-room key in `localStorage`.
 * **Handshake:** the Socket.io client passes `auth` as a callback, re-evaluated on every reconnect attempt: `{ protocolVersion, session?: { roomId, playerSecret } }`.
-  * Version mismatch → `connect_error` with `PROTOCOL_MISMATCH`; the client shows "please reload".
+  * Version mismatch, a missing `protocolVersion` included → `connect_error` with `PROTOCOL_MISMATCH`; the client shows "please reload" ([Handshake](protocol.md#handshake)).
   * Valid session → the socket is bound to the seat and receives a `STATE` snapshot immediately.
-  * Invalid or expired session → `SESSION_INVALID`; the client drops the stored credentials and returns to the home screen with an explanation.
+  * Malformed (`parseSessionCredentials` fails), unknown or expired session → `SESSION_INVALID`; the client drops the stored credentials and returns to the home screen with an explanation.
 * **Latest connection wins:** binding a new socket to a seat emits `SESSION_REPLACED` to the previous socket and disconnects it.
 * **Mobile:** app switching kills sockets frequently. Reconnection is a primary flow and must be covered by integration tests.
 
 ## Hardening
 
-* Every inbound payload passes the `core/validation.ts` guards before reaching room logic; failures → `INVALID_PAYLOAD`.
+* Every inbound payload passes its `core/validation.ts` guard (`PAYLOAD_PARSERS`) before reaching room logic; failures → `INVALID_PAYLOAD` ([Payload validation](protocol.md#payload-validation)). Room logic receives the guard's copy, never the raw payload.
 * Socket.io `maxHttpBufferSize` is set to a small value (e.g. 16 KB).
 * Per-socket rate limit (`RATE_LIMIT_EVENTS_PER_SECOND`) → `RATE_LIMITED`.
 * `MAX_ROOMS` cap → `SERVER_FULL`.
