@@ -23,7 +23,7 @@ export interface SessionCredentials {
 
 ## Client → server
 
-All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: false, error: ErrorCode })` (`AckResponse<T>`).
+All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: false, error: ErrorCode })` (`AckResponse<T>`). Code names the events through `CLIENT_EVENTS` (`CLIENT_EVENTS.JOIN_ROOM`), which `satisfies` the `ClientToServerEvents` map ([ADR-0043](adr/0043-named-constants.md)).
 
 | Event | Payload | Ack data | Phase |
 |---|---|---|---|
@@ -60,6 +60,8 @@ Every command payload passes its guard in `PAYLOAD_PARSERS` before reaching room
 Lengths are checked before elements, so an oversized array is refused without being walked; Socket.io's `maxHttpBufferSize` bounds the raw message ([Hardening](server.md#hardening)).
 
 ## Server → client
+
+Code names these events through `SERVER_EVENTS` (`SERVER_EVENTS.STATE`), which `satisfies` the `ServerToClientEvents` map.
 
 | Event | Payload | Purpose |
 |---|---|---|
@@ -128,7 +130,7 @@ Timers are sent as **remaining milliseconds** (not absolute timestamps) to avoid
 
 ## Error codes
 
-`ERROR_CODES` lists them at runtime; `ErrorCode` is their union.
+`ERROR_CODES` names them (`ERROR_CODES.ROOM_FULL`) and `ErrorCode` is their union; `Object.values(ERROR_CODES)` lists them at runtime, in this order ([ADR-0043](adr/0043-named-constants.md)).
 
 | Code | When |
 |---|---|

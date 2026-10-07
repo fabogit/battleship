@@ -24,13 +24,22 @@ The domain lives in `packages/core`; each section covers one of its modules: `co
 
 ## Domain types
 
+Each closed set of strings is an `as const` object, and its type is derived from it; code names a value through the object (`SEATS.P1`), never as a bare literal ([Code conventions](development.md#code-conventions), [ADR-0043](adr/0043-named-constants.md)).
+
 ```typescript
 export type Coordinate = {
   readonly x: number; // integer, 0 ≤ x < BOARD_SIZE
   readonly y: number; // integer, 0 ≤ y < BOARD_SIZE
 };
 
-export type ShipType = 'CARRIER' | 'BATTLESHIP' | 'CRUISER' | 'SUBMARINE' | 'DESTROYER';
+export const SHIP_TYPES = {
+  CARRIER: 'CARRIER',
+  BATTLESHIP: 'BATTLESHIP',
+  CRUISER: 'CRUISER',
+  SUBMARINE: 'SUBMARINE',
+  DESTROYER: 'DESTROYER',
+} as const;
+export type ShipType = (typeof SHIP_TYPES)[keyof typeof SHIP_TYPES];
 
 export const SHIP_LENGTH: Readonly<Record<ShipType, number>> = {
   CARRIER: 5,
@@ -40,9 +49,19 @@ export const SHIP_LENGTH: Readonly<Record<ShipType, number>> = {
   DESTROYER: 2,
 };
 
-export const FLEET: readonly ShipType[] = ['CARRIER', 'BATTLESHIP', 'CRUISER', 'SUBMARINE', 'DESTROYER'];
+export const FLEET: readonly ShipType[] = [
+  SHIP_TYPES.CARRIER,
+  SHIP_TYPES.BATTLESHIP,
+  SHIP_TYPES.CRUISER,
+  SHIP_TYPES.SUBMARINE,
+  SHIP_TYPES.DESTROYER,
+];
 
-export type Orientation = 'HORIZONTAL' | 'VERTICAL';
+export const ORIENTATIONS = {
+  HORIZONTAL: 'HORIZONTAL', // towards larger x
+  VERTICAL: 'VERTICAL', // towards larger y
+} as const;
+export type Orientation = (typeof ORIENTATIONS)[keyof typeof ORIENTATIONS];
 
 /** What the client sends: the server never trusts client-computed coordinates. */
 export interface ShipPlacement {
@@ -57,7 +76,12 @@ export interface PlacedShip extends ShipPlacement {
 }
 
 export type TurnTimeLimitSeconds = 15 | 30 | 60 | 120;
-export type TimeoutAction = 'AUTO_RANDOM_SHOT' | 'PASS_TURN';
+
+export const TIMEOUT_ACTIONS = {
+  AUTO_RANDOM_SHOT: 'AUTO_RANDOM_SHOT',
+  PASS_TURN: 'PASS_TURN',
+} as const;
+export type TimeoutAction = (typeof TIMEOUT_ACTIONS)[keyof typeof TIMEOUT_ACTIONS];
 
 /** Invariant: isSalvoModeEnabled && isExtraTurnOnHitEnabled is invalid. */
 export interface GameRules {
@@ -68,31 +92,49 @@ export interface GameRules {
   readonly timeoutAction: TimeoutAction;
 }
 
-export type ShotOutcome = 'MISS' | 'HIT' | 'SUNK';
+export const SHOT_OUTCOMES = {
+  MISS: 'MISS',
+  HIT: 'HIT',
+  SUNK: 'SUNK',
+} as const;
+export type ShotOutcome = (typeof SHOT_OUTCOMES)[keyof typeof SHOT_OUTCOMES];
 
 export interface ShotResult {
   readonly coordinate: Coordinate;
   readonly outcome: ShotOutcome;
-  readonly sunkShip?: PlacedShip; // present only when outcome === 'SUNK'
+  readonly sunkShip?: PlacedShip; // present only when outcome is SUNK
 }
 
-export type Seat = 'P1' | 'P2';
+export const SEATS = {
+  P1: 'P1', // creator
+  P2: 'P2', // joiner
+} as const;
+export type Seat = (typeof SEATS)[keyof typeof SEATS];
 
-export type RoomPhase =
-  | 'WAITING_FOR_OPPONENT'
-  | 'RULES_NEGOTIATION'
-  | 'PLACEMENT'
-  | 'IN_PROGRESS'
-  | 'GAME_OVER';
+export const ROOM_PHASES = {
+  WAITING_FOR_OPPONENT: 'WAITING_FOR_OPPONENT',
+  RULES_NEGOTIATION: 'RULES_NEGOTIATION',
+  PLACEMENT: 'PLACEMENT',
+  IN_PROGRESS: 'IN_PROGRESS',
+  GAME_OVER: 'GAME_OVER',
+} as const;
+export type RoomPhase = (typeof ROOM_PHASES)[keyof typeof ROOM_PHASES];
 
-export type GameOverReason =
-  | 'FLEET_DESTROYED'
-  | 'SURRENDER'
-  | 'AFK_FORFEIT'
-  | 'DISCONNECT_FORFEIT'
-  | 'ABANDONED'; // both players AFK — no winner
+export const GAME_OVER_REASONS = {
+  FLEET_DESTROYED: 'FLEET_DESTROYED',
+  SURRENDER: 'SURRENDER',
+  AFK_FORFEIT: 'AFK_FORFEIT',
+  DISCONNECT_FORFEIT: 'DISCONNECT_FORFEIT',
+  ABANDONED: 'ABANDONED', // both players AFK — no winner
+} as const;
+export type GameOverReason = (typeof GAME_OVER_REASONS)[keyof typeof GAME_OVER_REASONS];
 
-export type RematchChoice = 'SAME_RULES' | 'CHANGE_RULES' | 'LEAVE';
+export const REMATCH_CHOICES = {
+  SAME_RULES: 'SAME_RULES',
+  CHANGE_RULES: 'CHANGE_RULES',
+  LEAVE: 'LEAVE',
+} as const;
+export type RematchChoice = (typeof REMATCH_CHOICES)[keyof typeof REMATCH_CHOICES];
 ```
 
 ## Rules
@@ -127,7 +169,14 @@ export function createCryptoRng(): Rng; // production
 Decision: [ADR-0032](adr/0032-fleet-placement.md).
 
 ```typescript
-export type PlacementViolation = 'OUT_OF_BOUNDS' | 'DUPLICATE_TYPE' | 'OVERLAP' | 'ADJACENT_SHIPS' | 'INCOMPLETE_FLEET';
+export const PLACEMENT_VIOLATIONS = {
+  OUT_OF_BOUNDS: 'OUT_OF_BOUNDS',
+  DUPLICATE_TYPE: 'DUPLICATE_TYPE',
+  OVERLAP: 'OVERLAP',
+  ADJACENT_SHIPS: 'ADJACENT_SHIPS',
+  INCOMPLETE_FLEET: 'INCOMPLETE_FLEET',
+} as const;
+export type PlacementViolation = (typeof PLACEMENT_VIOLATIONS)[keyof typeof PLACEMENT_VIOLATIONS];
 export type PlacementValidation =
   | { readonly ok: true; readonly ships: readonly PlacedShip[] } // derived, in input order
   | { readonly ok: false; readonly reason: PlacementViolation; readonly shipIndex: number | null };
@@ -174,7 +223,13 @@ export interface Battle {
   readonly currentTurn: Seat; // fires next
 }
 
-export type TargetViolation = 'WRONG_TARGET_COUNT' | 'OUT_OF_BOUNDS' | 'DUPLICATE_TARGET' | 'ALREADY_TARGETED';
+export const TARGET_VIOLATIONS = {
+  WRONG_TARGET_COUNT: 'WRONG_TARGET_COUNT',
+  OUT_OF_BOUNDS: 'OUT_OF_BOUNDS',
+  DUPLICATE_TARGET: 'DUPLICATE_TARGET',
+  ALREADY_TARGETED: 'ALREADY_TARGETED',
+} as const;
+export type TargetViolation = (typeof TARGET_VIOLATIONS)[keyof typeof TARGET_VIOLATIONS];
 export type TargetValidation =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: TargetViolation; readonly targetIndex: number | null };
