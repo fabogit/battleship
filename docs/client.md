@@ -9,9 +9,43 @@ Architecture of the Angular client, `packages/client`.
 * **Services:**
   * `ServerWakeService` — cold-start polling ([Cold-start handling](#cold-start-handling)).
   * `SessionStore` — credential persistence ([Sessions & reconnection](server.md#sessions--reconnection)); the only module touching `localStorage` for sessions.
-  * `GameSocketService` — Socket.io lifecycle, connection-status signal, typed emit-with-ack helpers.
-  * `GameStateService` — `snapshot = signal<PlayerStateSnapshot | null>(null)` plus `computed` views (`isMyTurn`, `myFleet`, `trackingBoard`, `canPause`…), and local countdown signals re-synced from snapshots.
+  * `GameSocketService` — Socket.io lifecycle, connection-status signal, typed emit-with-ack helper and server-event listeners ([Socket service](#socket-service)).
+  * `GameStateService` — a read-only `snapshot` signal (`PlayerStateSnapshot | null`, `null` until the first `STATE`) plus `computed` views, and local countdown signals re-synced from snapshots ([Game state](#game-state)).
   * `I18nService` — `locale` signal (`it` | `en`), default from `navigator.language`, persisted in `localStorage`. Typed dictionaries where a missing key is a compile error.
+
+### Socket service
+
+* The socket is created with the service, idle (`autoConnect: false`): services can listen to server events before the server is awake, and `connect()` opens it once `ServerWakeService` reports the server up. `connect()` does nothing while the socket is connected or retrying, and reopens one that Socket.io gave up on.
+* Transports: WebSocket first, then polling (`tryAllTransports: true`), so networks that block WebSocket still connect.
+* `status` is `disconnected` | `connecting` | `connected`. A drop or a `connect_error` while Socket.io keeps retrying stays `connecting`, a handshake refused by the origin check included. Only a socket that gave up is `disconnected`: closed by the client, disconnected by the server, or refused by a middleware error such as `PROTOCOL_MISMATCH`.
+* `emitWithAck(event, payload)` accepts only the commands of `ClientToServerEvents`, each with its own payload type. It resolves with the command's `AckResponse`, or with `{ ok: false, error: 'NOT_CONNECTED' | 'NO_ACK' }` when the server did not reply. It never rejects and never queues a command while disconnected ([ADR-0035](adr/0035-command-acks.md)):
+  * `NOT_CONNECTED`: the socket was not connected, so nothing was sent.
+  * `NO_ACK`: no reply within `ACK_TIMEOUT_MS` (5 s), or the connection dropped first. The server may or may not have applied the command; the next `STATE` tells.
+* `on(event, listener)` listens to a server event and returns the function that removes the listener; listeners survive reconnections.
+
+### Game state
+
+`GameStateService` listens to `STATE` and keeps the latest snapshot; `clear()` forgets it (e.g. after leaving the room). Views:
+
+| View | Value |
+|---|---|
+| `phase` | The room's phase; `null` without a snapshot |
+| `isMyTurn` | `IN_PROGRESS` and `currentTurn` is the receiver's seat, dice animation and pause included |
+| `myFleet` | `{ ships, shots }`: the fleet without shots in `PLACEMENT`, the fleet and the incoming shots in `IN_PROGRESS`; `null` otherwise |
+| `trackingBoard` | `{ ships, shots, draftTargets }`: in `IN_PROGRESS` the outgoing shots, the ships they sank and the turn's draft; in `GAME_OVER` the revealed opponent fleet without shots (the game-over snapshot carries none); `null` otherwise |
+| `canPause` / `canResume` | `IN_PROGRESS` with the opponent disconnected, and the match running / paused: when `SET_PAUSED` is accepted |
+| `hasWon` | `null` until `GAME_OVER`; `false` for a match without a winner |
+
+Countdowns are in ms, `null` when the snapshot does not carry them ([ADR-0036](adr/0036-countdown-resync.md)):
+
+| Countdown | Snapshot field | Frozen while |
+|---|---|---|
+| `turnRemainingMs` | `battle.turnRemainingMs` (`null` during the dice animation) | `battle.isPaused` |
+| `placementRemainingMs` | `placement.remainingMs` | — |
+| `startCountdownMs` | `placement.startCountdownMs` | — |
+| `opponentForfeitRemainingMs` | `opponent.forfeitRemainingMs` | — (it runs regardless of pause) |
+
+Each one is the value sent minus the time elapsed since the snapshot arrived (`performance.now()`), never below zero, and every snapshot re-syncs all of them. They tick every `COUNTDOWN_TICK_MS` (250 ms) while one is running, and stop when the longest reaches zero.
 
 ## Board & interaction
 
