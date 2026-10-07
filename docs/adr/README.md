@@ -43,5 +43,8 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0037](0037-room-transition-shape.md) | Room transition shape | Accepted, 2026-10-07 |
 | [ADR-0038](0038-snapshot-projection.md) | Snapshot projection | Accepted, 2026-10-07 |
 | [ADR-0039](0039-room-registry.md) | Room registry | Accepted, 2026-10-07 |
+| [ADR-0040](0040-cell-names.md) | Cell names | Accepted, 2026-10-07 |
+| [ADR-0041](0041-board-keyboard-navigation.md) | Board keyboard navigation | Accepted, 2026-10-07 |
+| [ADR-0042](0042-board-cell-size.md) | Board cell size | Accepted, 2026-10-07 |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

@@ -1,0 +1,29 @@
+<div class="board" role="grid" [attr.aria-label]="label()" (keydown)="onKeydown($event)">
+  <div class="axis-row" aria-hidden="true">
+    <span class="axis"></span>
+    @for (number of columnNumbers; track number) {
+      <span class="axis">{{ number }}</span>
+    }
+  </div>
+  @for (row of rows(); track row.letter) {
+    <div class="row" role="row">
+      <span class="axis" aria-hidden="true">{{ row.letter }}</span>
+      @for (cell of row.cells; track cell.index) {
+        <span class="cell" role="gridcell">
+          <button
+            #cellButton
+            type="button"
+            [attr.data-state]="cell.state"
+            [class.is-draft-target]="cell.isDraftTarget"
+            [class.is-invalid-preview]="cell.isInvalidPreview"
+            [attr.aria-label]="cell.label"
+            [attr.aria-disabled]="isInteractive() ? null : 'true'"
+            [tabIndex]="cell.index === activeIndex() ? 0 : -1"
+            (focus)="onCellFocus(cell)"
+            (click)="onCellClick(cell)"
+          ></button>
+        </span>
+      }
+    </div>
+  }
+</div>

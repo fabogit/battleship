@@ -50,6 +50,24 @@ Each one is the value sent minus the time elapsed since the snapshot arrived (`p
 ## Board & interaction
 
 * The board is a CSS Grid of `<button>` cells rendered with `@for`. 2 × 100 cells is negligible for Signals + OnPush, and buttons give keyboard and screen-reader access for free.
+* **Board grid** (`BoardGrid`, `shared/board-grid`): draws one board from its inputs and reports activated cells. It does not read `GameStateService` or the phase, so the same component serves placement, "My fleet" and "Enemy waters".
+  * Inputs: `label` (the board's accessible name), `ships`, `shots`, `draftTargets`, `invalidPreview` and `isInteractive` (default `true`). `myFleet` and `trackingBoard` ([Game state](#game-state)) map onto them as they are.
+  * Output: `cellActivate`, the `Coordinate` clicked or activated with Enter / Space. A board that is not interactive emits nothing; its cells stay focusable, so it can still be read cell by cell, and report `aria-disabled`.
+  * Cell states: `empty`, `ship`, `miss`, `hit`, `sunk`. Every cell of a sunk ship is `sunk`: a cell is sunk when its shot is `SUNK` or when every cell of the ship drawn there was hit. Draft target and invalid preview are overlays on a state. Each state and overlay has its own shape (dot, cross, dark cross, ring, stripes), so colour is never the only cue.
+* **Cell names** ([ADR-0040](adr/0040-cell-names.md)): rows are letters `A`–`J` from the top, columns numbers `1`–`10` from the left, so `B7` is `{ x: 6, y: 1 }`. Both axes are drawn around the board and hidden from assistive technologies, since every cell carries its name.
+* **Accessible labels:** the cell name, then its state and overlays, comma-separated: "A2", "B7, hit", "F5, ship, invalid position", "J10, target". An untouched cell has no state word, so a cell of "Enemy waters" never claims to be empty. The words live in one typed object, `BOARD_GRID_TEXT`, for `I18nService` to provide per locale.
+* **Keyboard** ([ADR-0041](adr/0041-board-keyboard-navigation.md)): each board is an ARIA `grid` with a single tab stop (roving `tabindex`): the cell last focused or clicked, `A1` at first.
+
+  | Key | Moves focus to |
+  |---|---|
+  | Arrows | The next cell in that direction; nowhere at the edge (no wrapping) |
+  | Home / End | The first / last cell of the row |
+  | Ctrl (or ⌘) + Home / End | `A1` / `J10` |
+  | Page Up / Page Down | The top / bottom cell of the column |
+  | Enter / Space | — (activates the cell, as any button) |
+
+  Other keys, and arrows with a modifier, keep their browser behaviour.
+* **Cell size** ([ADR-0042](adr/0042-board-cell-size.md)): cells share the board's width, between 1.5 rem (24 px, WCAG 2.5.8) and 3 rem (48 px), and reach 2.75 rem (44 px) when the board is about 29 rem (466 px) wide. Phones in portrait get cells of about 1.9–2.3 rem (30–37 px) on 360–430 px viewports with 1 rem (16 px) gutters; the page never scrolls sideways.
 * **Placement (touch-first):**
   * tap a ship in the dock → tap a cell to place it;
   * tap a placed ship to select it → "Rotate" / "Remove" buttons;
