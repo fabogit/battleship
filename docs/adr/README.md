@@ -32,5 +32,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0026](0026-dependency-install-scripts.md) | Dependency install scripts | Accepted, 2026-10-05 |
 | [ADR-0027](0027-shutdown-signals.md) | Shutdown signals | Accepted, 2026-10-05 |
 | [ADR-0028](0028-local-tooling.md) | Local tooling | Accepted, 2026-10-05 |
+| [ADR-0029](0029-watch-mode.md) | Watch mode | Accepted, 2026-10-07 |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

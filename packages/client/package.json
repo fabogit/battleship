@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "ng serve",
+    "dev": "ng serve",
     "build": "ng build",
     "typecheck": "ngc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit",
     "test": "ng test --no-watch",

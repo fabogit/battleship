@@ -19,14 +19,12 @@ The server runs on Render's free tier and sleeps when idle: the first visit wait
 ## Quick start
 
 ```bash
-cp packages/server/.env.example packages/server/.env   # local PORT and ALLOWED_ORIGINS
+cp packages/server/.env.example packages/server/.env   # local PORT, ALLOWED_ORIGINS and log settings
 pnpm install
-pnpm build
-pnpm --filter @battleship/server start                 # http://localhost:3000 (try: curl localhost:3000/health)
-pnpm --filter @battleship/client start                 # http://localhost:4200, in a second terminal
+pnpm dev   # server on http://localhost:3000 (try: curl localhost:3000/health), client on http://localhost:4200
 ```
 
-The server's `start` runs `dist/`, so run `pnpm build` again after changing server or core code. Debug configurations for VS Code and the Postman collection are described in [Local tooling](docs/development.md#local-tooling).
+`pnpm dev` restarts the server and reloads the client whenever server, core or client code changes. To run the built server, as production does: `pnpm build && pnpm --filter @battleship/server start`. Debug configurations for VS Code and the Postman collection are described in [Local tooling](docs/development.md#local-tooling).
 
 ## Checks
 
