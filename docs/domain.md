@@ -100,6 +100,7 @@ export type RematchChoice = 'SAME_RULES' | 'CHANGE_RULES' | 'LEAVE';
 
 ## Placement
 
+* **Board axes:** `(0, 0)` is the top-left cell; `x` is the column, `y` the row. A ship extends from `start` towards larger `x` (`HORIZONTAL`) or larger `y` (`VERTICAL`).
 * **Bounds:** every derived coordinate lies on the board.
 * **Linearity & length:** derived from `start` + `orientation` + `SHIP_LENGTH[type]`.
 * **Uniqueness:** each `ShipType` appears at most once (exactly once for a complete fleet).
