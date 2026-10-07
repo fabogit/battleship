@@ -7,6 +7,7 @@ import {
   EMPTY_ROOM_TTL_MS,
   FLEET,
   SHIP_LENGTH,
+  TIMEOUT_ACTIONS,
 } from '../src/index.js';
 
 describe('fleet', () => {
@@ -36,7 +37,7 @@ describe('DEFAULT_RULES', () => {
       areAdjacentShipsAllowed: false,
       turnTimeLimitSeconds: 30,
       isSalvoModeEnabled: false,
-      timeoutAction: 'AUTO_RANDOM_SHOT',
+      timeoutAction: TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT,
     });
   });
 

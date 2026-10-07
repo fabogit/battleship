@@ -7,7 +7,10 @@ import {
   DEFAULT_RULES,
   FLEET,
   generateRandomFleet,
+  ORIENTATIONS,
+  PLACEMENT_VIOLATIONS,
   SHIP_LENGTH,
+  SHIP_TYPES,
   toPlacedShip,
   validateDraft,
   validateFleet,
@@ -26,7 +29,7 @@ const BOTH_SETTINGS = [
 ] as const;
 const SEED_COUNT = 500;
 
-function ship(type: ShipType, x: number, y: number, orientation: Orientation = 'HORIZONTAL'): ShipPlacement {
+function ship(type: ShipType, x: number, y: number, orientation: Orientation = ORIENTATIONS.HORIZONTAL): ShipPlacement {
   return { type, start: { x, y }, orientation };
 }
 
@@ -37,11 +40,11 @@ function placementOf({ type, start, orientation }: ShipPlacement): ShipPlacement
 
 /** A complete fleet that is valid with adjacency forbidden, in reverse `FLEET` order. */
 const SPREAD_FLEET: readonly ShipPlacement[] = [
-  ship('DESTROYER', 8, 8, 'VERTICAL'),
-  ship('SUBMARINE', 0, 8),
-  ship('CRUISER', 0, 6),
-  ship('BATTLESHIP', 0, 4),
-  ship('CARRIER', 0, 0),
+  ship(SHIP_TYPES.DESTROYER, 8, 8, ORIENTATIONS.VERTICAL),
+  ship(SHIP_TYPES.SUBMARINE, 0, 8),
+  ship(SHIP_TYPES.CRUISER, 0, 6),
+  ship(SHIP_TYPES.BATTLESHIP, 0, 4),
+  ship(SHIP_TYPES.CARRIER, 0, 0),
 ];
 
 /**
@@ -61,10 +64,10 @@ const SPREAD_FLEET: readonly ShipPlacement[] = [
  *   9 ...+#+....
  */
 const CARRIER_BLOCKING_DRAFT: readonly ShipPlacement[] = [
-  ship('BATTLESHIP', 6, 4),
-  ship('CRUISER', 4, 7, 'VERTICAL'),
-  ship('SUBMARINE', 0, 4),
-  ship('DESTROYER', 4, 0, 'VERTICAL'),
+  ship(SHIP_TYPES.BATTLESHIP, 6, 4),
+  ship(SHIP_TYPES.CRUISER, 4, 7, ORIENTATIONS.VERTICAL),
+  ship(SHIP_TYPES.SUBMARINE, 0, 4),
+  ship(SHIP_TYPES.DESTROYER, 4, 0, ORIENTATIONS.VERTICAL),
 ];
 
 /** Whether two ships share a cell or touch, diagonals included. */
@@ -79,29 +82,29 @@ function expectCompleteValidFleet(fleet: readonly PlacedShip[], rules: GameRules
 
 describe('toPlacedShip', () => {
   it('extends horizontal ships towards larger x and vertical ships towards larger y', () => {
-    expect(toPlacedShip(ship('CRUISER', 2, 7)).coordinates).toEqual([
+    expect(toPlacedShip(ship(SHIP_TYPES.CRUISER, 2, 7)).coordinates).toEqual([
       { x: 2, y: 7 },
       { x: 3, y: 7 },
       { x: 4, y: 7 },
     ]);
-    expect(toPlacedShip(ship('DESTROYER', 9, 0, 'VERTICAL')).coordinates).toEqual([
+    expect(toPlacedShip(ship(SHIP_TYPES.DESTROYER, 9, 0, ORIENTATIONS.VERTICAL)).coordinates).toEqual([
       { x: 9, y: 0 },
       { x: 9, y: 1 },
     ]);
   });
 
   it.each(FLEET)('derives SHIP_LENGTH cells for a %s', (type) => {
-    expect(toPlacedShip(ship(type, 0, 0, 'VERTICAL')).coordinates).toHaveLength(SHIP_LENGTH[type]);
+    expect(toPlacedShip(ship(type, 0, 0, ORIENTATIONS.VERTICAL)).coordinates).toHaveLength(SHIP_LENGTH[type]);
   });
 
   it('ignores coordinates and extra fields sent by the client', () => {
     const forged = {
-      ...ship('DESTROYER', 0, 0),
+      ...ship(SHIP_TYPES.DESTROYER, 0, 0),
       coordinates: [{ x: 5, y: 5 }],
       isSunk: true,
     } as PlacedShip;
     expect(toPlacedShip(forged)).toEqual({
-      ...ship('DESTROYER', 0, 0),
+      ...ship(SHIP_TYPES.DESTROYER, 0, 0),
       coordinates: [
         { x: 0, y: 0 },
         { x: 1, y: 0 },
@@ -118,7 +121,7 @@ describe('validateDraft', () => {
   it.each(BOTH_SETTINGS)(
     'accepts a valid partial draft, deriving ships in input order (adjacency %s)',
     (_name, rules) => {
-      const draft = [ship('SUBMARINE', 5, 5, 'VERTICAL'), ship('CARRIER', 0, 0)];
+      const draft = [ship(SHIP_TYPES.SUBMARINE, 5, 5, ORIENTATIONS.VERTICAL), ship(SHIP_TYPES.CARRIER, 0, 0)];
       expect(validateDraft(draft, rules)).toEqual({ ok: true, ships: draft.map(toPlacedShip) });
     },
   );
@@ -131,26 +134,26 @@ describe('validateDraft', () => {
   describe('borders', () => {
     it('accepts ships touching every edge and corner', () => {
       const draft = [
-        ship('CARRIER', BOARD_SIZE - 5, 0),
-        ship('BATTLESHIP', 0, BOARD_SIZE - 4, 'VERTICAL'),
-        ship('DESTROYER', BOARD_SIZE - 2, BOARD_SIZE - 1),
-        ship('CRUISER', 0, 0, 'VERTICAL'),
-        ship('SUBMARINE', BOARD_SIZE - 1, 3, 'VERTICAL'),
+        ship(SHIP_TYPES.CARRIER, BOARD_SIZE - 5, 0),
+        ship(SHIP_TYPES.BATTLESHIP, 0, BOARD_SIZE - 4, ORIENTATIONS.VERTICAL),
+        ship(SHIP_TYPES.DESTROYER, BOARD_SIZE - 2, BOARD_SIZE - 1),
+        ship(SHIP_TYPES.CRUISER, 0, 0, ORIENTATIONS.VERTICAL),
+        ship(SHIP_TYPES.SUBMARINE, BOARD_SIZE - 1, 3, ORIENTATIONS.VERTICAL),
       ];
       expect(validateDraft(draft, ADJACENT_FORBIDDEN).ok).toBe(true);
     });
 
     it.each([
-      ['past the right edge', ship('CARRIER', BOARD_SIZE - 4, 0)],
-      ['past the bottom edge', ship('BATTLESHIP', 3, BOARD_SIZE - 3, 'VERTICAL')],
-      ['with a negative x', ship('DESTROYER', -1, 4)],
-      ['with a negative y', ship('DESTROYER', 4, -1, 'VERTICAL')],
-      ['starting off the board', ship('DESTROYER', BOARD_SIZE, 0, 'VERTICAL')],
-      ['starting between cells', ship('DESTROYER', 0.5, 4)],
+      ['past the right edge', ship(SHIP_TYPES.CARRIER, BOARD_SIZE - 4, 0)],
+      ['past the bottom edge', ship(SHIP_TYPES.BATTLESHIP, 3, BOARD_SIZE - 3, ORIENTATIONS.VERTICAL)],
+      ['with a negative x', ship(SHIP_TYPES.DESTROYER, -1, 4)],
+      ['with a negative y', ship(SHIP_TYPES.DESTROYER, 4, -1, ORIENTATIONS.VERTICAL)],
+      ['starting off the board', ship(SHIP_TYPES.DESTROYER, BOARD_SIZE, 0, ORIENTATIONS.VERTICAL)],
+      ['starting between cells', ship(SHIP_TYPES.DESTROYER, 0.5, 4)],
     ])('rejects a ship %s', (_name, placement) => {
-      expect(validateDraft([ship('SUBMARINE', 0, 9), placement], ADJACENT_ALLOWED)).toEqual({
+      expect(validateDraft([ship(SHIP_TYPES.SUBMARINE, 0, 9), placement], ADJACENT_ALLOWED)).toEqual({
         ok: false,
-        reason: 'OUT_OF_BOUNDS',
+        reason: PLACEMENT_VIOLATIONS.OUT_OF_BOUNDS,
         shipIndex: 1,
       });
     });
@@ -158,39 +161,60 @@ describe('validateDraft', () => {
 
   describe('ship types', () => {
     it.each(BOTH_SETTINGS)('rejects a type placed twice (adjacency %s)', (_name, rules) => {
-      const draft = [ship('CRUISER', 0, 0), ship('DESTROYER', 0, 5), ship('CRUISER', 5, 5)];
-      expect(validateDraft(draft, rules)).toEqual({ ok: false, reason: 'DUPLICATE_TYPE', shipIndex: 2 });
+      const draft = [ship(SHIP_TYPES.CRUISER, 0, 0), ship(SHIP_TYPES.DESTROYER, 0, 5), ship(SHIP_TYPES.CRUISER, 5, 5)];
+      expect(validateDraft(draft, rules)).toEqual({
+        ok: false,
+        reason: PLACEMENT_VIOLATIONS.DUPLICATE_TYPE,
+        shipIndex: 2,
+      });
     });
 
     it('rejects a sixth ship as a duplicate', () => {
-      const draft = [...SPREAD_FLEET, ship('DESTROYER', 6, 2, 'VERTICAL')];
-      expect(validateDraft(draft, ADJACENT_FORBIDDEN)).toEqual({ ok: false, reason: 'DUPLICATE_TYPE', shipIndex: 5 });
+      const draft = [...SPREAD_FLEET, ship(SHIP_TYPES.DESTROYER, 6, 2, ORIENTATIONS.VERTICAL)];
+      expect(validateDraft(draft, ADJACENT_FORBIDDEN)).toEqual({
+        ok: false,
+        reason: PLACEMENT_VIOLATIONS.DUPLICATE_TYPE,
+        shipIndex: 5,
+      });
     });
   });
 
   describe('overlap', () => {
     it.each(BOTH_SETTINGS)('rejects crossing ships (adjacency %s)', (_name, rules) => {
-      const draft = [ship('CARRIER', 2, 4), ship('CRUISER', 4, 3, 'VERTICAL')];
-      expect(validateDraft(draft, rules)).toEqual({ ok: false, reason: 'OVERLAP', shipIndex: 1 });
+      const draft = [ship(SHIP_TYPES.CARRIER, 2, 4), ship(SHIP_TYPES.CRUISER, 4, 3, ORIENTATIONS.VERTICAL)];
+      expect(validateDraft(draft, rules)).toEqual({ ok: false, reason: PLACEMENT_VIOLATIONS.OVERLAP, shipIndex: 1 });
     });
 
     it.each(BOTH_SETTINGS)('rejects ships sharing a single end cell (adjacency %s)', (_name, rules) => {
-      const draft = [ship('DESTROYER', 0, 0), ship('SUBMARINE', 1, 0, 'VERTICAL')];
-      expect(validateDraft(draft, rules)).toEqual({ ok: false, reason: 'OVERLAP', shipIndex: 1 });
+      const draft = [ship(SHIP_TYPES.DESTROYER, 0, 0), ship(SHIP_TYPES.SUBMARINE, 1, 0, ORIENTATIONS.VERTICAL)];
+      expect(validateDraft(draft, rules)).toEqual({ ok: false, reason: PLACEMENT_VIOLATIONS.OVERLAP, shipIndex: 1 });
     });
   });
 
   describe('adjacency', () => {
     const touchingPairs = [
-      ['side by side', [ship('CARRIER', 0, 0), ship('BATTLESHIP', 2, 1)]],
-      ['end to end', [ship('DESTROYER', 3, 3), ship('CRUISER', 5, 3)]],
-      ['diagonally, down-right', [ship('DESTROYER', 0, 0), ship('CRUISER', 2, 1, 'VERTICAL')]],
-      ['diagonally, down-left', [ship('DESTROYER', 5, 5, 'VERTICAL'), ship('SUBMARINE', 2, 7)]],
-      ['diagonally, up-right', [ship('DESTROYER', 3, 6), ship('CRUISER', 5, 3, 'VERTICAL')]],
+      ['side by side', [ship(SHIP_TYPES.CARRIER, 0, 0), ship(SHIP_TYPES.BATTLESHIP, 2, 1)]],
+      ['end to end', [ship(SHIP_TYPES.DESTROYER, 3, 3), ship(SHIP_TYPES.CRUISER, 5, 3)]],
+      [
+        'diagonally, down-right',
+        [ship(SHIP_TYPES.DESTROYER, 0, 0), ship(SHIP_TYPES.CRUISER, 2, 1, ORIENTATIONS.VERTICAL)],
+      ],
+      [
+        'diagonally, down-left',
+        [ship(SHIP_TYPES.DESTROYER, 5, 5, ORIENTATIONS.VERTICAL), ship(SHIP_TYPES.SUBMARINE, 2, 7)],
+      ],
+      [
+        'diagonally, up-right',
+        [ship(SHIP_TYPES.DESTROYER, 3, 6), ship(SHIP_TYPES.CRUISER, 5, 3, ORIENTATIONS.VERTICAL)],
+      ],
     ] as const;
 
     it.each(touchingPairs)('rejects ships touching %s when adjacency is forbidden', (_name, draft) => {
-      expect(validateDraft(draft, ADJACENT_FORBIDDEN)).toEqual({ ok: false, reason: 'ADJACENT_SHIPS', shipIndex: 1 });
+      expect(validateDraft(draft, ADJACENT_FORBIDDEN)).toEqual({
+        ok: false,
+        reason: PLACEMENT_VIOLATIONS.ADJACENT_SHIPS,
+        shipIndex: 1,
+      });
     });
 
     it.each(touchingPairs)('accepts ships touching %s when adjacency is allowed', (_name, draft) => {
@@ -198,16 +222,24 @@ describe('validateDraft', () => {
     });
 
     it('accepts ships one cell apart, diagonally included, when adjacency is forbidden', () => {
-      const draft = [ship('DESTROYER', 0, 0), ship('CRUISER', 3, 2, 'VERTICAL'), ship('SUBMARINE', 0, 6)];
+      const draft = [
+        ship(SHIP_TYPES.DESTROYER, 0, 0),
+        ship(SHIP_TYPES.CRUISER, 3, 2, ORIENTATIONS.VERTICAL),
+        ship(SHIP_TYPES.SUBMARINE, 0, 6),
+      ];
       expect(validateDraft(draft, ADJACENT_FORBIDDEN).ok).toBe(true);
     });
   });
 
   it('reports the first rule broken, in bounds, type, overlap, adjacency order', () => {
-    const outOfBoundsDuplicate = [ship('DESTROYER', 0, 0), ship('DESTROYER', 9, 0)];
-    expect(validateDraft(outOfBoundsDuplicate, ADJACENT_FORBIDDEN)).toMatchObject({ reason: 'OUT_OF_BOUNDS' });
-    const overlappingDuplicate = [ship('DESTROYER', 0, 0), ship('DESTROYER', 0, 0)];
-    expect(validateDraft(overlappingDuplicate, ADJACENT_FORBIDDEN)).toMatchObject({ reason: 'DUPLICATE_TYPE' });
+    const outOfBoundsDuplicate = [ship(SHIP_TYPES.DESTROYER, 0, 0), ship(SHIP_TYPES.DESTROYER, 9, 0)];
+    expect(validateDraft(outOfBoundsDuplicate, ADJACENT_FORBIDDEN)).toMatchObject({
+      reason: PLACEMENT_VIOLATIONS.OUT_OF_BOUNDS,
+    });
+    const overlappingDuplicate = [ship(SHIP_TYPES.DESTROYER, 0, 0), ship(SHIP_TYPES.DESTROYER, 0, 0)];
+    expect(validateDraft(overlappingDuplicate, ADJACENT_FORBIDDEN)).toMatchObject({
+      reason: PLACEMENT_VIOLATIONS.DUPLICATE_TYPE,
+    });
   });
 });
 
@@ -222,14 +254,18 @@ describe('validateFleet', () => {
   ])('rejects an %s fleet as incomplete', (_name, ships) => {
     expect(validateFleet(ships, ADJACENT_FORBIDDEN)).toEqual({
       ok: false,
-      reason: 'INCOMPLETE_FLEET',
+      reason: PLACEMENT_VIOLATIONS.INCOMPLETE_FLEET,
       shipIndex: null,
     });
   });
 
   it('reports a broken rule before incompleteness', () => {
-    const draft = [ship('CARRIER', 0, 0), ship('DESTROYER', 0, 1)];
-    expect(validateFleet(draft, ADJACENT_FORBIDDEN)).toEqual({ ok: false, reason: 'ADJACENT_SHIPS', shipIndex: 1 });
+    const draft = [ship(SHIP_TYPES.CARRIER, 0, 0), ship(SHIP_TYPES.DESTROYER, 0, 1)];
+    expect(validateFleet(draft, ADJACENT_FORBIDDEN)).toEqual({
+      ok: false,
+      reason: PLACEMENT_VIOLATIONS.ADJACENT_SHIPS,
+      shipIndex: 1,
+    });
   });
 });
 
@@ -272,7 +308,7 @@ describe('completeFleet', () => {
   it.each(BOTH_SETTINGS)(
     'keeps the ships of a partial draft and adds the missing ones (adjacency %s)',
     (_name, rules) => {
-      const draft = [ship('DESTROYER', 4, 4, 'VERTICAL'), ship('CARRIER', 0, 9)];
+      const draft = [ship(SHIP_TYPES.DESTROYER, 4, 4, ORIENTATIONS.VERTICAL), ship(SHIP_TYPES.CARRIER, 0, 9)];
       const fleet = completeFleet(draft, rules, createSeededRng(1));
       expectCompleteValidFleet(fleet, rules);
       expect(fleet.map(placementOf)).toEqual(expect.arrayContaining(draft));
@@ -298,24 +334,24 @@ describe('completeFleet', () => {
   });
 
   it('gives the same fleet for the same draft and seed', () => {
-    const draft = [ship('BATTLESHIP', 3, 3)];
+    const draft = [ship(SHIP_TYPES.BATTLESHIP, 3, 3)];
     expect(completeFleet(draft, DEFAULT_RULES, createSeededRng(7))).toEqual(
       completeFleet(draft, DEFAULT_RULES, createSeededRng(7)),
     );
   });
 
   it('re-derives the coordinates of the draft ships', () => {
-    const forged = { ...ship('CARRIER', 0, 0), coordinates: [{ x: 9, y: 9 }] } as PlacedShip;
+    const forged = { ...ship(SHIP_TYPES.CARRIER, 0, 0), coordinates: [{ x: 9, y: 9 }] } as PlacedShip;
     const carrier = completeFleet([forged], DEFAULT_RULES, createSeededRng(1))[0];
-    expect(carrier).toEqual(toPlacedShip(ship('CARRIER', 0, 0)));
+    expect(carrier).toEqual(toPlacedShip(ship(SHIP_TYPES.CARRIER, 0, 0)));
   });
 
   describe('when the draft cannot be completed', () => {
     it('confirms the example draft is valid but leaves no room for a carrier', () => {
       expect(validateDraft(CARRIER_BLOCKING_DRAFT, ADJACENT_FORBIDDEN).ok).toBe(true);
-      const carrierPositions = (['HORIZONTAL', 'VERTICAL'] as const).flatMap((orientation) =>
+      const carrierPositions = ([ORIENTATIONS.HORIZONTAL, ORIENTATIONS.VERTICAL] as const).flatMap((orientation) =>
         Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, cell) =>
-          ship('CARRIER', cell % BOARD_SIZE, Math.floor(cell / BOARD_SIZE), orientation),
+          ship(SHIP_TYPES.CARRIER, cell % BOARD_SIZE, Math.floor(cell / BOARD_SIZE), orientation),
         ),
       );
       const fitting = carrierPositions.filter(
@@ -340,9 +376,9 @@ describe('completeFleet', () => {
   });
 
   it.each([
-    ['overlapping', [ship('CARRIER', 0, 0), ship('DESTROYER', 2, 0, 'VERTICAL')]],
-    ['out-of-bounds', [ship('CARRIER', 8, 0)]],
-    ['duplicate', [ship('DESTROYER', 0, 0), ship('DESTROYER', 5, 5)]],
+    ['overlapping', [ship(SHIP_TYPES.CARRIER, 0, 0), ship(SHIP_TYPES.DESTROYER, 2, 0, ORIENTATIONS.VERTICAL)]],
+    ['out-of-bounds', [ship(SHIP_TYPES.CARRIER, 8, 0)]],
+    ['duplicate', [ship(SHIP_TYPES.DESTROYER, 0, 0), ship(SHIP_TYPES.DESTROYER, 5, 5)]],
   ])('replaces an invalid %s draft with a whole random fleet', (_name, draft) => {
     const fleet = completeFleet(draft, ADJACENT_FORBIDDEN, createSeededRng(5));
     expect(fleet).toEqual(generateRandomFleet(ADJACENT_FORBIDDEN, createSeededRng(5)));

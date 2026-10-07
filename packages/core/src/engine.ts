@@ -4,6 +4,7 @@
 import { BOARD_SIZE } from './constants.js';
 import { isOnBoard, toCellIndex } from './grid.js';
 import type { Rng } from './random.js';
+import { SEATS, SHOT_OUTCOMES } from './types.js';
 import type { Coordinate, GameRules, PlacedShip, Seat, ShotResult } from './types.js';
 
 /** One player's side of a match: their fleet and every shot the opponent has fired at it (ADR-0034). */
@@ -27,11 +28,22 @@ export interface Battle {
 }
 
 /**
- * Constraint a turn's targets break, checked in this order: `WRONG_TARGET_COUNT` (not exactly the allowed count) for
- * the whole list, then per target in input order `OUT_OF_BOUNDS`, `DUPLICATE_TARGET` (the same cell twice in the
- * turn) and `ALREADY_TARGETED` (a cell shot in an earlier turn).
+ * Constraints a turn's targets can break, checked in this order: `WRONG_TARGET_COUNT` for the whole list, then per
+ * target in input order `OUT_OF_BOUNDS`, `DUPLICATE_TARGET` and `ALREADY_TARGETED`.
  */
-export type TargetViolation = 'WRONG_TARGET_COUNT' | 'OUT_OF_BOUNDS' | 'DUPLICATE_TARGET' | 'ALREADY_TARGETED';
+export const TARGET_VIOLATIONS = {
+  /** Not exactly the allowed count. */
+  WRONG_TARGET_COUNT: 'WRONG_TARGET_COUNT',
+  /** A target lies off the board. */
+  OUT_OF_BOUNDS: 'OUT_OF_BOUNDS',
+  /** The same cell twice in the turn. */
+  DUPLICATE_TARGET: 'DUPLICATE_TARGET',
+  /** A cell shot in an earlier turn. */
+  ALREADY_TARGETED: 'ALREADY_TARGETED',
+} as const;
+
+/** One of the `TARGET_VIOLATIONS`. */
+export type TargetViolation = (typeof TARGET_VIOLATIONS)[keyof typeof TARGET_VIOLATIONS];
 
 /** A turn whose targets were valid and have been fired. */
 export interface ResolvedTurn {
@@ -111,20 +123,20 @@ export function validateTargets(
   count: number,
 ): TargetValidation {
   if (targets.length !== count) {
-    return { ok: false, reason: 'WRONG_TARGET_COUNT', targetIndex: null };
+    return { ok: false, reason: TARGET_VIOLATIONS.WRONG_TARGET_COUNT, targetIndex: null };
   }
   const shotCells = new Set(shots.map((shot) => toCellIndex(shot.coordinate)));
   const turnCells = new Set<number>();
   for (const [targetIndex, target] of targets.entries()) {
     if (!isOnBoard(target)) {
-      return { ok: false, reason: 'OUT_OF_BOUNDS', targetIndex };
+      return { ok: false, reason: TARGET_VIOLATIONS.OUT_OF_BOUNDS, targetIndex };
     }
     const index = toCellIndex(target);
     if (turnCells.has(index)) {
-      return { ok: false, reason: 'DUPLICATE_TARGET', targetIndex };
+      return { ok: false, reason: TARGET_VIOLATIONS.DUPLICATE_TARGET, targetIndex };
     }
     if (shotCells.has(index)) {
-      return { ok: false, reason: 'ALREADY_TARGETED', targetIndex };
+      return { ok: false, reason: TARGET_VIOLATIONS.ALREADY_TARGETED, targetIndex };
     }
     turnCells.add(index);
   }
@@ -173,14 +185,18 @@ export function resolveTurn(battle: Battle, targets: readonly Coordinate[], rule
     shotCells.add(index);
     const ship = shipAtCell.get(index);
     if (ship === undefined) {
-      return { coordinate, outcome: 'MISS' };
+      return { coordinate, outcome: SHOT_OUTCOMES.MISS };
     }
-    return isSunk(ship) ? { coordinate, outcome: 'SUNK', sunkShip: ship } : { coordinate, outcome: 'HIT' };
+    return isSunk(ship)
+      ? { coordinate, outcome: SHOT_OUTCOMES.SUNK, sunkShip: ship }
+      : { coordinate, outcome: SHOT_OUTCOMES.HIT };
   });
 
   const winner = board.ships.every(isSunk) ? shooter : null;
   const isExtraTurnEarned =
-    rules.isExtraTurnOnHitEnabled && !rules.isSalvoModeEnabled && results.some((result) => result.outcome !== 'MISS');
+    rules.isExtraTurnOnHitEnabled &&
+    !rules.isSalvoModeEnabled &&
+    results.some((result) => result.outcome !== SHOT_OUTCOMES.MISS);
   const nextBoard: Board = { ships: board.ships, shots: [...board.shots, ...results] };
   return {
     ok: true,
@@ -230,5 +246,5 @@ export function randomTargets(battle: Battle, count: number, rng: Rng): Coordina
  * @returns `P2` for `P1` and `P1` for `P2`.
  */
 function otherSeat(seat: Seat): Seat {
-  return seat === 'P1' ? 'P2' : 'P1';
+  return seat === SEATS.P1 ? SEATS.P2 : SEATS.P1;
 }

@@ -1,5 +1,5 @@
-// Socket.io contract shared by server and client (docs/protocol.md, ADR-0015). Types only, plus the `ERROR_CODES`
-// list: core keeps zero runtime dependencies.
+// Socket.io contract shared by server and client (docs/protocol.md, ADR-0015). Types, plus the `as const` objects that
+// name the error codes and event names (ADR-0043): core keeps zero runtime dependencies.
 
 import type {
   Coordinate,
@@ -31,29 +31,30 @@ export interface EchoResponse {
 }
 
 /**
- * Every reason the server can refuse a command or a handshake, in the order of docs/protocol.md#error-codes. A runtime
- * list, so the client can check that each code has a message.
+ * Every reason the server can refuse a command or a handshake, in the order of docs/protocol.md#error-codes.
+ * `Object.values(ERROR_CODES)` lists them at runtime in that order, so the client can check that each code has a
+ * message.
  */
-export const ERROR_CODES = [
-  'PROTOCOL_MISMATCH',
-  'INVALID_PAYLOAD',
-  'RATE_LIMITED',
-  'SERVER_FULL',
-  'ROOM_NOT_FOUND',
-  'ROOM_FULL',
-  'SESSION_INVALID',
-  'WRONG_PHASE',
-  'NOT_YOUR_TURN',
-  'NOT_ALLOWED',
-  'INVALID_RULES',
-  'STALE_RULES',
-  'INVALID_PLACEMENT',
-  'PLACEMENT_LOCKED',
-  'INVALID_TARGETS',
-] as const;
+export const ERROR_CODES = {
+  PROTOCOL_MISMATCH: 'PROTOCOL_MISMATCH',
+  INVALID_PAYLOAD: 'INVALID_PAYLOAD',
+  RATE_LIMITED: 'RATE_LIMITED',
+  SERVER_FULL: 'SERVER_FULL',
+  ROOM_NOT_FOUND: 'ROOM_NOT_FOUND',
+  ROOM_FULL: 'ROOM_FULL',
+  SESSION_INVALID: 'SESSION_INVALID',
+  WRONG_PHASE: 'WRONG_PHASE',
+  NOT_YOUR_TURN: 'NOT_YOUR_TURN',
+  NOT_ALLOWED: 'NOT_ALLOWED',
+  INVALID_RULES: 'INVALID_RULES',
+  STALE_RULES: 'STALE_RULES',
+  INVALID_PLACEMENT: 'INVALID_PLACEMENT',
+  PLACEMENT_LOCKED: 'PLACEMENT_LOCKED',
+  INVALID_TARGETS: 'INVALID_TARGETS',
+} as const;
 
-/** Why the server refused a command or a handshake (docs/protocol.md#error-codes). */
-export type ErrorCode = (typeof ERROR_CODES)[number];
+/** Why the server refused a command or a handshake (docs/protocol.md#error-codes): one of the `ERROR_CODES`. */
+export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
 
 /** Reply to a refused command; the room is left unchanged. */
 export interface AckFailure {
@@ -197,8 +198,29 @@ export interface ClientToServerEvents {
   LEAVE_ROOM: (payload: EmptyPayload, ack: Ack<AckResponse>) => void;
 }
 
+/**
+ * The name of every client→server event, in the order of `ClientToServerEvents`. `satisfies` keeps it in step with the
+ * event map: a missing or extra event, or a value that differs from its key, is a compile error.
+ */
+export const CLIENT_EVENTS = {
+  ECHO: 'ECHO',
+  CREATE_ROOM: 'CREATE_ROOM',
+  JOIN_ROOM: 'JOIN_ROOM',
+  UPDATE_RULES: 'UPDATE_RULES',
+  CONFIRM_RULES: 'CONFIRM_RULES',
+  UPDATE_PLACEMENT: 'UPDATE_PLACEMENT',
+  CONFIRM_PLACEMENT: 'CONFIRM_PLACEMENT',
+  UNLOCK_PLACEMENT: 'UNLOCK_PLACEMENT',
+  UPDATE_TARGETS: 'UPDATE_TARGETS',
+  FIRE: 'FIRE',
+  SET_PAUSED: 'SET_PAUSED',
+  SURRENDER: 'SURRENDER',
+  REMATCH_CHOICE: 'REMATCH_CHOICE',
+  LEAVE_ROOM: 'LEAVE_ROOM',
+} as const satisfies { readonly [E in keyof ClientToServerEvents]: E };
+
 /** Client→server events whose payload passes a guard: every command but the Phase 0 `ECHO`. */
-export type CommandEvent = Exclude<keyof ClientToServerEvents, 'ECHO'>;
+export type CommandEvent = Exclude<keyof ClientToServerEvents, typeof CLIENT_EVENTS.ECHO>;
 
 /**
  * The payload of one command, as its guard returns it.
@@ -334,3 +356,15 @@ export interface ServerToClientEvents {
   /** The server is restarting; any match in progress is lost (docs/deployment.md#backend-render). */
   SERVER_SHUTDOWN: (payload: EmptyPayload) => void;
 }
+
+/**
+ * The name of every server→client event, in the order of `ServerToClientEvents`. `satisfies` keeps it in step with the
+ * event map: a missing or extra event, or a value that differs from its key, is a compile error.
+ */
+export const SERVER_EVENTS = {
+  STATE: 'STATE',
+  SHOT_RESOLVED: 'SHOT_RESOLVED',
+  DICE_ROLLED: 'DICE_ROLLED',
+  SESSION_REPLACED: 'SESSION_REPLACED',
+  SERVER_SHUTDOWN: 'SERVER_SHUTDOWN',
+} as const satisfies { readonly [E in keyof ServerToClientEvents]: E };

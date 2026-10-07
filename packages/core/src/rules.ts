@@ -1,5 +1,6 @@
 // Game rules defaults (docs/domain.md#rules). `validateRules` lands with rules negotiation (issue #26).
 
+import { TIMEOUT_ACTIONS } from './types.js';
 import type { GameRules } from './types.js';
 
 /** Rules a new room starts with: no extra turn on hit, adjacency not allowed, 30 s turns, no salvo, auto random shot. */
@@ -8,5 +9,5 @@ export const DEFAULT_RULES: GameRules = {
   areAdjacentShipsAllowed: false,
   turnTimeLimitSeconds: 30,
   isSalvoModeEnabled: false,
-  timeoutAction: 'AUTO_RANDOM_SHOT',
+  timeoutAction: TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT,
 };

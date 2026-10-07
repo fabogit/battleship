@@ -2,11 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   BOARD_SIZE,
+  CLIENT_EVENTS,
   DEFAULT_RULES,
   FLEET,
   NICKNAME_MAX_LENGTH,
-  PAYLOAD_PARSERS,
+  ORIENTATIONS,
   parseSessionCredentials,
+  PAYLOAD_PARSERS,
+  REMATCH_CHOICES,
+  SHIP_TYPES,
+  TIMEOUT_ACTIONS,
   type CommandEvent,
 } from '../src/index.js';
 
@@ -20,14 +25,16 @@ const VALID_PAYLOADS: Record<CommandEvent, unknown> = {
   JOIN_ROOM: { roomId: ROOM_ID, nickname: 'Grace' },
   UPDATE_RULES: { rules: DEFAULT_RULES },
   CONFIRM_RULES: { rulesVersion: 3 },
-  UPDATE_PLACEMENT: { ships: [{ type: 'CARRIER', start: { x: 0, y: 0 }, orientation: 'HORIZONTAL' }] },
+  UPDATE_PLACEMENT: {
+    ships: [{ type: SHIP_TYPES.CARRIER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.HORIZONTAL }],
+  },
   CONFIRM_PLACEMENT: {},
   UNLOCK_PLACEMENT: {},
   UPDATE_TARGETS: { targets: [{ x: 9, y: 9 }] },
   FIRE: { targets: [{ x: 0, y: 9 }] },
   SET_PAUSED: { isPaused: true },
   SURRENDER: {},
-  REMATCH_CHOICE: { choice: 'CHANGE_RULES' },
+  REMATCH_CHOICE: { choice: REMATCH_CHOICES.CHANGE_RULES },
   LEAVE_ROOM: {},
 };
 
@@ -96,17 +103,17 @@ describe('every command guard', () => {
 
 describe('CREATE_ROOM', () => {
   it('trims the nickname', () => {
-    expect(parse('CREATE_ROOM', { nickname: '  Ada\t\n' })).toEqual({ nickname: 'Ada' });
+    expect(parse(CLIENT_EVENTS.CREATE_ROOM, { nickname: '  Ada\t\n' })).toEqual({ nickname: 'Ada' });
   });
 
   it('accepts a nickname of exactly NICKNAME_MAX_LENGTH once trimmed', () => {
     const nickname = 'n'.repeat(NICKNAME_MAX_LENGTH);
-    expect(parse('CREATE_ROOM', { nickname: `   ${nickname}   ` })).toEqual({ nickname });
+    expect(parse(CLIENT_EVENTS.CREATE_ROOM, { nickname: `   ${nickname}   ` })).toEqual({ nickname });
   });
 
   it('counts UTF-16 code units, like HTML maxlength', () => {
-    expect(parse('CREATE_ROOM', { nickname: '🚢'.repeat(NICKNAME_MAX_LENGTH / 2) })).not.toBeNull();
-    expect(parse('CREATE_ROOM', { nickname: '🚢'.repeat(NICKNAME_MAX_LENGTH / 2 + 1) })).toBeNull();
+    expect(parse(CLIENT_EVENTS.CREATE_ROOM, { nickname: '🚢'.repeat(NICKNAME_MAX_LENGTH / 2) })).not.toBeNull();
+    expect(parse(CLIENT_EVENTS.CREATE_ROOM, { nickname: '🚢'.repeat(NICKNAME_MAX_LENGTH / 2 + 1) })).toBeNull();
   });
 
   it.each([
@@ -115,21 +122,24 @@ describe('CREATE_ROOM', () => {
     ['one unit too long', 'n'.repeat(NICKNAME_MAX_LENGTH + 1)],
     ['a megabyte long', 'n'.repeat(1_000_000)],
   ])('refuses a nickname that is %s', (_label, nickname) => {
-    expect(parse('CREATE_ROOM', { nickname })).toBeNull();
+    expect(parse(CLIENT_EVENTS.CREATE_ROOM, { nickname })).toBeNull();
   });
 
   it.each([null, 42, true, ['Ada'], { name: 'Ada' }])('refuses a nickname that is not a string: %j', (nickname) => {
-    expect(parse('CREATE_ROOM', { nickname })).toBeNull();
+    expect(parse(CLIENT_EVENTS.CREATE_ROOM, { nickname })).toBeNull();
   });
 
   it('refuses a missing nickname', () => {
-    expect(parse('CREATE_ROOM', {})).toBeNull();
+    expect(parse(CLIENT_EVENTS.CREATE_ROOM, {})).toBeNull();
   });
 });
 
 describe('JOIN_ROOM', () => {
   it('trims the nickname', () => {
-    expect(parse('JOIN_ROOM', { roomId: ROOM_ID, nickname: ' Grace ' })).toEqual({ roomId: ROOM_ID, nickname: 'Grace' });
+    expect(parse(CLIENT_EVENTS.JOIN_ROOM, { roomId: ROOM_ID, nickname: ' Grace ' })).toEqual({
+      roomId: ROOM_ID,
+      nickname: 'Grace',
+    });
   });
 
   it.each([
@@ -145,31 +155,31 @@ describe('JOIN_ROOM', () => {
     ['a number', 12345678],
     ['null', null],
   ])('refuses a room id that is %s', (_label, roomId) => {
-    expect(parse('JOIN_ROOM', { roomId, nickname: 'Grace' })).toBeNull();
+    expect(parse(CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Grace' })).toBeNull();
   });
 
   it('refuses an invalid nickname', () => {
-    expect(parse('JOIN_ROOM', { roomId: ROOM_ID, nickname: '   ' })).toBeNull();
+    expect(parse(CLIENT_EVENTS.JOIN_ROOM, { roomId: ROOM_ID, nickname: '   ' })).toBeNull();
   });
 
   it('refuses a missing room id', () => {
-    expect(parse('JOIN_ROOM', { nickname: 'Grace' })).toBeNull();
+    expect(parse(CLIENT_EVENTS.JOIN_ROOM, { nickname: 'Grace' })).toBeNull();
   });
 });
 
 describe('UPDATE_RULES', () => {
   it('accepts every turn time limit and timeout action', () => {
     for (const turnTimeLimitSeconds of [15, 30, 60, 120]) {
-      for (const timeoutAction of ['AUTO_RANDOM_SHOT', 'PASS_TURN']) {
+      for (const timeoutAction of [TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT, TIMEOUT_ACTIONS.PASS_TURN]) {
         const rules = { ...DEFAULT_RULES, turnTimeLimitSeconds, timeoutAction };
-        expect(parse('UPDATE_RULES', { rules })).toEqual({ rules });
+        expect(parse(CLIENT_EVENTS.UPDATE_RULES, { rules })).toEqual({ rules });
       }
     }
   });
 
   it('leaves the salvo / extra-turn exclusivity to validateRules', () => {
     const rules = { ...DEFAULT_RULES, isSalvoModeEnabled: true, isExtraTurnOnHitEnabled: true };
-    expect(parse('UPDATE_RULES', { rules })).toEqual({ rules });
+    expect(parse(CLIENT_EVENTS.UPDATE_RULES, { rules })).toEqual({ rules });
   });
 
   it.each([
@@ -184,64 +194,65 @@ describe('UPDATE_RULES', () => {
     ['a boolean as a number', { areAdjacentShipsAllowed: 0 }],
     ['a null boolean', { isExtraTurnOnHitEnabled: null }],
   ])('refuses %s', (_label, change) => {
-    expect(parse('UPDATE_RULES', { rules: { ...DEFAULT_RULES, ...change } })).toBeNull();
+    expect(parse(CLIENT_EVENTS.UPDATE_RULES, { rules: { ...DEFAULT_RULES, ...change } })).toBeNull();
   });
 
   it('refuses rules with a missing field', () => {
     const rules: Record<string, unknown> = { ...DEFAULT_RULES };
     delete rules['timeoutAction'];
-    expect(parse('UPDATE_RULES', { rules })).toBeNull();
+    expect(parse(CLIENT_EVENTS.UPDATE_RULES, { rules })).toBeNull();
   });
 
   it('refuses rules with an extra field', () => {
-    expect(parse('UPDATE_RULES', { rules: { ...DEFAULT_RULES, isCheatModeEnabled: true } })).toBeNull();
+    expect(parse(CLIENT_EVENTS.UPDATE_RULES, { rules: { ...DEFAULT_RULES, isCheatModeEnabled: true } })).toBeNull();
   });
 
   it.each([null, 'DEFAULT', [], 30])('refuses rules that are not an object: %j', (rules) => {
-    expect(parse('UPDATE_RULES', { rules })).toBeNull();
+    expect(parse(CLIENT_EVENTS.UPDATE_RULES, { rules })).toBeNull();
   });
 });
 
 describe('CONFIRM_RULES', () => {
   it('accepts version 0 and the largest safe integer', () => {
-    expect(parse('CONFIRM_RULES', { rulesVersion: 0 })).toEqual({ rulesVersion: 0 });
-    expect(parse('CONFIRM_RULES', { rulesVersion: Number.MAX_SAFE_INTEGER })).not.toBeNull();
+    expect(parse(CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 })).toEqual({ rulesVersion: 0 });
+    expect(parse(CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: Number.MAX_SAFE_INTEGER })).not.toBeNull();
   });
 
   it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, '3', null, [3]])(
     'refuses rulesVersion %j',
     (rulesVersion) => {
-      expect(parse('CONFIRM_RULES', { rulesVersion })).toBeNull();
+      expect(parse(CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion })).toBeNull();
     },
   );
 });
 
 describe('UPDATE_PLACEMENT', () => {
   /** A complete fleet, one ship per row. */
-  const fleet = FLEET.map((type, row) => ({ type, start: { x: 0, y: row }, orientation: 'HORIZONTAL' }));
+  const fleet = FLEET.map((type, row) => ({ type, start: { x: 0, y: row }, orientation: ORIENTATIONS.HORIZONTAL }));
 
   it('accepts an empty draft and a complete fleet', () => {
-    expect(parse('UPDATE_PLACEMENT', { ships: [] })).toEqual({ ships: [] });
-    expect(parse('UPDATE_PLACEMENT', { ships: fleet })).toEqual({ ships: fleet });
+    expect(parse(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [] })).toEqual({ ships: [] });
+    expect(parse(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: fleet })).toEqual({ ships: fleet });
   });
 
   it('leaves repeated types and ships running off the board to placement validation', () => {
-    const ship = { type: 'CARRIER', start: { x: BOARD_SIZE - 1, y: 0 }, orientation: 'HORIZONTAL' };
-    expect(parse('UPDATE_PLACEMENT', { ships: [ship, ship] })).toEqual({ ships: [ship, ship] });
+    const ship = { type: SHIP_TYPES.CARRIER, start: { x: BOARD_SIZE - 1, y: 0 }, orientation: ORIENTATIONS.HORIZONTAL };
+    expect(parse(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [ship, ship] })).toEqual({ ships: [ship, ship] });
   });
 
   it('refuses more ships than a fleet holds', () => {
-    expect(parse('UPDATE_PLACEMENT', { ships: [...fleet, fleet[0]] })).toBeNull();
+    expect(parse(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [...fleet, fleet[0]] })).toBeNull();
   });
 
   it('refuses a huge array', () => {
-    expect(parse('UPDATE_PLACEMENT', { ships: Array.from({ length: 100_000 }, () => fleet[0]) })).toBeNull();
+    const ships = Array.from({ length: 100_000 }, () => fleet[0]);
+    expect(parse(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships })).toBeNull();
   });
 
   it('refuses a sparse array', () => {
     const ships: unknown[] = [fleet[0]];
     ships[2] = fleet[2];
-    expect(parse('UPDATE_PLACEMENT', { ships })).toBeNull();
+    expect(parse(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships })).toBeNull();
   });
 
   it.each([
@@ -257,16 +268,19 @@ describe('UPDATE_PLACEMENT', () => {
     ['a null start', { start: null }],
     ['precomputed coordinates', { coordinates: [{ x: 0, y: 0 }] }],
   ])('refuses a ship with %s', (_label, change) => {
-    const ship = { type: 'DESTROYER', start: { x: 0, y: 0 }, orientation: 'VERTICAL', ...change };
-    expect(parse('UPDATE_PLACEMENT', { ships: [ship] })).toBeNull();
+    const ship = { type: SHIP_TYPES.DESTROYER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.VERTICAL, ...change };
+    expect(parse(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [ship] })).toBeNull();
   });
 
-  it.each([null, 'CARRIER', 5, { 0: fleet[0], length: 1 }])('refuses ships that are not an array: %j', (ships) => {
-    expect(parse('UPDATE_PLACEMENT', { ships })).toBeNull();
-  });
+  it.each([null, SHIP_TYPES.CARRIER, 5, { 0: fleet[0], length: 1 }])(
+    'refuses ships that are not an array: %j',
+    (ships) => {
+      expect(parse(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships })).toBeNull();
+    },
+  );
 });
 
-describe.each(['UPDATE_TARGETS', 'FIRE'] as const)('%s', (event) => {
+describe.each([CLIENT_EVENTS.UPDATE_TARGETS, CLIENT_EVENTS.FIRE] as const)('%s', (event) => {
   /** One target in each of the first `count` cells of the top row. */
   const targets = (count: number) => Array.from({ length: count }, (_, x) => ({ x, y: 0 }));
 
@@ -317,39 +331,44 @@ describe.each(['UPDATE_TARGETS', 'FIRE'] as const)('%s', (event) => {
 
 describe('targets count', () => {
   it('lets an UPDATE_TARGETS draft be empty', () => {
-    expect(parse('UPDATE_TARGETS', { targets: [] })).toEqual({ targets: [] });
+    expect(parse(CLIENT_EVENTS.UPDATE_TARGETS, { targets: [] })).toEqual({ targets: [] });
   });
 
   it('refuses a FIRE without targets', () => {
-    expect(parse('FIRE', { targets: [] })).toBeNull();
+    expect(parse(CLIENT_EVENTS.FIRE, { targets: [] })).toBeNull();
   });
 });
 
 describe('SET_PAUSED', () => {
   it('accepts false', () => {
-    expect(parse('SET_PAUSED', { isPaused: false })).toEqual({ isPaused: false });
+    expect(parse(CLIENT_EVENTS.SET_PAUSED, { isPaused: false })).toEqual({ isPaused: false });
   });
 
   it.each(['true', 1, 0, null, undefined])('refuses isPaused %j', (isPaused) => {
-    expect(parse('SET_PAUSED', { isPaused })).toBeNull();
+    expect(parse(CLIENT_EVENTS.SET_PAUSED, { isPaused })).toBeNull();
   });
 
   it('refuses the field under its old name', () => {
-    expect(parse('SET_PAUSED', { paused: true })).toBeNull();
+    expect(parse(CLIENT_EVENTS.SET_PAUSED, { paused: true })).toBeNull();
   });
 });
 
 describe('REMATCH_CHOICE', () => {
-  it.each(['SAME_RULES', 'CHANGE_RULES', 'LEAVE'])('accepts %s', (choice) => {
-    expect(parse('REMATCH_CHOICE', { choice })).toEqual({ choice });
+  it.each([REMATCH_CHOICES.SAME_RULES, REMATCH_CHOICES.CHANGE_RULES, REMATCH_CHOICES.LEAVE])('accepts %s', (choice) => {
+    expect(parse(CLIENT_EVENTS.REMATCH_CHOICE, { choice })).toEqual({ choice });
   });
 
   it.each(['REMATCH', 'leave', 'hasOwnProperty', '', null, 0])('refuses choice %j', (choice) => {
-    expect(parse('REMATCH_CHOICE', { choice })).toBeNull();
+    expect(parse(CLIENT_EVENTS.REMATCH_CHOICE, { choice })).toBeNull();
   });
 });
 
-describe.each(['CONFIRM_PLACEMENT', 'UNLOCK_PLACEMENT', 'SURRENDER', 'LEAVE_ROOM'] as const)('%s', (event) => {
+describe.each([
+  CLIENT_EVENTS.CONFIRM_PLACEMENT,
+  CLIENT_EVENTS.UNLOCK_PLACEMENT,
+  CLIENT_EVENTS.SURRENDER,
+  CLIENT_EVENTS.LEAVE_ROOM,
+] as const)('%s', (event) => {
   it('refuses any field', () => {
     expect(parse(event, { reason: 'bored' })).toBeNull();
   });

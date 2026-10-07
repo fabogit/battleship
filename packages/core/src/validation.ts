@@ -2,16 +2,8 @@
 
 import { BOARD_SIZE, NICKNAME_MAX_LENGTH, ROOM_ID_ALPHABET, ROOM_ID_LENGTH } from './constants.js';
 import type { CommandEvent, CommandPayload, EmptyPayload, SessionCredentials, TargetsPayload } from './protocol.js';
-import { FLEET, SHIP_LENGTH } from './types.js';
-import type {
-  Coordinate,
-  GameRules,
-  Orientation,
-  RematchChoice,
-  ShipPlacement,
-  TimeoutAction,
-  TurnTimeLimitSeconds,
-} from './types.js';
+import { FLEET, ORIENTATIONS, REMATCH_CHOICES, SHIP_TYPES, TIMEOUT_ACTIONS } from './types.js';
+import type { Coordinate, GameRules, ShipPlacement, TurnTimeLimitSeconds } from './types.js';
 
 /**
  * A guard: checks an untrusted value and returns a new, normalized copy of it, or `null` when it is malformed. It never
@@ -28,15 +20,6 @@ const MAX_SHIPS = FLEET.length;
 
 /** Targets in a turn: one per surviving ship in salvo mode, so never more than a whole fleet. */
 const MAX_TARGETS = FLEET.length;
-
-/** Valid orientations, as a record so that a new `Orientation` member is a compile error here. */
-const ORIENTATIONS: Readonly<Record<Orientation, true>> = { HORIZONTAL: true, VERTICAL: true };
-
-/** Valid timeout actions, as a record so that a new `TimeoutAction` member is a compile error here. */
-const TIMEOUT_ACTIONS: Readonly<Record<TimeoutAction, true>> = { AUTO_RANDOM_SHOT: true, PASS_TURN: true };
-
-/** Valid rematch choices, as a record so that a new `RematchChoice` member is a compile error here. */
-const REMATCH_CHOICES: Readonly<Record<RematchChoice, true>> = { SAME_RULES: true, CHANGE_RULES: true, LEAVE: true };
 
 /** Valid turn durations, as a record so that a new `TurnTimeLimitSeconds` member is a compile error here. */
 const TURN_TIME_LIMITS: Readonly<Record<TurnTimeLimitSeconds, true>> = { 15: true, 30: true, 60: true, 120: true };
@@ -92,13 +75,14 @@ function parseArray<T>(value: unknown, minLength: number, maxLength: number, par
 }
 
 /**
- * Checks a string against a closed set of values.
- * @param members The set, as a record keyed by its values.
+ * Checks a string against a closed set of values (ADR-0043). Compares the values, not the keys, so renaming a key of
+ * the set never changes what the guard accepts.
+ * @param members The set, as one of core's `as const` objects.
  * @param value The untrusted value.
- * @returns Whether the value is a string and one of the record's own keys.
+ * @returns Whether the value is exactly one of the set's values.
  */
-function isStringMember<K extends string>(members: Readonly<Record<K, unknown>>, value: unknown): value is K {
-  return typeof value === 'string' && Object.hasOwn(members, value);
+function isStringMember<T extends string>(members: Readonly<Record<string, T>>, value: unknown): value is T {
+  return typeof value === 'string' && Object.values<string>(members).includes(value);
 }
 
 /**
@@ -170,7 +154,7 @@ function parseShipPlacement(value: unknown): ShipPlacement | null {
   const type = fields['type'];
   const start = parseCoordinate(fields['start']);
   const orientation = fields['orientation'];
-  if (!isStringMember(SHIP_LENGTH, type) || start === null || !isStringMember(ORIENTATIONS, orientation)) {
+  if (!isStringMember(SHIP_TYPES, type) || start === null || !isStringMember(ORIENTATIONS, orientation)) {
     return null;
   }
   return { type, start, orientation };
