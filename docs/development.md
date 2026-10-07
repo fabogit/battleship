@@ -46,7 +46,7 @@ battleship/
     │   │   ├── shutdown.ts            # SIGTERM/SIGINT → app.close(); repeats ignored, 10 s deadline (D27)
     │   │   └── index.ts               # Entry point: config, server, signal handling, listen
     │   ├── scripts/echo-client.ts     # Smoke test against a running server (Phase 0)
-    │   ├── .env.example               # Local PORT / ALLOWED_ORIGINS: copy to .env (Local tooling)
+    │   ├── .env.example               # Local PORT / ALLOWED_ORIGINS / LOG_*: copy to .env (Local tooling)
     │   └── test/                      # Room unit tests (fake clock) + socket integration tests
     │
     └── client/                    # Angular 22, @angular/build (esbuild), unit tests on Vitest + jsdom
@@ -81,7 +81,7 @@ A new consumer of core (or a new workspace package consumed the same way) needs 
 
 Decision: [ADR-0028](adr/0028-local-tooling.md).
 
-* **Run:** `cp packages/server/.env.example packages/server/.env` (allows `http://localhost:4200`; without it the server refuses to start, [Backend (Render)](deployment.md#backend-render)), then `pnpm build && pnpm --filter @battleship/server start` (`start` runs `dist/`, so rebuild after every change) and `pnpm --filter @battleship/client start`.
+* **Run:** `cp packages/server/.env.example packages/server/.env` (allows `http://localhost:4200` and sets `LOG_FORMAT=pretty` and `LOG_LEVEL=debug`, so the terminal shows every request and socket event in readable form, [Logging](server.md#logging); without it the server refuses to start, [Backend (Render)](deployment.md#backend-render)), then `pnpm build && pnpm --filter @battleship/server start` (`start` runs `dist/`, so rebuild after every change) and `pnpm --filter @battleship/client start`.
 * **Debug (VS Code, `.vscode/launch.json`):** `Server` (builds core and server, runs `dist/` with source maps in the integrated terminal), `Client` (`ng serve` + Chrome/Chromium), `Server + Client`, `Server tests: current file` (Vitest), `Client tests: current file` (`ng test --debug`, attach on port 9229).
 * **Manual checks (Postman):** open the repo folder in the Postman desktop app (Native Git, free plan) and select the `localhost` environment (`baseUrl`, `allowedOrigin`). The `health` folder runs in the Collection Runner; Socket.IO requests (`ECHO`, `ECHO — foreign origin`) are sent by hand. Outside the app: `npx postman-cli collection lint "postman/collections/Battleship API"` and `npx postman-cli collection run "postman/collections/Battleship API" -e postman/environments/localhost.environment.yaml -i health`.
 * **Keeping it current:** an issue that adds a REST route or a Socket.IO event adds the matching request, message or listener to the collection.

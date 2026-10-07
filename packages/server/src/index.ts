@@ -5,7 +5,14 @@ import { createServer } from './server.js';
 import { handleShutdownSignals } from './shutdown.js';
 
 const config = loadConfig(process.env);
-const app = createServer({ allowedOrigins: config.allowedOrigins, logger: true });
+const app = createServer({
+  allowedOrigins: config.allowedOrigins,
+  logger: {
+    level: config.logLevel,
+    // pino-pretty is a dev dependency: `LOG_FORMAT=pretty` is meant for local runs only.
+    ...(config.logFormat === 'pretty' ? { transport: { target: 'pino-pretty' } } : {}),
+  },
+});
 
 handleShutdownSignals(app);
 

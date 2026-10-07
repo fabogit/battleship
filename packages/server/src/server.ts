@@ -9,7 +9,7 @@ import {
   type HealthResponse,
   type ServerToClientEvents,
 } from '@battleship/core';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { Server } from 'socket.io';
 
 import { createOriginMatcher } from './origins.js';
@@ -17,6 +17,10 @@ import { createOriginMatcher } from './origins.js';
 /** Upper bound for flushing `SERVER_SHUTDOWN`; Render sends SIGKILL 30 s after SIGTERM. */
 const SHUTDOWN_GRACE_MS = 3_000;
 
+/** Pino levels at which every request and socket event is logged. */
+const VERBOSE_LEVELS: readonly string[] = ['debug', 'trace'];
+
+/** Socket.io server typed with the protocol's event maps (docs/protocol.md). */
 export type GameServer = Server<ClientToServerEvents, ServerToClientEvents>;
 
 declare module 'fastify' {
@@ -26,20 +30,28 @@ declare module 'fastify' {
   }
 }
 
+/** What `createServer` needs; the entry point builds it from `ServerConfig`. */
 export interface ServerOptions {
   /** Exact origins and `https://*.<domain>` wildcards, as validated by `loadConfig` (ADR-0021, ADR-0024). */
   readonly allowedOrigins: readonly string[];
-  readonly logger: boolean;
+  /** Options for Fastify's built-in Pino logger; `false` disables logging. */
+  readonly logger: NonNullable<FastifyServerOptions['logger']>;
 }
 
 /**
  * Builds the HTTP + Socket.io server without listening; Socket.io is available as `app.io`.
  * `app.close()` performs the graceful shutdown: every socket gets `SERVER_SHUTDOWN` and is
  * disconnected before the HTTP server closes.
+ * @param options Allowed origins and logger settings.
+ * @returns The Fastify instance, ready for `listen()`.
  */
 export function createServer(options: ServerOptions): FastifyInstance {
   const isOriginAllowed = createOriginMatcher(options.allowedOrigins);
-  // CORS callback result: reflect an allowed `Origin`, send no CORS headers otherwise.
+  /**
+   * CORS callback result: reflect an allowed `Origin`, send no CORS headers otherwise.
+   * @param origin The request's `Origin` header, absent for same-origin and non-browser requests.
+   * @returns The origin to echo in `Access-Control-Allow-Origin`, or `false` for no CORS headers.
+   */
   const corsOrigin = (origin: string | undefined): string | false => (isOriginAllowed(origin) ? (origin ?? false) : false);
 
   const app = Fastify({ logger: options.logger });
@@ -59,8 +71,14 @@ export function createServer(options: ServerOptions): FastifyInstance {
     },
   });
 
-  // Render's health check hits this every few seconds: keep it out of the logs unless something goes wrong.
-  app.get('/health', { logLevel: 'warn' }, (): HealthResponse => ({ status: 'ok', uptime: process.uptime() }));
+  // `debug` and `trace` (local runs) log everything; above them, logs stay to what production needs.
+  const isVerbose = VERBOSE_LEVELS.includes(app.log.level);
+
+  // Render's health check hits this every few seconds: unless verbose, keep it out of the logs unless something goes wrong.
+  app.get('/health', isVerbose ? {} : { logLevel: 'warn' }, (): HealthResponse => ({
+    status: 'ok',
+    uptime: process.uptime(),
+  }));
 
   const io: GameServer = new Server(app.server, {
     cors: {
@@ -70,12 +88,33 @@ export function createServer(options: ServerOptions): FastifyInstance {
     },
     // CORS headers alone do not stop WebSocket upgrades, so the handshake is rejected outright.
     allowRequest: (request, callback) => {
-      callback(null, isOriginAllowed(request.headers.origin));
+      const isAllowed = isOriginAllowed(request.headers.origin);
+      if (!isAllowed) {
+        app.log.info({ origin: request.headers.origin }, 'Socket.io handshake refused');
+      }
+      callback(null, isAllowed);
     },
   });
   app.decorate('io', io);
 
   io.on('connection', (socket) => {
+    const log = app.log.child({ socketId: socket.id });
+    const { headers, address } = socket.handshake;
+    log.info({ transport: socket.conn.transport.name, origin: headers.origin, address }, 'Socket connected');
+    socket.conn.once('upgrade', () => {
+      log.debug({ transport: socket.conn.transport.name }, 'Socket transport upgraded');
+    });
+    socket.on('disconnect', (reason) => {
+      log.info({ reason }, 'Socket disconnected');
+    });
+    // Payloads only at debug: they are noisy and will carry player data.
+    socket.onAny((event: string, ...args: unknown[]) => {
+      log.debug({ event, args: withoutAck(args) }, 'Socket event received');
+    });
+    socket.onAnyOutgoing((event: string, ...args: unknown[]) => {
+      log.debug({ event, args }, 'Socket event sent');
+    });
+
     // Inbound arguments are untrusted: a client can emit without an ack, so it is checked before use.
     socket.on('ECHO', (payload: unknown, ack: unknown) => {
       if (typeof ack !== 'function') {
@@ -100,4 +139,13 @@ export function createServer(options: ServerOptions): FastifyInstance {
   });
 
   return app;
+}
+
+/**
+ * Drops the ack callback a client may pass as the last argument: it is not data.
+ * @param args The arguments of an inbound event.
+ * @returns The same arguments without functions, ready to log.
+ */
+function withoutAck(args: readonly unknown[]): unknown[] {
+  return args.filter((arg) => typeof arg !== 'function');
 }

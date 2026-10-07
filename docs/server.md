@@ -81,7 +81,7 @@ Behaviour of the game server, `packages/server`.
 ### Disconnection & pause (`IN_PROGRESS`)
 
 * When a player's socket drops, the match auto-pauses. A paused match freezes the turn timer with its remaining time.
-* `SET_PAUSED { paused }` is accepted **only from the connected player while the opponent is disconnected**.
+* `SET_PAUSED { isPaused }` is accepted **only from the connected player while the opponent is disconnected**.
 * While unpaused, timers run normally: the absent player's turns time out and count as AFK.
 * The forfeit clock (`DISCONNECT_FORFEIT_MS`, from the moment of disconnection) runs regardless of pause. On expiry → `GAME_OVER`, reason `DISCONNECT_FORFEIT`.
 * On reconnection the match resumes automatically with the remaining turn time.
@@ -128,6 +128,20 @@ Behaviour of the game server, `packages/server`.
 * Socket.io `maxHttpBufferSize` is set to a small value (e.g. 16 KB).
 * Per-socket rate limit (`RATE_LIMIT_EVENTS_PER_SECOND`) → `RATE_LIMITED`.
 * `MAX_ROOMS` cap → `SERVER_FULL`.
+
+## Logging
+
+Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `LOG_FORMAT` how it is written ([Backend (Render)](deployment.md#backend-render)).
+
+| Level | Logged |
+|---|---|
+| `info` (default, Render) | HTTP requests except `/health`; socket connections (transport, origin, address) and disconnections (reason); handshakes refused by the origin policy; startup and shutdown |
+| `debug` (local `.env`) | Also `/health` requests, every socket event received or sent with its payload (broadcasts included, ack callbacks left out), and transport upgrades |
+
+* Every socket line carries the `socketId`, so one client's history can be followed.
+* Ack replies are not logged: Socket.io has no hook for them, so handlers log their own results where needed.
+* Payloads stay at `debug` because they will carry player data; when sessions arrive (#22), `playerSecret` must be redacted (Pino `redact`).
+* Socket.io's own internals (handshakes, polling, heartbeats) are not routed through Pino: run with `DEBUG=engine,socket.io*` to see them.
 
 ## Testability
 
