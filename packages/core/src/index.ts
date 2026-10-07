@@ -15,6 +15,17 @@ export {
   SESSION_STORE_TTL_MS,
   START_COUNTDOWN_MS,
 } from './constants.js';
+export { randomTargets, resolveTurn, shotsAllowed, validateTargets } from './engine.js';
+export type {
+  Battle,
+  Board,
+  InvalidTargets,
+  ResolvedTurn,
+  TargetValidation,
+  TargetViolation,
+  TurnResolution,
+  ValidTargets,
+} from './engine.js';
 export {
   completeFleet,
   generateRandomFleet,

@@ -142,7 +142,7 @@ export function completeFleet(draft: readonly ShipPlacement[], rules: GameRules,
 * **Board axes:** `(0, 0)` is the top-left cell; `x` is the column, `y` the row. A ship extends from `start` towards larger `x` (`HORIZONTAL`) or larger `y` (`VERTICAL`).
 * **Derivation:** `toPlacedShip` computes the `SHIP_LENGTH[type]` cells from `start` + `orientation`, never from cells the client computed. The `UPDATE_PLACEMENT` guard already refuses a `coordinates` field; `toPlacedShip` ignores one anyway, so a `PlacedShip` passed back in is re-derived. Linearity and length are therefore right by construction.
 * **Rules**, checked ship by ship in input order, in this order:
-  * **Bounds** (`OUT_OF_BOUNDS`): every derived coordinate lies on the board. On the server `start` is already on the board, so this catches ships running off the right or bottom edge.
+  * **Bounds** (`OUT_OF_BOUNDS`): every derived coordinate is a cell of the board (integers from `0` to `BOARD_SIZE − 1`, the same check as the shot engine's). On the server `start` is already on the board, so this catches ships running off the right or bottom edge.
   * **Uniqueness** (`DUPLICATE_TYPE`): each `ShipType` appears at most once.
   * **Overlap** (`OVERLAP`): no cell shared between ships.
   * **Adjacency** (`ADJACENT_SHIPS`): when `areAdjacentShipsAllowed === false`, no two ships may touch horizontally, vertically or diagonally.
@@ -162,11 +162,47 @@ export function completeFleet(draft: readonly ShipPlacement[], rules: GameRules,
 
 ## Shot engine
 
+Decisions: [ADR-0033](adr/0033-turn-resolution.md) (turn resolution), [ADR-0034](adr/0034-shot-history.md) (shot history).
+
+```typescript
+export interface Board {
+  readonly ships: readonly PlacedShip[];
+  readonly shots: readonly ShotResult[]; // fired at this board, oldest first, each cell once
+}
+export interface Battle {
+  readonly boards: Readonly<Record<Seat, Board>>; // each seat's own board
+  readonly currentTurn: Seat; // fires next
+}
+
+export type TargetViolation = 'WRONG_TARGET_COUNT' | 'OUT_OF_BOUNDS' | 'DUPLICATE_TARGET' | 'ALREADY_TARGETED';
+export type TargetValidation =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: TargetViolation; readonly targetIndex: number | null };
+export type TurnResolution =
+  | { readonly ok: true; readonly results: readonly ShotResult[]; readonly battle: Battle; readonly winner: Seat | null }
+  | { readonly ok: false; readonly reason: TargetViolation; readonly targetIndex: number | null };
+
+export function shotsAllowed(battle: Battle, rules: GameRules): number;
+export function validateTargets(targets: readonly Coordinate[], shots: readonly ShotResult[], count: number): TargetValidation;
+export function resolveTurn(battle: Battle, targets: readonly Coordinate[], rules: GameRules): TurnResolution;
+export function randomTargets(battle: Battle, count: number, rng: Rng): Coordinate[];
+```
+
 * **Unified model:** every turn fires a list of targets. Standard mode is a salvo of size 1.
-* **Shots allowed per turn:** standard → `1`; salvo → `min(shooter's surviving ships, opponent's unshot cells)`.
-* **Target constraints:** exact count, on-board, no duplicates within the turn, never previously targeted.
-* **Resolution:** targets resolve in order; `SUNK` results carry the full sunk ship; victory is checked after the turn.
-* **Next turn:**
+* **State:** a `Battle` holds each seat's own `Board` (its fleet and the opponent's shots at it) and `currentTurn`, the seat that fires next. The shots on a board are the snapshot's lists as they are: the owner's `incomingShots`, the opponent's `outgoingShots`. Hits and sinks are derived from the shot coordinates and the fleet, never from the stored outcomes.
+* **Shots allowed per turn** (`shotsAllowed`): standard → `1`; salvo → `min(shooter's surviving ships, opponent's unshot cells)`. Salvo lands with [#32](https://github.com/fabogit/battleship/issues/32): until then `shotsAllowed`, and so `resolveTurn`, throw when `isSalvoModeEnabled` is true. The signature already takes the `Battle` salvo needs.
+* **Target constraints** (`validateTargets`), checked in this order, the first broken one reported:
+  * **Count** (`WRONG_TARGET_COUNT`): exactly `shotsAllowed` targets. `targetIndex` is `null`.
+  * Then per target, in input order:
+    * **On-board** (`OUT_OF_BOUNDS`): integers from `0` to `BOARD_SIZE − 1` on both axes.
+    * **No duplicates within the turn** (`DUPLICATE_TARGET`): `targetIndex` is the later of the two.
+    * **Never previously targeted** (`ALREADY_TARGETED`): no cell already in the board's shots, hit or miss.
+  * It needs only the shots, not the fleet, so the client can run it on its `outgoingShots` before firing.
+* **Boundary with the payload guards:** the `FIRE` guard runs first and answers `INVALID_PAYLOAD` for whatever no turn could accept: a malformed or extra property, a non-integer or off-board coordinate, no target, more than `FLEET.length` targets ([Payload validation](protocol.md#payload-validation), [ADR-0031](adr/0031-payload-guard-strictness.md)). The constraints above depend on the turn and belong to the engine; the server maps a rejection to `INVALID_TARGETS` and logs the reason, which the client never sees. The engine still checks the bounds itself, so any caller is safe.
+* **Resolution** (`resolveTurn`): validates the targets against `battle.currentTurn`'s opponent board, then resolves them in input order, each target seeing the hits of the ones before it. A target on no ship is `MISS`; on a ship is `HIT`, or `SUNK` when it leaves the ship with no intact cell, and a `SUNK` result carries the whole `PlacedShip` in `sunkShip`. Victory is checked once, after the last target: `winner` is the shooter when every ship of the opponent's fleet is sunk (`FLEET_DESTROYED`), `null` otherwise. The results go to `SHOT_RESOLVED` as they are, and are appended to the opponent's board.
+* **Next turn**, set in the returned `battle.currentTurn`:
   * `isExtraTurnOnHitEnabled` (standard mode only): any `HIT`/`SUNK`, including from an auto shot, gives the same player another turn with a fresh timer.
   * Otherwise the turn passes to the opponent.
-* **Auto shots:** uniformly random among unshot cells (no hunting AI).
+  * When the turn has a winner there is no next turn, and `currentTurn` stays the shooter's.
+* **Purity:** every function returns new values and never mutates its input; the new `Battle` shares the board the turn did not touch. A rejected turn leaves the battle as it was.
+* **Auto shots** (`randomTargets`): `count` distinct cells of the opponent's board that were never shot, uniformly random (every set of cells, in every order, equally likely; no hunting AI). The unshot cells are listed row by row and shuffled with the injected `Rng` ([Randomness](#randomness)), so the same battle and seed give the same targets. `count` is normally `shotsAllowed`; anything but an integer from 0 to the number of unshot cells throws a `RangeError`.
