@@ -89,6 +89,10 @@ _Avoid_: game, round
 One player's side of a match: their fleet and every shot the opponent has fired at it, oldest first. The owner sees those shots as incoming, the opponent as outgoing.
 _Avoid_: grid (for a player's side), map
 
+**Tracking board**:
+The opponent's board as a player knows it (fog-of-war): their own shots, the ships they sank and, at game over, the revealed fleet. The UI labels it "Enemy waters", and the player's own board "My fleet".
+_Avoid_: enemy board, radar
+
 **Shot allowance**:
 The number of targets a turn fires (`shotsAllowed`): 1 in standard mode; in salvo mode, `min(shooter's surviving ships, opponent's unshot cells)`.
 _Avoid_: shot count

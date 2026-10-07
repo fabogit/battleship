@@ -38,5 +38,7 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0032](0032-fleet-placement.md) | Fleet placement | Accepted, 2026-10-07 |
 | [ADR-0033](0033-turn-resolution.md) | Turn resolution | Accepted, 2026-10-07 |
 | [ADR-0034](0034-shot-history.md) | Shot history | Accepted, 2026-10-07 |
+| [ADR-0035](0035-command-acks.md) | Command acks | Accepted, 2026-10-07 |
+| [ADR-0036](0036-countdown-resync.md) | Countdown resync | Accepted, 2026-10-07 |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
