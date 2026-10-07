@@ -129,6 +129,20 @@ Behaviour of the game server, `packages/server`.
 * Per-socket rate limit (`RATE_LIMIT_EVENTS_PER_SECOND`) → `RATE_LIMITED`.
 * `MAX_ROOMS` cap → `SERVER_FULL`.
 
+## Logging
+
+Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `LOG_FORMAT` how it is written ([Backend (Render)](deployment.md#backend-render)).
+
+| Level | Logged |
+|---|---|
+| `info` (default, Render) | HTTP requests except `/health`; socket connections (transport, origin, address) and disconnections (reason); handshakes refused by the origin policy; startup and shutdown |
+| `debug` (local `.env`) | Also `/health` requests, every socket event received or sent with its payload (broadcasts included, ack callbacks left out), and transport upgrades |
+
+* Every socket line carries the `socketId`, so one client's history can be followed.
+* Ack replies are not logged: Socket.io has no hook for them, so handlers log their own results where needed.
+* Payloads stay at `debug` because they will carry player data; when sessions arrive (#22), `playerSecret` must be redacted (Pino `redact`).
+* Socket.io's own internals (handshakes, polling, heartbeats) are not routed through Pino: run with `DEBUG=engine,socket.io*` to see them.
+
 ## Testability
 
 * Room logic is a pure transition function `(state, command, now) → { state, effects }`; timers are scheduled effects executed by a thin `scheduler.ts` over an injectable `Clock`.

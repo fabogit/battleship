@@ -3,24 +3,30 @@ import { parseOriginEntry } from './origins.js';
 /** `json`: one JSON object per line (Render). `pretty`: colored, human-readable lines via pino-pretty (local runs). */
 export type LogFormat = 'json' | 'pretty';
 
+/** Pino levels. `info` (default) logs HTTP requests and socket connections; `debug` adds `/health` and every socket event. */
+export type LogLevel = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
+
 export interface ServerConfig {
   readonly port: number;
   readonly allowedOrigins: readonly string[];
   readonly logFormat: LogFormat;
+  readonly logLevel: LogLevel;
 }
 
 const DEFAULT_PORT = 3000;
 const LOG_FORMATS: readonly LogFormat[] = ['json', 'pretty'];
+const LOG_LEVELS: readonly LogLevel[] = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
 
 /**
- * Reads `PORT`, `ALLOWED_ORIGINS` (comma-separated) and `LOG_FORMAT`. Throws on missing or malformed values so a bad
- * deploy fails at startup.
+ * Reads `PORT`, `ALLOWED_ORIGINS` (comma-separated), `LOG_FORMAT` and `LOG_LEVEL`. Throws on missing or malformed values
+ * so a bad deploy fails at startup.
  */
 export function loadConfig(env: NodeJS.ProcessEnv): ServerConfig {
   return {
     port: parsePort(env['PORT']),
     allowedOrigins: parseOrigins(env['ALLOWED_ORIGINS']),
     logFormat: parseLogFormat(env['LOG_FORMAT']),
+    logLevel: parseLogLevel(env['LOG_LEVEL']),
   };
 }
 
@@ -65,4 +71,15 @@ function parseLogFormat(value: string | undefined): LogFormat {
     throw new Error(`Invalid LOG_FORMAT: "${value}" (expected ${LOG_FORMATS.join(' or ')})`);
   }
   return format;
+}
+
+function parseLogLevel(value: string | undefined): LogLevel {
+  if (value === undefined || value.trim() === '') {
+    return 'info';
+  }
+  const level = LOG_LEVELS.find((candidate) => candidate === value);
+  if (level === undefined) {
+    throw new Error(`Invalid LOG_LEVEL: "${value}" (expected one of ${LOG_LEVELS.join(', ')})`);
+  }
+  return level;
 }
