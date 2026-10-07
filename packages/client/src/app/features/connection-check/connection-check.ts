@@ -1,8 +1,8 @@
 import { Component, effect, inject, signal, untracked } from '@angular/core';
 import { PROTOCOL_VERSION } from '@battleship/core';
 
-import { GameSocketService } from '../../core/game-socket';
-import { ServerWakeService } from '../../core/server-wake';
+import { CONNECTION_STATUSES, GameSocketService } from '../../core/game-socket';
+import { ServerWakeService, WAKE_STATUSES } from '../../core/server-wake';
 
 export type EchoResult =
   | { readonly ok: true; readonly roundTripMs: number; readonly protocolVersion: number }
@@ -19,13 +19,17 @@ export class ConnectionCheck {
   protected readonly socket = inject(GameSocketService);
 
   protected readonly protocolVersion = PROTOCOL_VERSION;
+  /** The wake-up states, for the template's `@switch`. */
+  protected readonly wakeStatuses = WAKE_STATUSES;
+  /** The connection states, for the template's `@switch` and `@if`. */
+  protected readonly connectionStatuses = CONNECTION_STATUSES;
   protected readonly echo = signal<EchoResult | undefined>(undefined);
 
   constructor() {
     void this.start();
     // Echo on every (re)connection, so the page always shows a fresh round-trip.
     effect(() => {
-      if (this.socket.status() === 'connected') {
+      if (this.socket.status() === CONNECTION_STATUSES.CONNECTED) {
         untracked(() => void this.sendEcho());
       }
     });

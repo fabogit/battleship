@@ -1,21 +1,33 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
-import { toPlacedShip, type Coordinate, type ShotResult } from '@battleship/core';
+import {
+  ORIENTATIONS,
+  SHIP_TYPES,
+  SHOT_OUTCOMES,
+  toPlacedShip,
+  type Coordinate,
+  type ShotResult,
+} from '@battleship/core';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CELL_STATES } from './board-cells';
 import { BoardGrid } from './board-grid';
 import { formatCoordinate } from './coordinates';
 
 /** A destroyer on B2–B3. */
-const DESTROYER = toPlacedShip({ type: 'DESTROYER', start: { x: 1, y: 1 }, orientation: 'HORIZONTAL' });
+const DESTROYER = toPlacedShip({
+  type: SHIP_TYPES.DESTROYER,
+  start: { x: 1, y: 1 },
+  orientation: ORIENTATIONS.HORIZONTAL,
+});
 /** A cruiser on D5–F5. */
-const CRUISER = toPlacedShip({ type: 'CRUISER', start: { x: 4, y: 3 }, orientation: 'VERTICAL' });
+const CRUISER = toPlacedShip({ type: SHIP_TYPES.CRUISER, start: { x: 4, y: 3 }, orientation: ORIENTATIONS.VERTICAL });
 
 /** Both destroyer cells hit, the second one sinking it; one cruiser hit; one miss. */
 const SHOTS: readonly ShotResult[] = [
-  { coordinate: { x: 1, y: 1 }, outcome: 'HIT' },
-  { coordinate: { x: 0, y: 0 }, outcome: 'MISS' },
-  { coordinate: { x: 2, y: 1 }, outcome: 'SUNK', sunkShip: DESTROYER },
-  { coordinate: { x: 4, y: 4 }, outcome: 'HIT' },
+  { coordinate: { x: 1, y: 1 }, outcome: SHOT_OUTCOMES.HIT },
+  { coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.MISS },
+  { coordinate: { x: 2, y: 1 }, outcome: SHOT_OUTCOMES.SUNK, sunkShip: DESTROYER },
+  { coordinate: { x: 4, y: 4 }, outcome: SHOT_OUTCOMES.HIT },
 ];
 
 let fixture: ComponentFixture<BoardGrid>;
@@ -89,6 +101,13 @@ describe('formatCoordinate', () => {
   });
 });
 
+// Written out on purpose (ADR-0043): the `data-state` selectors in board-grid.css spell these values.
+describe('CELL_STATES', () => {
+  it('pins the values the styles select on', () => {
+    expect(Object.values(CELL_STATES)).toEqual(['empty', 'ship', 'miss', 'hit', 'sunk']);
+  });
+});
+
 describe('BoardGrid rendering', () => {
   it('renders a labelled grid of 10 rows of 10 buttons, with both axes', () => {
     expect(grid().getAttribute('aria-label')).toBe('My fleet');
@@ -102,33 +121,33 @@ describe('BoardGrid rendering', () => {
   });
 
   it('renders every cell empty without content', () => {
-    expect(buttons().every((button) => button.dataset['state'] === 'empty')).toBe(true);
+    expect(buttons().every((button) => button.dataset['state'] === CELL_STATES.EMPTY)).toBe(true);
   });
 
   it('renders ships, misses, hits and sunk ships', async () => {
     await setInputs({ ships: [DESTROYER, CRUISER], shots: SHOTS });
 
-    expect(cell('A1').dataset['state']).toBe('miss');
-    expect(cell('B2').dataset['state']).toBe('sunk');
-    expect(cell('B3').dataset['state']).toBe('sunk');
-    expect(cell('D5').dataset['state']).toBe('ship');
-    expect(cell('E5').dataset['state']).toBe('hit');
-    expect(cell('F5').dataset['state']).toBe('ship');
-    expect(cell('J10').dataset['state']).toBe('empty');
+    expect(cell('A1').dataset['state']).toBe(CELL_STATES.MISS);
+    expect(cell('B2').dataset['state']).toBe(CELL_STATES.SUNK);
+    expect(cell('B3').dataset['state']).toBe(CELL_STATES.SUNK);
+    expect(cell('D5').dataset['state']).toBe(CELL_STATES.SHIP);
+    expect(cell('E5').dataset['state']).toBe(CELL_STATES.HIT);
+    expect(cell('F5').dataset['state']).toBe(CELL_STATES.SHIP);
+    expect(cell('J10').dataset['state']).toBe(CELL_STATES.EMPTY);
   });
 
   it('marks every cell of a ship sunk once all of them are hit, whatever the outcomes say', async () => {
-    const hits: ShotResult[] = DESTROYER.coordinates.map((coordinate) => ({ coordinate, outcome: 'HIT' }));
+    const hits: ShotResult[] = DESTROYER.coordinates.map((coordinate) => ({ coordinate, outcome: SHOT_OUTCOMES.HIT }));
     await setInputs({ ships: [DESTROYER], shots: hits });
 
-    expect(cell('B2').dataset['state']).toBe('sunk');
-    expect(cell('B3').dataset['state']).toBe('sunk');
+    expect(cell('B2').dataset['state']).toBe(CELL_STATES.SUNK);
+    expect(cell('B3').dataset['state']).toBe(CELL_STATES.SUNK);
   });
 
   it('marks a sinking shot sunk even without the ship drawn', async () => {
-    await setInputs({ shots: [{ coordinate: { x: 2, y: 1 }, outcome: 'SUNK' }] });
+    await setInputs({ shots: [{ coordinate: { x: 2, y: 1 }, outcome: SHOT_OUTCOMES.SUNK }] });
 
-    expect(cell('B3').dataset['state']).toBe('sunk');
+    expect(cell('B3').dataset['state']).toBe(CELL_STATES.SUNK);
   });
 
   it('overlays draft targets and the invalid preview on the cell state', async () => {
@@ -136,9 +155,9 @@ describe('BoardGrid rendering', () => {
     await setInputs({ ships: [CRUISER], draftTargets, invalidPreview: [{ x: 4, y: 3 }] });
 
     expect(cell('J10').classList).toContain('is-draft-target');
-    expect(cell('J10').dataset['state']).toBe('empty');
+    expect(cell('J10').dataset['state']).toBe(CELL_STATES.EMPTY);
     expect(cell('D5').classList).toContain('is-invalid-preview');
-    expect(cell('D5').dataset['state']).toBe('ship');
+    expect(cell('D5').dataset['state']).toBe(CELL_STATES.SHIP);
     expect(cell('A1').classList).not.toContain('is-draft-target');
     expect(cell('A1').classList).not.toContain('is-invalid-preview');
   });

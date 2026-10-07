@@ -1,9 +1,22 @@
 import { TestBed } from '@angular/core/testing';
-import type { AckResponse, JoinRoomAckData, PlayerStateSnapshot } from '@battleship/core';
+import {
+  CLIENT_EVENTS,
+  ERROR_CODES,
+  SERVER_EVENTS,
+  type AckResponse,
+  type JoinRoomAckData,
+  type PlayerStateSnapshot,
+} from '@battleship/core';
 import { io, type Socket } from 'socket.io-client';
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
-import { ACK_TIMEOUT_MS, GameSocketService, type TransportFailure } from './game-socket';
+import {
+  ACK_TIMEOUT_MS,
+  CONNECTION_STATUSES,
+  GameSocketService,
+  TRANSPORT_ERRORS,
+  type TransportFailure,
+} from './game-socket';
 import { SERVER_URL } from './server-url';
 
 vi.mock('socket.io-client', () => ({
@@ -97,6 +110,19 @@ function connected(): void {
   socket.handshake();
 }
 
+// Written out on purpose (ADR-0043): renaming a key is a refactor, changing a value is not.
+describe('CONNECTION_STATUSES', () => {
+  it('pins the values', () => {
+    expect(Object.values(CONNECTION_STATUSES)).toEqual(['disconnected', 'connecting', 'connected']);
+  });
+});
+
+describe('TRANSPORT_ERRORS', () => {
+  it('pins the values', () => {
+    expect(Object.values(TRANSPORT_ERRORS)).toEqual(['NOT_CONNECTED', 'NO_ACK']);
+  });
+});
+
 describe('GameSocketService', () => {
   describe('connection', () => {
     it('tries WebSocket first and falls back to polling (docs/deployment.md#frontend-cloudflare-pages)', () => {
@@ -105,19 +131,19 @@ describe('GameSocketService', () => {
         transports: ['websocket', 'polling'],
         tryAllTransports: true,
       });
-      expect(service.status()).toBe('disconnected');
+      expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
       expect(socket.connect).not.toHaveBeenCalled();
 
       service.connect();
 
       expect(socket.connect).toHaveBeenCalledOnce();
-      expect(service.status()).toBe('connecting');
+      expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTING);
     });
 
     it('reports connected once the handshake succeeds', () => {
       connected();
 
-      expect(service.status()).toBe('connected');
+      expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTED);
     });
 
     it('goes back to connecting while Socket.io reconnects after a drop', () => {
@@ -125,9 +151,9 @@ describe('GameSocketService', () => {
 
       socket.drop('transport close', { isStillActive: true });
 
-      expect(service.status()).toBe('connecting');
+      expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTING);
       socket.handshake();
-      expect(service.status()).toBe('connected');
+      expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTED);
     });
 
     it('reports disconnected when the server disconnects the socket', () => {
@@ -135,7 +161,7 @@ describe('GameSocketService', () => {
 
       socket.drop('io server disconnect', { isStillActive: false });
 
-      expect(service.status()).toBe('disconnected');
+      expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
     });
 
     it('keeps connecting while a refused handshake is retried (#51, F9)', () => {
@@ -146,16 +172,16 @@ describe('GameSocketService', () => {
       socket.refuse('xhr poll error', { isStillActive: true });
       socket.refuse('xhr poll error', { isStillActive: true });
 
-      expect(service.status()).toBe('connecting');
+      expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTING);
     });
 
     it('reports disconnected when the socket gives up after a connect_error', () => {
       service.connect();
 
       // A middleware error (`next(err)`), e.g. PROTOCOL_MISMATCH: Socket.io stops retrying.
-      socket.refuse('PROTOCOL_MISMATCH', { isStillActive: false });
+      socket.refuse(ERROR_CODES.PROTOCOL_MISMATCH, { isStillActive: false });
 
-      expect(service.status()).toBe('disconnected');
+      expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
     });
 
     it('ignores connect() while connecting or connected and reopens a socket that gave up', () => {
@@ -169,7 +195,7 @@ describe('GameSocketService', () => {
       service.connect();
 
       expect(socket.connect).toHaveBeenCalledTimes(2);
-      expect(service.status()).toBe('connecting');
+      expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTING);
     });
 
     it('closes the socket when the injector is destroyed', () => {
@@ -185,9 +211,13 @@ describe('GameSocketService', () => {
     it('emits the command with the ack timeout and resolves with the server reply', async () => {
       connected();
 
-      const result = service.emitWithAck('JOIN_ROOM', joinRoom);
+      const result = service.emitWithAck(CLIENT_EVENTS.JOIN_ROOM, joinRoom);
       expect(socket.emitted).toHaveLength(1);
-      expect(socket.emitted[0]).toMatchObject({ event: 'JOIN_ROOM', payload: joinRoom, timeoutMs: ACK_TIMEOUT_MS });
+      expect(socket.emitted[0]).toMatchObject({
+        event: CLIENT_EVENTS.JOIN_ROOM,
+        payload: joinRoom,
+        timeoutMs: ACK_TIMEOUT_MS,
+      });
       socket.emitted[0]?.ack(null, { ok: true, playerSecret: 'secret' });
 
       await expect(result).resolves.toEqual({ ok: true, playerSecret: 'secret' });
@@ -197,10 +227,10 @@ describe('GameSocketService', () => {
     it('resolves with a refusal from the server as it is', async () => {
       connected();
 
-      const result = service.emitWithAck('FIRE', { targets: [{ x: 0, y: 0 }] });
-      socket.emitted[0]?.ack(null, { ok: false, error: 'NOT_YOUR_TURN' });
+      const result = service.emitWithAck(CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] });
+      socket.emitted[0]?.ack(null, { ok: false, error: ERROR_CODES.NOT_YOUR_TURN });
 
-      await expect(result).resolves.toEqual({ ok: false, error: 'NOT_YOUR_TURN' });
+      await expect(result).resolves.toEqual({ ok: false, error: ERROR_CODES.NOT_YOUR_TURN });
     });
 
     it.each(['operation has timed out', 'socket has been disconnected'])(
@@ -208,25 +238,28 @@ describe('GameSocketService', () => {
       async (message) => {
         connected();
 
-        const result = service.emitWithAck('CONFIRM_PLACEMENT', {});
+        const result = service.emitWithAck(CLIENT_EVENTS.CONFIRM_PLACEMENT, {});
         socket.emitted[0]?.ack(new Error(message));
 
-        await expect(result).resolves.toEqual({ ok: false, error: 'NO_ACK' });
+        await expect(result).resolves.toEqual({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
       },
     );
 
     it('resolves NOT_CONNECTED without emitting while the socket is not connected', async () => {
       service.connect();
 
-      await expect(service.emitWithAck('LEAVE_ROOM', {})).resolves.toEqual({ ok: false, error: 'NOT_CONNECTED' });
+      await expect(service.emitWithAck(CLIENT_EVENTS.LEAVE_ROOM, {})).resolves.toEqual({
+        ok: false,
+        error: TRANSPORT_ERRORS.NOT_CONNECTED,
+      });
       expect(socket.emitted).toEqual([]);
     });
 
     it('takes only the payload of the named command', () => {
       // @ts-expect-error `JOIN_ROOM` needs a room id.
-      void service.emitWithAck('JOIN_ROOM', { nickname: 'Ada' });
+      void service.emitWithAck(CLIENT_EVENTS.JOIN_ROOM, { nickname: 'Ada' });
       // @ts-expect-error `ECHO` is not a command.
-      void service.emitWithAck('ECHO', {});
+      void service.emitWithAck(CLIENT_EVENTS.ECHO, {});
     });
   });
 
@@ -235,10 +268,10 @@ describe('GameSocketService', () => {
       const listener = vi.fn<(snapshot: PlayerStateSnapshot) => void>();
       const snapshot = { roomId: 'abcd2345' } as PlayerStateSnapshot;
 
-      const stop = service.on('STATE', listener);
-      socket.fire('STATE', snapshot);
+      const stop = service.on(SERVER_EVENTS.STATE, listener);
+      socket.fire(SERVER_EVENTS.STATE, snapshot);
       stop();
-      socket.fire('STATE', snapshot);
+      socket.fire(SERVER_EVENTS.STATE, snapshot);
 
       expect(listener).toHaveBeenCalledExactlyOnceWith(snapshot);
     });
@@ -246,7 +279,7 @@ describe('GameSocketService', () => {
 
   describe('echo', () => {
     it('rejects with the transport error when not connected', async () => {
-      await expect(service.echo(null)).rejects.toThrow('NOT_CONNECTED');
+      await expect(service.echo(null)).rejects.toThrow(TRANSPORT_ERRORS.NOT_CONNECTED);
     });
   });
 });

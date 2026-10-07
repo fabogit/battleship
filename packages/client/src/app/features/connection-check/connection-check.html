@@ -3,23 +3,23 @@
 
   <section aria-live="polite">
     @switch (wake.status()) {
-      @case ('waking') {
+      @case (wakeStatuses.WAKING) {
         <p class="status pending">Waking up the server…</p>
         <p class="hint">A sleeping server usually takes about half a minute to start.</p>
       }
-      @case ('unreachable') {
+      @case (wakeStatuses.UNREACHABLE) {
         <p class="status error">The server is not responding.</p>
         <button type="button" (click)="start()">Try again</button>
       }
-      @case ('awake') {
+      @case (wakeStatuses.AWAKE) {
         @switch (socket.status()) {
-          @case ('connected') {
+          @case (connectionStatuses.CONNECTED) {
             <p class="status ok">Connected</p>
           }
-          @case ('connecting') {
+          @case (connectionStatuses.CONNECTING) {
             <p class="status pending">Connecting…</p>
           }
-          @case ('disconnected') {
+          @case (connectionStatuses.DISCONNECTED) {
             <p class="status error">Connection refused</p>
           }
         }
@@ -27,7 +27,7 @@
     }
   </section>
 
-  @if (socket.status() === 'connected') {
+  @if (socket.status() === connectionStatuses.CONNECTED) {
     <section>
       @if (echo(); as result) {
         @if (result.ok) {

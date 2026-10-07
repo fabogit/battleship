@@ -2,7 +2,14 @@ import { TestBed } from '@angular/core/testing';
 import {
   DEFAULT_RULES,
   DISCONNECT_FORFEIT_MS,
+  GAME_OVER_REASONS,
+  ORIENTATIONS,
   PLACEMENT_TIME_LIMIT_MS,
+  ROOM_PHASES,
+  SEATS,
+  SERVER_EVENTS,
+  SHIP_TYPES,
+  SHOT_OUTCOMES,
   START_COUNTDOWN_MS,
   toPlacedShip,
   type BattleSnapshot,
@@ -17,26 +24,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GameSocketService } from './game-socket';
 import { COUNTDOWN_TICK_MS, GameStateService } from './game-state';
 
-const ME: PlayerView = { seat: 'P1', nickname: 'Ada', isConnected: true, forfeitRemainingMs: null };
-const OPPONENT: PlayerView = { seat: 'P2', nickname: 'Grace', isConnected: true, forfeitRemainingMs: null };
+const ME: PlayerView = { seat: SEATS.P1, nickname: 'Ada', isConnected: true, forfeitRemainingMs: null };
+const OPPONENT: PlayerView = { seat: SEATS.P2, nickname: 'Grace', isConnected: true, forfeitRemainingMs: null };
 const OPPONENT_AWAY: PlayerView = { ...OPPONENT, isConnected: false, forfeitRemainingMs: DISCONNECT_FORFEIT_MS };
 
 const MY_SHIPS = [
-  toPlacedShip({ type: 'DESTROYER', start: { x: 0, y: 0 }, orientation: 'HORIZONTAL' }),
-  toPlacedShip({ type: 'CARRIER', start: { x: 0, y: 2 }, orientation: 'VERTICAL' }),
+  toPlacedShip({ type: SHIP_TYPES.DESTROYER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.HORIZONTAL }),
+  toPlacedShip({ type: SHIP_TYPES.CARRIER, start: { x: 0, y: 2 }, orientation: ORIENTATIONS.VERTICAL }),
 ];
-const SUNK_DESTROYER = toPlacedShip({ type: 'DESTROYER', start: { x: 5, y: 5 }, orientation: 'VERTICAL' });
+const SUNK_DESTROYER = toPlacedShip({
+  type: SHIP_TYPES.DESTROYER,
+  start: { x: 5, y: 5 },
+  orientation: ORIENTATIONS.VERTICAL,
+});
 const OUTGOING: readonly ShotResult[] = [
-  { coordinate: { x: 9, y: 9 }, outcome: 'MISS' },
-  { coordinate: { x: 5, y: 5 }, outcome: 'HIT' },
-  { coordinate: { x: 5, y: 6 }, outcome: 'SUNK', sunkShip: SUNK_DESTROYER },
+  { coordinate: { x: 9, y: 9 }, outcome: SHOT_OUTCOMES.MISS },
+  { coordinate: { x: 5, y: 5 }, outcome: SHOT_OUTCOMES.HIT },
+  { coordinate: { x: 5, y: 6 }, outcome: SHOT_OUTCOMES.SUNK, sunkShip: SUNK_DESTROYER },
 ];
-const INCOMING: readonly ShotResult[] = [{ coordinate: { x: 0, y: 0 }, outcome: 'HIT' }];
+const INCOMING: readonly ShotResult[] = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }];
 
 function waiting(): PlayerStateSnapshot {
   return {
     roomId: 'abcd2345',
-    phase: 'WAITING_FOR_OPPONENT',
+    phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
     me: ME,
     opponent: null,
     rules: DEFAULT_RULES,
@@ -51,7 +62,7 @@ function waiting(): PlayerStateSnapshot {
 function placement(overrides: Partial<PlacementSnapshot> = {}): PlayerStateSnapshot {
   return {
     ...waiting(),
-    phase: 'PLACEMENT',
+    phase: ROOM_PHASES.PLACEMENT,
     opponent: OPPONENT,
     hasConfirmedRules: { me: true, opponent: true },
     placement: {
@@ -67,14 +78,14 @@ function placement(overrides: Partial<PlacementSnapshot> = {}): PlayerStateSnaps
 function battle(overrides: Partial<BattleSnapshot> = {}, opponent: PlayerView = OPPONENT): PlayerStateSnapshot {
   return {
     ...waiting(),
-    phase: 'IN_PROGRESS',
+    phase: ROOM_PHASES.IN_PROGRESS,
     opponent,
     hasConfirmedRules: { me: true, opponent: true },
     battle: {
       myShips: MY_SHIPS,
       incomingShots: INCOMING,
       outgoingShots: OUTGOING,
-      currentTurn: 'P1',
+      currentTurn: SEATS.P1,
       shotsAllowed: 1,
       myDraftTargets: [{ x: 3, y: 3 }],
       turnRemainingMs: 30_000,
@@ -88,12 +99,12 @@ function battle(overrides: Partial<BattleSnapshot> = {}, opponent: PlayerView = 
 function gameOver(overrides: Partial<GameOverSnapshot> = {}): PlayerStateSnapshot {
   return {
     ...waiting(),
-    phase: 'GAME_OVER',
+    phase: ROOM_PHASES.GAME_OVER,
     opponent: OPPONENT,
     hasConfirmedRules: { me: true, opponent: true },
     gameOver: {
-      winner: 'P1',
-      reason: 'FLEET_DESTROYED',
+      winner: SEATS.P1,
+      reason: GAME_OVER_REASONS.FLEET_DESTROYED,
       opponentShips: [SUNK_DESTROYER],
       rematch: { me: null, opponent: null },
       ...overrides,
@@ -117,7 +128,7 @@ beforeEach(() => {
   receiveState = undefined;
   const socket = {
     on: vi.fn((event: string, listener: (snapshot: PlayerStateSnapshot) => void) => {
-      if (event === 'STATE') {
+      if (event === SERVER_EVENTS.STATE) {
         receiveState = listener;
       }
       return () => {
@@ -152,7 +163,7 @@ describe('GameStateService', () => {
       receive(snapshot);
 
       expect(state.snapshot()).toBe(snapshot);
-      expect(state.phase()).toBe('WAITING_FOR_OPPONENT');
+      expect(state.phase()).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
       expect(state.myFleet()).toBeNull();
       expect(state.trackingBoard()).toBeNull();
     });
@@ -173,10 +184,10 @@ describe('GameStateService', () => {
     });
 
     it('tells whose turn it is', () => {
-      receive(battle({ currentTurn: 'P1' }));
+      receive(battle({ currentTurn: SEATS.P1 }));
       expect(state.isMyTurn()).toBe(true);
 
-      receive(battle({ currentTurn: 'P2', myDraftTargets: [] }));
+      receive(battle({ currentTurn: SEATS.P2, myDraftTargets: [] }));
       expect(state.isMyTurn()).toBe(false);
     });
 
@@ -202,13 +213,13 @@ describe('GameStateService', () => {
     });
 
     it('tells whether the receiver won', () => {
-      receive(gameOver({ winner: 'P1' }));
+      receive(gameOver({ winner: SEATS.P1 }));
       expect(state.hasWon()).toBe(true);
 
-      receive(gameOver({ winner: 'P2', reason: 'SURRENDER' }));
+      receive(gameOver({ winner: SEATS.P2, reason: GAME_OVER_REASONS.SURRENDER }));
       expect(state.hasWon()).toBe(false);
 
-      receive(gameOver({ winner: null, reason: 'ABANDONED' }));
+      receive(gameOver({ winner: null, reason: GAME_OVER_REASONS.ABANDONED }));
       expect(state.hasWon()).toBe(false);
     });
 

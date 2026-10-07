@@ -5,7 +5,20 @@ import { firstValueFrom } from 'rxjs';
 
 import { SERVER_URL } from './server-url';
 
-export type WakeStatus = 'idle' | 'waking' | 'awake' | 'unreachable';
+/** The states of the wake-up poll, as `ServerWakeService.status` reports them (ADR-0043). */
+export const WAKE_STATUSES = {
+  /** No poll started yet. */
+  IDLE: 'idle',
+  /** Polling `GET /health`. */
+  WAKING: 'waking',
+  /** The server answered. */
+  AWAKE: 'awake',
+  /** No answer within `GIVE_UP_AFTER_MS`. */
+  UNREACHABLE: 'unreachable',
+} as const;
+
+/** One of the `WAKE_STATUSES`. */
+export type WakeStatus = (typeof WAKE_STATUSES)[keyof typeof WAKE_STATUSES];
 
 /** Delay before the first retry; doubles after every failed attempt up to `MAX_RETRY_DELAY_MS`. */
 export const FIRST_RETRY_DELAY_MS = 500;
@@ -23,14 +36,14 @@ export class ServerWakeService {
   private readonly http = inject(HttpClient);
   private readonly healthUrl = `${inject(SERVER_URL)}/health`;
 
-  private readonly statusSignal = signal<WakeStatus>('idle');
+  private readonly statusSignal = signal<WakeStatus>(WAKE_STATUSES.IDLE);
   readonly status = this.statusSignal.asReadonly();
 
   private polling: Promise<boolean> | undefined;
 
   /** Resolves `true` once the server is up, `false` after giving up. Concurrent calls share one poll. */
   wake(): Promise<boolean> {
-    if (this.statusSignal() === 'awake') {
+    if (this.statusSignal() === WAKE_STATUSES.AWAKE) {
       return Promise.resolve(true);
     }
     this.polling ??= this.poll().finally(() => {
@@ -40,18 +53,18 @@ export class ServerWakeService {
   }
 
   private async poll(): Promise<boolean> {
-    this.statusSignal.set('waking');
+    this.statusSignal.set(WAKE_STATUSES.WAKING);
     const deadline = Date.now() + GIVE_UP_AFTER_MS;
     for (let delay = FIRST_RETRY_DELAY_MS; ; delay = Math.min(delay * 2, MAX_RETRY_DELAY_MS)) {
       const remaining = deadline - Date.now();
       if (remaining <= 0) {
-        this.statusSignal.set('unreachable');
+        this.statusSignal.set(WAKE_STATUSES.UNREACHABLE);
         return false;
       }
       // Render holds `/health` open until the instance is ready, so an attempt may use all the time left;
       // the backoff only spaces out fast failures (CORS errors, its loading page).
       if (await this.isHealthy(remaining)) {
-        this.statusSignal.set('awake');
+        this.statusSignal.set(WAKE_STATUSES.AWAKE);
         return true;
       }
       await sleep(Math.min(delay, deadline - Date.now()));

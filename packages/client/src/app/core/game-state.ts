@@ -1,5 +1,12 @@
 import { DestroyRef, Service, computed, inject, signal, type Signal } from '@angular/core';
-import type { Coordinate, PlacedShip, PlayerStateSnapshot, RoomPhase, ShotResult } from '@battleship/core';
+import {
+  SERVER_EVENTS,
+  type Coordinate,
+  type PlacedShip,
+  type PlayerStateSnapshot,
+  type RoomPhase,
+  type ShotResult,
+} from '@battleship/core';
 
 import { GameSocketService } from './game-socket';
 
@@ -158,7 +165,7 @@ export class GameStateService {
 
   /** Applies every `STATE` from the socket; stops listening and ticking with the injector. */
   constructor() {
-    const stopListening = inject(GameSocketService).on('STATE', (snapshot) => {
+    const stopListening = inject(GameSocketService).on(SERVER_EVENTS.STATE, (snapshot) => {
       this.apply(snapshot);
     });
     inject(DestroyRef).onDestroy(() => {
