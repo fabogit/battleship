@@ -57,8 +57,8 @@ Behaviour of the game server, `packages/server`.
 ### Placement
 
 * The deadline is `PLACEMENT_TIME_LIMIT_MS` from phase entry.
-* `UPDATE_PLACEMENT { ships }` replaces the player's draft. It is rejected while confirmed (`PLACEMENT_LOCKED`) or invalid (`INVALID_PLACEMENT`).
-* `CONFIRM_PLACEMENT` requires a complete valid fleet; `UNLOCK_PLACEMENT` reverts to draft.
+* `UPDATE_PLACEMENT { ships }` replaces the player's draft. It is rejected while confirmed (`PLACEMENT_LOCKED`) or invalid (`INVALID_PLACEMENT` when `validateDraft` fails, with the violation logged; see [Placement](domain.md#placement)).
+* `CONFIRM_PLACEMENT` requires a complete valid fleet (`validateFleet`); `UNLOCK_PLACEMENT` reverts to draft.
 * When both are confirmed, a start countdown runs for `min(START_COUNTDOWN_MS, time to deadline)`. An unlock cancels it; a new double confirmation restarts it, still capped by the deadline.
 * At the deadline, every unconfirmed fleet is completed with `completeFleet` and locked.
 * On phase end: server dice roll → `DICE_ROLLED` → `IN_PROGRESS`. The first turn timer starts after `DICE_ANIMATION_MS`.

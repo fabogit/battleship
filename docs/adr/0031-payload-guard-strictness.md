@@ -28,4 +28,5 @@ The guards of [ADR-0016](0016-payload-validation.md) parse rather than narrow: e
 * Added on 2026-10-07 for the protocol contract ([#13](https://github.com/fabogit/battleship/issues/13)).
 * Spec: [Protocol: Payload validation](../protocol.md#payload-validation) · [Server: Hardening](../server.md#hardening)
 * Refines: [ADR-0016](0016-payload-validation.md)
+* Related: [ADR-0032](0032-fleet-placement.md) (placement validation, `INVALID_PLACEMENT`)
 * Issues: [#13](https://github.com/fabogit/battleship/issues/13)
