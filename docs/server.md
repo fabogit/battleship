@@ -81,7 +81,7 @@ Behaviour of the game server, `packages/server`.
 ### Disconnection & pause (`IN_PROGRESS`)
 
 * When a player's socket drops, the match auto-pauses. A paused match freezes the turn timer with its remaining time.
-* `SET_PAUSED { paused }` is accepted **only from the connected player while the opponent is disconnected**.
+* `SET_PAUSED { isPaused }` is accepted **only from the connected player while the opponent is disconnected**.
 * While unpaused, timers run normally: the absent player's turns time out and count as AFK.
 * The forfeit clock (`DISCONNECT_FORFEIT_MS`, from the moment of disconnection) runs regardless of pause. On expiry → `GAME_OVER`, reason `DISCONNECT_FORFEIT`.
 * On reconnection the match resumes automatically with the remaining turn time.

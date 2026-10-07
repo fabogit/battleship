@@ -29,7 +29,7 @@ declare module 'fastify' {
 export interface ServerOptions {
   /** Exact origins and `https://*.<domain>` wildcards, as validated by `loadConfig` (ADR-0021, ADR-0024). */
   readonly allowedOrigins: readonly string[];
-  readonly logger: boolean;
+  readonly isLoggingEnabled: boolean;
 }
 
 /**
@@ -42,7 +42,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
   // CORS callback result: reflect an allowed `Origin`, send no CORS headers otherwise.
   const corsOrigin = (origin: string | undefined): string | false => (isOriginAllowed(origin) ? (origin ?? false) : false);
 
-  const app = Fastify({ logger: options.logger });
+  const app = Fastify({ logger: options.isLoggingEnabled });
 
   // Foreign origins get a plain 403 before any route runs (ADR-0021).
   app.addHook('onRequest', async (request, reply) => {

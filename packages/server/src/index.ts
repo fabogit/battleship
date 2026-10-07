@@ -5,7 +5,7 @@ import { createServer } from './server.js';
 import { handleShutdownSignals } from './shutdown.js';
 
 const config = loadConfig(process.env);
-const app = createServer({ allowedOrigins: config.allowedOrigins, logger: true });
+const app = createServer({ allowedOrigins: config.allowedOrigins, isLoggingEnabled: true });
 
 handleShutdownSignals(app);
 

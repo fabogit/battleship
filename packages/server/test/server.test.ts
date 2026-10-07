@@ -18,7 +18,7 @@ let baseUrl: string;
 const clients: ClientSocket[] = [];
 
 beforeEach(async () => {
-  app = createServer({ allowedOrigins: [ALLOWED, 'https://*.battleship.pages.dev'], logger: false });
+  app = createServer({ allowedOrigins: [ALLOWED, 'https://*.battleship.pages.dev'], isLoggingEnabled: false });
   baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
 });
 

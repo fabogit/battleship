@@ -30,15 +30,15 @@ export interface ShutdownOptions {
  */
 export function handleShutdownSignals(app: Closable, options: ShutdownOptions = {}): void {
   const { process: target = process, deadlineMs = SHUTDOWN_DEADLINE_MS } = options;
-  let closing = false;
+  let isClosing = false;
 
   for (const signal of SHUTDOWN_SIGNALS) {
     // `on`, not `once`: without a listener a repeated signal falls back to Node's default and kills the process.
     target.on(signal, () => {
-      if (closing) {
+      if (isClosing) {
         return;
       }
-      closing = true;
+      isClosing = true;
       app.log.info({ signal }, 'Shutting down');
 
       // Unref'd, so it only fires when something still keeps the process alive.
