@@ -1,8 +1,12 @@
 import {
+  CLIENT_EVENTS,
   createSeededRng,
   DEFAULT_RULES,
+  GAME_OVER_REASONS,
   PLACEMENT_TIME_LIMIT_MS,
   randomTargets,
+  ROOM_PHASES,
+  SEATS,
   type Coordinate,
   type PlayerStateSnapshot,
   type Seat,
@@ -24,8 +28,6 @@ import {
   ROOM_ID,
   waitingRoom,
 } from './fixtures.js';
-
-const SEATS: readonly Seat[] = ['P1', 'P2'];
 
 /** Fields that describe the receiver's own board, where coordinates say nothing about the opponent's fleet. */
 const OWN_BOARD_FIELDS = new Set(['myShips', 'incomingShots']);
@@ -59,7 +61,7 @@ function expectFogOfWar(state: RoomState, seat: Seat): PlayerStateSnapshot {
   const json = JSON.stringify(snapshot);
   expect(json).not.toContain(P1_SECRET);
   expect(json).not.toContain(P2_SECRET);
-  if (state.phase === 'IN_PROGRESS') {
+  if (state.phase === ROOM_PHASES.IN_PROGRESS) {
     const opponentBoard = state.battle.boards[otherSeat(seat)];
     const shot = new Set(opponentBoard.shots.map(({ coordinate }) => cellKey(coordinate)));
     const hidden = new Set(
@@ -75,10 +77,10 @@ function expectFogOfWar(state: RoomState, seat: Seat): PlayerStateSnapshot {
 
 describe('projectSnapshot', () => {
   it('shows a waiting room to its creator, with no opponent', () => {
-    expect(projectSnapshot(waitingRoom(), 'P1', NOW)).toEqual({
+    expect(projectSnapshot(waitingRoom(), SEATS.P1, NOW)).toEqual({
       roomId: ROOM_ID,
-      phase: 'WAITING_FOR_OPPONENT',
-      me: { seat: 'P1', nickname: 'Alice', isConnected: true, forfeitRemainingMs: null },
+      phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
+      me: { seat: SEATS.P1, nickname: 'Alice', isConnected: true, forfeitRemainingMs: null },
       opponent: null,
       rules: DEFAULT_RULES,
       rulesVersion: 0,
@@ -90,58 +92,69 @@ describe('projectSnapshot', () => {
   });
 
   it('throws for an empty seat', () => {
-    expect(() => projectSnapshot(waitingRoom(), 'P2', NOW)).toThrow(/Seat P2 .* is empty/);
+    expect(() => projectSnapshot(waitingRoom(), SEATS.P2, NOW)).toThrow(/Seat P2 .* is empty/);
   });
 
   it('shows only the receiver’s own fleet during placement', () => {
     const state = placeAndConfirm(
-      apply(placementRoom(NOW), { type: 'UPDATE_PLACEMENT', seat: 'P2', payload: { ships: fleet(2).slice(0, 3) } }),
-      'P1',
+      apply(placementRoom(NOW), {
+        type: CLIENT_EVENTS.UPDATE_PLACEMENT,
+        seat: SEATS.P2,
+        payload: { ships: fleet(2).slice(0, 3) },
+      }),
+      SEATS.P1,
       fleet(1),
     );
     const later = NOW + 10_000;
-    const p2 = projectSnapshot(state, 'P2', later);
+    const p2 = projectSnapshot(state, SEATS.P2, later);
     expect(p2).toMatchObject({
-      phase: 'PLACEMENT',
-      me: { seat: 'P2', nickname: 'Bob' },
-      opponent: { seat: 'P1', nickname: 'Alice' },
+      phase: ROOM_PHASES.PLACEMENT,
+      me: { seat: SEATS.P2, nickname: 'Bob' },
+      opponent: { seat: SEATS.P1, nickname: 'Alice' },
       hasConfirmedRules: { me: true, opponent: true },
       battle: null,
       gameOver: null,
     });
     expect(p2.placement).toEqual({
-      myShips: state.phase === 'PLACEMENT' ? state.fleets.P2.ships : [],
+      myShips: state.phase === ROOM_PHASES.PLACEMENT ? state.fleets.P2.ships : [],
       hasConfirmed: { me: false, opponent: true },
       remainingMs: PLACEMENT_TIME_LIMIT_MS - 10_000,
       startCountdownMs: null,
     });
     expect(coordinatesAboutOpponent(p2)).toEqual([]);
-    expect(projectSnapshot(state, 'P1', NOW + PLACEMENT_TIME_LIMIT_MS + 1).placement?.remainingMs).toBe(0);
+    expect(projectSnapshot(state, SEATS.P1, NOW + PLACEMENT_TIME_LIMIT_MS + 1).placement?.remainingMs).toBe(0);
   });
 
   it('shows the draft targets to the active player only', () => {
-    const state = apply(battleRoom(), { type: 'UPDATE_TARGETS', seat: 'P1', payload: { targets: [{ x: 2, y: 3 }] } });
-    expect(projectSnapshot(state, 'P1', NOW).battle).toMatchObject({
-      currentTurn: 'P1',
+    const state = apply(battleRoom(), {
+      type: CLIENT_EVENTS.UPDATE_TARGETS,
+      seat: SEATS.P1,
+      payload: { targets: [{ x: 2, y: 3 }] },
+    });
+    expect(projectSnapshot(state, SEATS.P1, NOW).battle).toMatchObject({
+      currentTurn: SEATS.P1,
       shotsAllowed: 1,
       myDraftTargets: [{ x: 2, y: 3 }],
       turnRemainingMs: null,
       isPaused: false,
       afkCount: { me: 0, opponent: 0 },
     });
-    expect(projectSnapshot(state, 'P2', NOW).battle?.myDraftTargets).toEqual([]);
+    expect(projectSnapshot(state, SEATS.P2, NOW).battle?.myDraftTargets).toEqual([]);
   });
 
   it('splits the boards into own fleet, incoming and outgoing shots', () => {
-    const state = apply(apply(battleRoom(), { type: 'FIRE', seat: 'P1', payload: { targets: [{ x: 9, y: 9 }] } }), {
-      type: 'FIRE',
-      seat: 'P2',
-      payload: { targets: [{ x: 0, y: 0 }] },
-    });
-    if (state.phase !== 'IN_PROGRESS') {
+    const state = apply(
+      apply(battleRoom(), { type: CLIENT_EVENTS.FIRE, seat: SEATS.P1, payload: { targets: [{ x: 9, y: 9 }] } }),
+      {
+        type: CLIENT_EVENTS.FIRE,
+        seat: SEATS.P2,
+        payload: { targets: [{ x: 0, y: 0 }] },
+      },
+    );
+    if (state.phase !== ROOM_PHASES.IN_PROGRESS) {
       expect.fail('The match should still be on');
     }
-    const p1 = projectSnapshot(state, 'P1', NOW).battle;
+    const p1 = projectSnapshot(state, SEATS.P1, NOW).battle;
     expect(p1?.myShips).toBe(state.battle.boards.P1.ships);
     expect(p1?.incomingShots).toEqual(state.battle.boards.P1.shots);
     expect(p1?.outgoingShots).toEqual(state.battle.boards.P2.shots);
@@ -151,23 +164,27 @@ describe('projectSnapshot', () => {
   it('never shows un-hit opponent ships before game over, then reveals them', () => {
     const rng = createSeededRng(42);
     let state: RoomState = battleRoom();
-    while (state.phase === 'IN_PROGRESS') {
-      for (const seat of SEATS) {
+    while (state.phase === ROOM_PHASES.IN_PROGRESS) {
+      for (const seat of Object.values(SEATS)) {
         expectFogOfWar(state, seat);
       }
       const shooter = state.battle.currentTurn;
-      state = apply(state, { type: 'FIRE', seat: shooter, payload: { targets: randomTargets(state.battle, 1, rng) } });
+      state = apply(state, {
+        type: CLIENT_EVENTS.FIRE,
+        seat: shooter,
+        payload: { targets: randomTargets(state.battle, 1, rng) },
+      });
     }
-    expect(state.phase).toBe('GAME_OVER');
-    if (state.phase !== 'GAME_OVER') {
+    expect(state.phase).toBe(ROOM_PHASES.GAME_OVER);
+    if (state.phase !== ROOM_PHASES.GAME_OVER) {
       return;
     }
-    for (const seat of SEATS) {
+    for (const seat of Object.values(SEATS)) {
       const snapshot = expectFogOfWar(state, seat);
       expect(snapshot.battle).toBeNull();
       expect(snapshot.gameOver).toEqual({
         winner: state.winner,
-        reason: 'FLEET_DESTROYED',
+        reason: GAME_OVER_REASONS.FLEET_DESTROYED,
         opponentShips: state.battle.boards[otherSeat(seat)].ships,
         rematch: { me: null, opponent: null },
       });

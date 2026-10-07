@@ -1,4 +1,4 @@
-import { type ClientToServerEvents, type ServerToClientEvents } from '@battleship/core';
+import { CLIENT_EVENTS, SERVER_EVENTS, type ClientToServerEvents, type ServerToClientEvents } from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -81,7 +81,7 @@ describe('socket logs', () => {
     const socket = client(baseUrl);
     // Upgrading after the disconnect would never happen: wait for it so the test does not race.
     await new Promise((resolve) => socket.io.engine.once('upgrade', resolve));
-    await socket.timeout(2_000).emitWithAck('ECHO', { hello: 'battleship' });
+    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, { hello: 'battleship' });
     // The client clears its id on disconnect.
     const socketId = socket.id;
     socket.disconnect();
@@ -94,7 +94,11 @@ describe('socket logs', () => {
         expect.objectContaining({ msg: 'Socket connected', socketId, transport: 'polling', origin: ALLOWED }),
         expect.objectContaining({ msg: 'Socket transport upgraded', transport: 'websocket' }),
         // The ack callback is not logged as an argument.
-        expect.objectContaining({ msg: 'Socket event received', event: 'ECHO', args: [{ hello: 'battleship' }] }),
+        expect.objectContaining({
+          msg: 'Socket event received',
+          event: CLIENT_EVENTS.ECHO,
+          args: [{ hello: 'battleship' }],
+        }),
         expect.objectContaining({ msg: 'Socket disconnected', reason: 'client namespace disconnect' }),
       ]),
     );
@@ -110,14 +114,16 @@ describe('socket logs', () => {
     await app?.close();
     app = undefined;
     expect(lines).toEqual(
-      expect.arrayContaining([expect.objectContaining({ msg: 'Socket event sent', event: 'SERVER_SHUTDOWN', args: [{}] })]),
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Socket event sent', event: SERVER_EVENTS.SERVER_SHUTDOWN, args: [{}] }),
+      ]),
     );
   });
 
   it('keep connections but not events at info', async () => {
     const { baseUrl, lines } = await start('info');
     const socket = client(baseUrl);
-    await socket.timeout(2_000).emitWithAck('ECHO', 'ping');
+    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
 
     expect(messages(lines)).toContain('Socket connected');
     expect(messages(lines)).not.toContain('Socket event received');

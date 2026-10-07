@@ -1,7 +1,15 @@
 import { parseOriginEntry } from './origins.js';
 
-/** `json`: one JSON object per line (Render). `pretty`: colored, human-readable lines via pino-pretty (local runs). */
-export type LogFormat = 'json' | 'pretty';
+/** Accepted `LOG_FORMAT` values, named like core's closed sets (ADR-0043). */
+export const LOG_FORMATS = {
+  /** One JSON object per line (Render). */
+  JSON: 'json',
+  /** Colored, human-readable lines via pino-pretty (local runs). */
+  PRETTY: 'pretty',
+} as const;
+
+/** One of the `LOG_FORMATS`. */
+export type LogFormat = (typeof LOG_FORMATS)[keyof typeof LOG_FORMATS];
 
 /**
  * Pino levels. `info` (default) logs HTTP requests and socket connections; `debug` adds `/health` and every socket event
@@ -23,9 +31,6 @@ export interface ServerConfig {
 
 /** Port used when `PORT` is unset, as in local runs. */
 const DEFAULT_PORT = 3000;
-
-/** Accepted `LOG_FORMAT` values. */
-const LOG_FORMATS: readonly LogFormat[] = ['json', 'pretty'];
 
 /** Accepted `LOG_LEVEL` values, from the least to the most verbose, plus `silent`. */
 const LOG_LEVELS: readonly LogLevel[] = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
@@ -94,11 +99,12 @@ function parseOrigins(value: string | undefined): string[] {
  */
 function parseLogFormat(value: string | undefined): LogFormat {
   if (value === undefined || value.trim() === '') {
-    return 'json';
+    return LOG_FORMATS.JSON;
   }
-  const format = LOG_FORMATS.find((candidate) => candidate === value);
+  const formats = Object.values(LOG_FORMATS);
+  const format = formats.find((candidate) => candidate === value);
   if (format === undefined) {
-    throw new Error(`Invalid LOG_FORMAT: "${value}" (expected ${LOG_FORMATS.join(' or ')})`);
+    throw new Error(`Invalid LOG_FORMAT: "${value}" (expected ${formats.join(' or ')})`);
   }
   return format;
 }

@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { loadConfig } from '../src/config.js';
+import { LOG_FORMATS, loadConfig } from '../src/config.js';
 
 const ORIGIN = 'http://localhost:4200';
 
 describe('loadConfig', () => {
   it('defaults to port 3000', () => {
-    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN })).toEqual({ port: 3000, allowedOrigins: [ORIGIN], logFormat: 'json', logLevel: 'info' });
+    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN })).toEqual({
+      port: 3000,
+      allowedOrigins: [ORIGIN],
+      logFormat: LOG_FORMATS.JSON,
+      logLevel: 'info',
+    });
   });
 
   it('reads PORT', () => {
@@ -32,12 +37,17 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ALLOWED_ORIGINS: origins })).toThrow(/Invalid origin/);
   });
 
-  it.each(['json', 'pretty'] as const)('reads LOG_FORMAT=%s', (format) => {
+  // Written out on purpose (ADR-0043): renaming a key is a refactor, changing a value breaks every `.env` and Render.
+  it('pins the LOG_FORMAT values', () => {
+    expect(Object.values(LOG_FORMATS)).toEqual(['json', 'pretty']);
+  });
+
+  it.each(Object.values(LOG_FORMATS))('reads LOG_FORMAT=%s', (format) => {
     expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN, LOG_FORMAT: format }).logFormat).toBe(format);
   });
 
   it.each(['', ' '])('defaults LOG_FORMAT=%j to json', (format) => {
-    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN, LOG_FORMAT: format }).logFormat).toBe('json');
+    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN, LOG_FORMAT: format }).logFormat).toBe(LOG_FORMATS.JSON);
   });
 
   it.each(['PRETTY', 'text', ' pretty'])('rejects LOG_FORMAT=%s', (format) => {

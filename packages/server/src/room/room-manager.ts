@@ -3,7 +3,9 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  CLIENT_EVENTS,
   createCryptoRng,
+  ERROR_CODES,
   MAX_ROOMS,
   ROOM_ID_ALPHABET,
   ROOM_ID_LENGTH,
@@ -113,7 +115,7 @@ export class RoomManager {
    */
   createRoom(payload: CreateRoomPayload): CreatedRoom | RejectedTransition {
     if (this.#rooms.size >= MAX_ROOMS) {
-      return { ok: false, error: 'SERVER_FULL' };
+      return { ok: false, error: ERROR_CODES.SERVER_FULL };
     }
     let roomId = generateRoomId(this.#rng);
     while (this.#rooms.has(roomId)) {
@@ -134,10 +136,10 @@ export class RoomManager {
   joinRoom(payload: JoinRoomPayload, now: number): JoinedRoom | RejectedTransition {
     const room = this.#rooms.get(payload.roomId);
     if (room === undefined) {
-      return { ok: false, error: 'ROOM_NOT_FOUND' };
+      return { ok: false, error: ERROR_CODES.ROOM_NOT_FOUND };
     }
     const playerSecret = this.#createSecret();
-    const result = applyCommand(room, { type: 'JOIN_ROOM', payload, playerSecret }, now);
+    const result = applyCommand(room, { type: CLIENT_EVENTS.JOIN_ROOM, payload, playerSecret }, now);
     if (!result.ok) {
       return result;
     }
@@ -156,7 +158,7 @@ export class RoomManager {
   dispatch(roomId: string, command: SeatCommand, now: number): TransitionResult {
     const room = this.#rooms.get(roomId);
     if (room === undefined) {
-      return { ok: false, error: 'ROOM_NOT_FOUND' };
+      return { ok: false, error: ERROR_CODES.ROOM_NOT_FOUND };
     }
     const result = applyCommand(room, command, now);
     if (result.ok) {

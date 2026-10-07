@@ -3,7 +3,7 @@
 // Exits 0 when the echo comes back, 1 on connection error or timeout.
 import { parseArgs } from 'node:util';
 
-import type { ClientToServerEvents, ServerToClientEvents } from '@battleship/core';
+import { CLIENT_EVENTS, type ClientToServerEvents, type ServerToClientEvents } from '@battleship/core';
 import { io, type Socket } from 'socket.io-client';
 
 const TIMEOUT_MS = 10_000;
@@ -36,7 +36,7 @@ socket.on('connect', () => {
   const payload = { hello: 'battleship', sentAt: new Date().toISOString() };
   socket
     .timeout(TIMEOUT_MS)
-    .emitWithAck('ECHO', payload)
+    .emitWithAck(CLIENT_EVENTS.ECHO, payload)
     .then(
       (response: unknown) => {
         console.log(`echo (${transport}):`, JSON.stringify(response));
