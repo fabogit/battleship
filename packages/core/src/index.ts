@@ -14,6 +14,8 @@ export {
   START_COUNTDOWN_MS,
 } from './constants.js';
 export type { Ack, ClientToServerEvents, EchoResponse, HealthResponse, ServerToClientEvents } from './protocol.js';
+export { createCryptoRng, createSeededRng } from './random.js';
+export type { Rng } from './random.js';
 export { DEFAULT_RULES } from './rules.js';
 export { FLEET, SHIP_LENGTH } from './types.js';
 export type {

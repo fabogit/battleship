@@ -1,6 +1,6 @@
 # Domain
 
-The domain lives in `packages/core`; each section covers one of its modules: `constants.ts`, `types.ts`, `rules.ts`, `placement.ts` and `engine.ts`.
+The domain lives in `packages/core`; each section covers one of its modules: `constants.ts`, `types.ts`, `rules.ts`, `random.ts`, `placement.ts` and `engine.ts`.
 
 ## Constants
 
@@ -98,6 +98,28 @@ export type RematchChoice = 'SAME_RULES' | 'CHANGE_RULES' | 'LEAVE';
 * `DEFAULT_RULES`: no extra turn on hit, adjacency not allowed, 30 s turns, no salvo, `AUTO_RANDOM_SHOT`.
 * `validateRules(rules)`: checks enum membership and the salvo/extra-turn exclusivity. The client UI disables the incompatible toggle; the server still rejects with `INVALID_RULES`.
 
+## Randomness
+
+Decision: [ADR-0030](adr/0030-random-number-generation.md).
+
+```typescript
+export interface Rng {
+  nextInt(maxExclusive: number): number; // uniform integer in [0, maxExclusive)
+  pick<T>(items: readonly T[]): T;
+  shuffle<T>(items: readonly T[]): T[]; // new array, input untouched
+}
+
+export function createSeededRng(seed: number): Rng; // tests
+export function createCryptoRng(): Rng; // production
+```
+
+* **Injection:** placement, dice and auto shots take an `Rng`; nothing in core or in the server's room logic calls `Math.random()`. The server and the client create one `createCryptoRng()` each; tests pass `createSeededRng(seed)`.
+* **Seeded generator:** sfc32 (128-bit state, period ≥ 2^32). The seed is an integer from 0 to 2^32 − 1, used as in PractRand: `a = 0`, `b = seed`, `c = 0`, counter `1`, then 12 outputs discarded. The same seed gives the same sequence on every platform; a test pins the first outputs of seeds `0` and `42`. Any other seed (negative, fractional, too large, `NaN`) throws a `RangeError`.
+* **Production generator:** `globalThis.crypto.getRandomValues`, one 32-bit word per draw, available in browsers and Node 24 without imports. `createCryptoRng()` throws if the platform lacks it. Core declares the one method it needs instead of loading DOM or Node types.
+* **`nextInt(maxExclusive)`:** rejection sampling over 32-bit words. With `limit = 2^32 − (2^32 mod maxExclusive)`, words `≥ limit` are redrawn and the rest return `word mod maxExclusive`, so every result is equally likely. `maxExclusive` must be an integer from 1 to 2^32, otherwise `RangeError`.
+* **`pick(items)`:** `items[nextInt(items.length)]`; throws a `RangeError` on an empty array.
+* **`shuffle(items)`:** Fisher–Yates on a copy. Each permutation is equally likely and the input is never mutated.
+
 ## Placement
 
 * **Board axes:** `(0, 0)` is the top-left cell; `x` is the column, `y` the row. A ship extends from `start` towards larger `x` (`HORIZONTAL`) or larger `y` (`VERTICAL`).
@@ -109,7 +131,7 @@ export type RematchChoice = 'SAME_RULES' | 'CHANGE_RULES' | 'LEAVE';
 * **Partial layouts** (0–5 ships) are valid drafts if each ship satisfies the rules above.
 * **`generateRandomFleet(rules, rng)`:** backtracking search producing a complete valid fleet. Used by the client "Randomize" button and by the server as a fallback.
 * **`completeFleet(draft, rules, rng)`:** keeps the draft's ships and places the missing ones. If the remaining ships cannot fit (possible when adjacency is forbidden), it discards the draft and calls `generateRandomFleet`.
-* All randomness goes through an injected `Rng` so tests are deterministic with a fixed seed.
+* All randomness goes through an injected `Rng` ([Randomness](#randomness)) so tests are deterministic with a fixed seed.
 
 ## Shot engine
 

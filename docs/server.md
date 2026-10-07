@@ -146,5 +146,5 @@ Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `L
 ## Testability
 
 * Room logic is a pure transition function `(state, command, now) → { state, effects }`; timers are scheduled effects executed by a thin `scheduler.ts` over an injectable `Clock`.
-* The `Rng` is injected (dice, auto shots, auto placement).
+* The `Rng` is injected (dice, auto shots, auto placement); production uses `createCryptoRng()`, tests `createSeededRng(seed)` ([Randomness](domain.md#randomness)).
 * Unit tests drive rooms with a fake clock and a fixed seed. Integration tests use real `socket.io-client` instances against an in-process server.
