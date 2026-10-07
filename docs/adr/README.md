@@ -36,5 +36,7 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0030](0030-random-number-generation.md) | Random number generation | Accepted, 2026-10-07 |
 | [ADR-0031](0031-payload-guard-strictness.md) | Payload guard strictness | Accepted, 2026-10-07 |
 | [ADR-0032](0032-fleet-placement.md) | Fleet placement | Accepted, 2026-10-07 |
+| [ADR-0033](0033-turn-resolution.md) | Turn resolution | Accepted, 2026-10-07 |
+| [ADR-0034](0034-shot-history.md) | Shot history | Accepted, 2026-10-07 |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

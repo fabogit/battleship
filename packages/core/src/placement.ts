@@ -1,6 +1,7 @@
 // Fleet placement rules: derivation, validation, random generation and completion (docs/domain.md#placement, ADR-0032).
 
 import { BOARD_SIZE } from './constants.js';
+import { CELL_COUNT, isOnBoard, toCellIndex } from './grid.js';
 import type { Rng } from './random.js';
 import { FLEET, SHIP_LENGTH } from './types.js';
 import type { Coordinate, GameRules, Orientation, PlacedShip, ShipPlacement, ShipType } from './types.js';
@@ -35,9 +36,6 @@ export interface InvalidPlacement {
 
 /** Outcome of `validateDraft` and `validateFleet`: the derived ships, or why the layout was refused. */
 export type PlacementValidation = ValidPlacement | InvalidPlacement;
-
-/** Number of cells on the board, and so the length of every occupancy grid. */
-const CELL_COUNT = BOARD_SIZE * BOARD_SIZE;
 
 /** Both directions a ship can extend in, in the order candidate placements are listed before shuffling. */
 const ORIENTATIONS: readonly Orientation[] = ['HORIZONTAL', 'VERTICAL'];
@@ -271,24 +269,6 @@ function listOnBoardPlacements(type: ShipType): PlacedShip[] {
     }
   }
   return placements;
-}
-
-/**
- * Tells whether a cell lies on the board.
- * @param coordinate Any cell, possibly off the board.
- * @returns True when `0 ≤ x < BOARD_SIZE` and `0 ≤ y < BOARD_SIZE`.
- */
-function isOnBoard({ x, y }: Coordinate): boolean {
-  return x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE;
-}
-
-/**
- * Maps a cell to its index in an occupancy grid.
- * @param coordinate A cell on the board.
- * @returns `y × BOARD_SIZE + x`, from 0 to `CELL_COUNT − 1`.
- */
-function toCellIndex({ x, y }: Coordinate): number {
-  return y * BOARD_SIZE + x;
 }
 
 /**

@@ -85,6 +85,10 @@ _Avoid_: coin toss
 One game in a room, from the dice roll to game over. A rematch starts a new match in the same room.
 _Avoid_: game, round
 
+**Board**:
+One player's side of a match: their fleet and every shot the opponent has fired at it, oldest first. The owner sees those shots as incoming, the opponent as outgoing.
+_Avoid_: grid (for a player's side), map
+
 **Shot allowance**:
 The number of targets a turn fires (`shotsAllowed`): 1 in standard mode; in salvo mode, `min(shooter's surviving ships, opponent's unshot cells)`.
 _Avoid_: shot count
