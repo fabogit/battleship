@@ -9,7 +9,7 @@ import {
   type HealthResponse,
   type ServerToClientEvents,
 } from '@battleship/core';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import { Server } from 'socket.io';
 
 import { createOriginMatcher } from './origins.js';
@@ -29,7 +29,8 @@ declare module 'fastify' {
 export interface ServerOptions {
   /** Exact origins and `https://*.<domain>` wildcards, as validated by `loadConfig` (ADR-0021, ADR-0024). */
   readonly allowedOrigins: readonly string[];
-  readonly isLoggingEnabled: boolean;
+  /** Options for Fastify's built-in Pino logger; `false` disables logging. */
+  readonly logger: NonNullable<FastifyServerOptions['logger']>;
 }
 
 /**
@@ -42,7 +43,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
   // CORS callback result: reflect an allowed `Origin`, send no CORS headers otherwise.
   const corsOrigin = (origin: string | undefined): string | false => (isOriginAllowed(origin) ? (origin ?? false) : false);
 
-  const app = Fastify({ logger: options.isLoggingEnabled });
+  const app = Fastify({ logger: options.logger });
 
   // Foreign origins get a plain 403 before any route runs (ADR-0021).
   app.addHook('onRequest', async (request, reply) => {

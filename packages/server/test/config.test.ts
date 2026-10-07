@@ -6,7 +6,7 @@ const ORIGIN = 'http://localhost:4200';
 
 describe('loadConfig', () => {
   it('defaults to port 3000', () => {
-    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN })).toEqual({ port: 3000, allowedOrigins: [ORIGIN] });
+    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN })).toEqual({ port: 3000, allowedOrigins: [ORIGIN], logFormat: 'json' });
   });
 
   it('reads PORT', () => {
@@ -30,5 +30,17 @@ describe('loadConfig', () => {
 
   it.each(['not a url', 'file:///tmp'])('rejects ALLOWED_ORIGINS=%s', (origins) => {
     expect(() => loadConfig({ ALLOWED_ORIGINS: origins })).toThrow(/Invalid origin/);
+  });
+
+  it.each(['json', 'pretty'] as const)('reads LOG_FORMAT=%s', (format) => {
+    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN, LOG_FORMAT: format }).logFormat).toBe(format);
+  });
+
+  it.each(['', ' '])('defaults LOG_FORMAT=%j to json', (format) => {
+    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN, LOG_FORMAT: format }).logFormat).toBe('json');
+  });
+
+  it.each(['PRETTY', 'text', ' pretty'])('rejects LOG_FORMAT=%s', (format) => {
+    expect(() => loadConfig({ ALLOWED_ORIGINS: ORIGIN, LOG_FORMAT: format })).toThrow(/Invalid LOG_FORMAT/);
   });
 });

@@ -1,17 +1,26 @@
 import { parseOriginEntry } from './origins.js';
 
+/** `json`: one JSON object per line (Render). `pretty`: colored, human-readable lines via pino-pretty (local runs). */
+export type LogFormat = 'json' | 'pretty';
+
 export interface ServerConfig {
   readonly port: number;
   readonly allowedOrigins: readonly string[];
+  readonly logFormat: LogFormat;
 }
 
 const DEFAULT_PORT = 3000;
+const LOG_FORMATS: readonly LogFormat[] = ['json', 'pretty'];
 
-/** Reads `PORT` and `ALLOWED_ORIGINS` (comma-separated). Throws on missing or malformed values so a bad deploy fails at startup. */
+/**
+ * Reads `PORT`, `ALLOWED_ORIGINS` (comma-separated) and `LOG_FORMAT`. Throws on missing or malformed values so a bad
+ * deploy fails at startup.
+ */
 export function loadConfig(env: NodeJS.ProcessEnv): ServerConfig {
   return {
     port: parsePort(env['PORT']),
     allowedOrigins: parseOrigins(env['ALLOWED_ORIGINS']),
+    logFormat: parseLogFormat(env['LOG_FORMAT']),
   };
 }
 
@@ -45,4 +54,15 @@ function parseOrigins(value: string | undefined): string[] {
     );
   }
   return origins;
+}
+
+function parseLogFormat(value: string | undefined): LogFormat {
+  if (value === undefined || value.trim() === '') {
+    return 'json';
+  }
+  const format = LOG_FORMATS.find((candidate) => candidate === value);
+  if (format === undefined) {
+    throw new Error(`Invalid LOG_FORMAT: "${value}" (expected ${LOG_FORMATS.join(' or ')})`);
+  }
+  return format;
 }
