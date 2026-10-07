@@ -5,7 +5,7 @@ date: 2026-10-03
 
 # ADR-0010: Salvo vs. extra turn
 
-`salvoMode` and `consecutiveTurnOnHit` are mutually exclusive.
+`isSalvoModeEnabled` and `isExtraTurnOnHitEnabled` are mutually exclusive.
 
 ## Links
 

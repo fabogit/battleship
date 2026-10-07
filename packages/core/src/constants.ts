@@ -19,19 +19,22 @@ export const DICE_ANIMATION_MS = 3_000;
 export const MAX_CONSECUTIVE_AFK_TURNS = 3;
 
 /** Maximum absence of a seated player, in any phase, before they forfeit (ADR-0008). */
-export const DISCONNECT_FORFEIT_MS = 300_000;
+export const DISCONNECT_FORFEIT_MS = 180_000;
 
-/** Lifetime of a room with no connected player; must stay below Render's 15 min spin-down. */
-export const EMPTY_ROOM_TTL_MS = 600_000;
+/**
+ * Lifetime of a room with no connected player. Must stay ≥ DISCONNECT_FORFEIT_MS (a lone creator sharing the link
+ * leaves the room empty) and below Render's 15 min spin-down.
+ */
+export const EMPTY_ROOM_TTL_MS = 300_000;
 
 /** Lifetime of a room idle in `GAME_OVER` without a rematch agreement. */
-export const GAME_OVER_TTL_MS = 600_000;
+export const GAME_OVER_TTL_MS = 120_000;
 
 /** Nicknames are trimmed, non-empty and rendered as text only. */
 export const NICKNAME_MAX_LENGTH = 20;
 
 /** New rooms are rejected with `SERVER_FULL` above this. */
-export const MAX_ROOMS = 500;
+export const MAX_ROOMS = 50;
 
 /** Events a single socket may send per second. */
 export const RATE_LIMIT_EVENTS_PER_SECOND = 20;

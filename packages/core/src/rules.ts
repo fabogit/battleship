@@ -2,11 +2,11 @@
 
 import type { GameRules } from './types.js';
 
-/** Rules a new room starts with: no extra turn on hit, adjacency not allowed, 60 s turns, no salvo, auto random shot. */
+/** Rules a new room starts with: no extra turn on hit, adjacency not allowed, 30 s turns, no salvo, auto random shot. */
 export const DEFAULT_RULES: GameRules = {
-  consecutiveTurnOnHit: false,
-  allowAdjacentShips: false,
-  turnTimeLimitSeconds: 60,
-  salvoMode: false,
+  isExtraTurnOnHitEnabled: false,
+  areAdjacentShipsAllowed: false,
+  turnTimeLimitSeconds: 30,
+  isSalvoModeEnabled: false,
   timeoutAction: 'AUTO_RANDOM_SHOT',
 };

@@ -48,11 +48,11 @@ A player's agreement to the current rules version, or to their own fleet. Any ru
 _Avoid_: ready
 
 **Salvo mode**:
-The rule (`salvoMode`) under which a turn fires as many targets as the shot allowance; standard mode is a salvo of size 1.
+The rule (`isSalvoModeEnabled`) under which a turn fires as many targets as the shot allowance; standard mode is a salvo of size 1.
 _Avoid_: volley, multi-shot
 
 **Extra turn on hit**:
-The rule (`consecutiveTurnOnHit`, standard mode only) that gives the shooter another turn after any `HIT` or `SUNK`. It excludes salvo mode.
+The rule (`isExtraTurnOnHitEnabled`, standard mode only) that gives the shooter another turn after any `HIT` or `SUNK`. It excludes salvo mode.
 _Avoid_: consecutive turn, bonus turn
 
 **Timeout action**:

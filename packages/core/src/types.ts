@@ -39,12 +39,12 @@ export interface PlacedShip extends ShipPlacement {
 export type TurnTimeLimitSeconds = 15 | 30 | 60 | 120;
 export type TimeoutAction = 'AUTO_RANDOM_SHOT' | 'PASS_TURN';
 
-/** Invariant: salvoMode && consecutiveTurnOnHit is invalid. */
+/** Invariant: isSalvoModeEnabled && isExtraTurnOnHitEnabled is invalid. */
 export interface GameRules {
-  readonly consecutiveTurnOnHit: boolean;
-  readonly allowAdjacentShips: boolean;
+  readonly isExtraTurnOnHitEnabled: boolean;
+  readonly areAdjacentShipsAllowed: boolean;
   readonly turnTimeLimitSeconds: TurnTimeLimitSeconds;
-  readonly salvoMode: boolean;
+  readonly isSalvoModeEnabled: boolean;
   readonly timeoutAction: TimeoutAction;
 }
 
