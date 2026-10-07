@@ -11,7 +11,8 @@ import {
 } from '../src/index.js';
 
 const ROOM_ID = 'ab23cd45';
-const PLAYER_SECRET = '3f2b8c1e-9a4d-4e6f-8b7a-1c2d3e4f5a6b';
+// Generated, as the server does, rather than written out: a literal UUID named like a secret trips secret scanners.
+const PLAYER_SECRET = crypto.randomUUID();
 
 /** One well-formed payload per command. */
 const VALID_PAYLOADS: Record<CommandEvent, unknown> = {
@@ -363,15 +364,11 @@ describe('parseSessionCredentials', () => {
     expect(parsed).not.toBe(credentials);
   });
 
-  it('accepts a secret from crypto.randomUUID', () => {
-    const playerSecret = crypto.randomUUID();
-    expect(parseSessionCredentials({ roomId: ROOM_ID, playerSecret })).toEqual({ roomId: ROOM_ID, playerSecret });
-  });
-
   it.each([
     ['uppercase', PLAYER_SECRET.toUpperCase()],
     ['without dashes', PLAYER_SECRET.replaceAll('-', '')],
-    ['not version 4', '3f2b8c1e-9a4d-1e6f-8b7a-1c2d3e4f5a6b'],
+    // The version digit is the first of the third group, at index 14.
+    ['not version 4', `${PLAYER_SECRET.slice(0, 14)}1${PLAYER_SECRET.slice(15)}`],
     ['braced', `{${PLAYER_SECRET}}`],
     ['followed by more text', `${PLAYER_SECRET}\n`],
     ['empty', ''],
