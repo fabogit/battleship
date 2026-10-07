@@ -24,7 +24,7 @@ battleship/
     │   │   ├── rules.ts           # Defaults, rules validation
     │   │   ├── placement.ts       # Layout validation, random generation, completion
     │   │   ├── engine.ts          # Shot resolution, shot count, victory check
-    │   │   ├── random.ts          # Rng interface + seedable implementation
+    │   │   ├── random.ts          # Rng interface, seeded (tests) and crypto (production) implementations
     │   │   ├── protocol.ts        # Socket.io event maps, snapshot, error codes
     │   │   ├── validation.ts      # Runtime guards for every client→server payload
     │   │   └── index.ts
