@@ -15,6 +15,14 @@ export {
   SESSION_STORE_TTL_MS,
   START_COUNTDOWN_MS,
 } from './constants.js';
+export {
+  completeFleet,
+  generateRandomFleet,
+  toPlacedShip,
+  validateDraft,
+  validateFleet,
+} from './placement.js';
+export type { InvalidPlacement, PlacementValidation, PlacementViolation, ValidPlacement } from './placement.js';
 export { ERROR_CODES } from './protocol.js';
 export type {
   Ack,
