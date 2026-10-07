@@ -15,7 +15,9 @@ The domain lives in `packages/core`; each section covers one of its modules: `co
 | `DISCONNECT_FORFEIT_MS` | `180_000` | Max absence of a seated player, in any phase |
 | `EMPTY_ROOM_TTL_MS` | `300_000` | Room with no connected player; must stay ≥ `DISCONNECT_FORFEIT_MS` (a lone creator sharing the link leaves the room empty) and < Render's 15 min spin-down |
 | `GAME_OVER_TTL_MS` | `120_000` | Room idle in `GAME_OVER` without a rematch agreement |
-| `NICKNAME_MAX_LENGTH` | `20` | Trimmed, non-empty, rendered as text only |
+| `NICKNAME_MAX_LENGTH` | `20` | Trimmed, non-empty, rendered as text only; counted in UTF-16 code units, like HTML `maxlength` |
+| `ROOM_ID_LENGTH` | `8` | Characters in a room id |
+| `ROOM_ID_ALPHABET` | `'23456789abcdefghjkmnpqrstuvwxyz'` | Digits and lowercase letters without `0`, `1`, `i`, `l`, `o` |
 | `MAX_ROOMS` | `50` | New rooms rejected with `SERVER_FULL` above this |
 | `RATE_LIMIT_EVENTS_PER_SECOND` | `20` | Per socket |
 | `SESSION_STORE_TTL_MS` | `86_400_000` | Client-side expiry of stored credentials |
@@ -96,7 +98,7 @@ export type RematchChoice = 'SAME_RULES' | 'CHANGE_RULES' | 'LEAVE';
 ## Rules
 
 * `DEFAULT_RULES`: no extra turn on hit, adjacency not allowed, 30 s turns, no salvo, `AUTO_RANDOM_SHOT`.
-* `validateRules(rules)`: checks enum membership and the salvo/extra-turn exclusivity. The client UI disables the incompatible toggle; the server still rejects with `INVALID_RULES`.
+* `validateRules(rules)`: checks the salvo/extra-turn exclusivity of a well-formed `GameRules`. The client UI disables the incompatible toggle; the server still rejects with `INVALID_RULES`. Field types and enum membership are checked earlier by the `UPDATE_RULES` guard (`INVALID_PAYLOAD`, [Payload validation](protocol.md#payload-validation)).
 
 ## Randomness
 

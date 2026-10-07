@@ -34,5 +34,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0028](0028-local-tooling.md) | Local tooling | Accepted, 2026-10-05 |
 | [ADR-0029](0029-watch-mode.md) | Watch mode | Accepted, 2026-10-07 |
 | [ADR-0030](0030-random-number-generation.md) | Random number generation | Accepted, 2026-10-07 |
+| [ADR-0031](0031-payload-guard-strictness.md) | Payload guard strictness | Accepted, 2026-10-07 |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
