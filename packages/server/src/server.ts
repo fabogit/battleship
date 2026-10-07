@@ -20,6 +20,7 @@ const SHUTDOWN_GRACE_MS = 3_000;
 /** Pino levels at which every request and socket event is logged. */
 const VERBOSE_LEVELS: readonly string[] = ['debug', 'trace'];
 
+/** Socket.io server typed with the protocol's event maps (docs/protocol.md). */
 export type GameServer = Server<ClientToServerEvents, ServerToClientEvents>;
 
 declare module 'fastify' {
@@ -29,6 +30,7 @@ declare module 'fastify' {
   }
 }
 
+/** What `createServer` needs; the entry point builds it from `ServerConfig`. */
 export interface ServerOptions {
   /** Exact origins and `https://*.<domain>` wildcards, as validated by `loadConfig` (ADR-0021, ADR-0024). */
   readonly allowedOrigins: readonly string[];
@@ -40,10 +42,16 @@ export interface ServerOptions {
  * Builds the HTTP + Socket.io server without listening; Socket.io is available as `app.io`.
  * `app.close()` performs the graceful shutdown: every socket gets `SERVER_SHUTDOWN` and is
  * disconnected before the HTTP server closes.
+ * @param options Allowed origins and logger settings.
+ * @returns The Fastify instance, ready for `listen()`.
  */
 export function createServer(options: ServerOptions): FastifyInstance {
   const isOriginAllowed = createOriginMatcher(options.allowedOrigins);
-  // CORS callback result: reflect an allowed `Origin`, send no CORS headers otherwise.
+  /**
+   * CORS callback result: reflect an allowed `Origin`, send no CORS headers otherwise.
+   * @param origin The request's `Origin` header, absent for same-origin and non-browser requests.
+   * @returns The origin to echo in `Access-Control-Allow-Origin`, or `false` for no CORS headers.
+   */
   const corsOrigin = (origin: string | undefined): string | false => (isOriginAllowed(origin) ? (origin ?? false) : false);
 
   const app = Fastify({ logger: options.logger });
@@ -133,7 +141,11 @@ export function createServer(options: ServerOptions): FastifyInstance {
   return app;
 }
 
-/** Drops the ack callback a client may pass as the last argument: it is not data. */
+/**
+ * Drops the ack callback a client may pass as the last argument: it is not data.
+ * @param args The arguments of an inbound event.
+ * @returns The same arguments without functions, ready to log.
+ */
 function withoutAck(args: readonly unknown[]): unknown[] {
   return args.filter((arg) => typeof arg !== 'function');
 }
