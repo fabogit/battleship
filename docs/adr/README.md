@@ -51,5 +51,9 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0045](0045-socket-seat-binding.md)           | Socket seat binding                    | Accepted, 2026-10-08 |
 | [ADR-0046](0046-commands-ahead-of-room-logic.md)  | Commands ahead of their room logic     | Accepted, 2026-10-08 |
 | [ADR-0047](0047-reply-order.md)                   | Reply order                            | Accepted, 2026-10-08 |
+| [ADR-0048](0048-echo-smoke-check.md)              | ECHO as the smoke check                | Accepted, 2026-10-08 |
+| [ADR-0049](0049-room-route.md)                    | One room route for both players        | Accepted, 2026-10-08 |
+| [ADR-0050](0050-entry-before-connection.md)       | Room entry before the connection       | Accepted, 2026-10-08 |
+| [ADR-0051](0051-signal-forms.md)                  | Signal Forms                           | Accepted, 2026-10-08 |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

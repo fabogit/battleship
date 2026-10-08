@@ -14,14 +14,14 @@ The client sends every command through `GameSocketService.emitWithAck(event, pay
 - **Letting Socket.io buffer commands while disconnected:** a buffered `FIRE` or `UPDATE_PLACEMENT` would reach the server after the reconnection, against a state the player no longer sees. Meanwhile the player sees the reconnecting state (#25), and the first `STATE` after the reconnection shows the real one.
 - **Retrying (`retries` option):** commands are not idempotent (`UPDATE_RULES` bumps `rulesVersion`), and the server does not deduplicate.
 - **A method per command (`createRoom()`, `fire()`, …):** thirteen methods to keep in step with the contract by hand, for no extra type safety.
-- **Using Socket.io's typed `Socket<ServerToClientEvents, ClientToServerEvents>` inside the service:** its `emit` and `on` resolve payload types through conditional types that a generic event name cannot narrow, so the generic helper would need casts that hide real mismatches. The socket keeps Socket.io's untyped event maps, and the three methods that reach it (`emitWithAck`, `on`, the private `send`) carry the contract's types.
+- **Using Socket.io's typed `Socket<ServerToClientEvents, ClientToServerEvents>` inside the service:** its `emit` and `on` resolve payload types through conditional types that a generic event name cannot narrow, so the generic helper would need casts that hide real mismatches. The socket keeps Socket.io's untyped event maps, and the two methods that reach it (`emitWithAck`, `on`) carry the contract's types.
 - **A shorter or longer timeout:** the server acks right after a synchronous transition, so a healthy round trip takes well under a second, even over polling. 5 s keeps a spinner from hanging on a dead connection without failing slow mobile networks.
 
 ## Consequences
 
 - The UI needs a message for every `ErrorCode` and for both `TransportError`s.
 - After `NO_ACK` a command may or may not have been applied: the UI waits for `STATE` instead of resending.
-- The Phase 0 `ECHO` goes through the same path; `echo()` turns a failure into a thrown `Error` for the connection check page until #17 retires it.
+- `ECHO` is not a command, so `emitWithAck` refuses it; since #17 the client does not send it at all, and it stays as the server's smoke check ([ADR-0048](0048-echo-smoke-check.md)).
 
 ## Links
 
