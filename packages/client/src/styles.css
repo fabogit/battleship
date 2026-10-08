@@ -7,8 +7,47 @@
   --color-pending: light-dark(#8a5a00, #f2c14e);
   --color-ok: light-dark(#1e7d32, #6fcf7a);
   --color-error: light-dark(#b3261e, #f28b82);
+  --color-border: light-dark(#c4c7c5, #5f6368);
+  --color-focus: light-dark(#0b57d0, #a8c7fa);
 }
 
 body {
   margin: 0;
+}
+
+h1 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  min-height: 2.75rem;
+  padding: 0 1.25rem;
+}
+
+/* Focusable but inactive (ADR-0050): it keeps its place in the tab order, so it never looks clickable. */
+button[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+input {
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  box-sizing: border-box;
+}
+
+input[aria-invalid='true'] {
+  border-color: var(--color-error);
+}
+
+/* One visible focus ring for every control, keyboard focus only. */
+:focus-visible {
+  outline: 0.1875rem solid var(--color-focus);
+  outline-offset: 0.125rem;
 }

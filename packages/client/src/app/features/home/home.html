@@ -1,0 +1,11 @@
+<h1>{{ text.heading }}</h1>
+<p>{{ text.intro }}</p>
+
+<app-nickname-form
+  [submitLabel]="text.create"
+  [submittingLabel]="text.creating"
+  [isConnected]="isConnected()"
+  [submitAction]="create"
+/>
+
+<p class="error" role="alert">{{ errorMessage() }}</p>

@@ -1,0 +1,42 @@
+@switch (view()) {
+  @case (views.JOIN) {
+    <h1>{{ text.joinHeading }}</h1>
+    <p>{{ text.joinIntro(roomId()) }}</p>
+    <app-nickname-form
+      [submitLabel]="text.join"
+      [submittingLabel]="text.joining"
+      [isConnected]="isConnected()"
+      [submitAction]="join"
+    />
+    <p class="error" role="alert">{{ joinErrorMessage() }}</p>
+  }
+  @case (views.ENTERING) {
+    <p class="pending" aria-live="polite">{{ text.entering }}</p>
+  }
+  @case (views.LOBBY) {
+    @if (snapshot(); as snapshot) {
+      <app-lobby [roomId]="snapshot.roomId" [nickname]="snapshot.me.nickname" />
+    }
+  }
+  @case (views.MATCH) {
+    <h1>{{ text.matchHeading }}</h1>
+    @if (snapshot()?.opponent; as opponent) {
+      <p>{{ text.opponentIs(opponent.nickname) }}</p>
+    }
+    <p>{{ text.matchNext }}</p>
+  }
+  @case (views.NOT_FOUND) {
+    <h1>{{ text.notFoundHeading }}</h1>
+    <p>{{ text.notFoundReason }}</p>
+    <p>
+      <a routerLink="/">{{ text.createOwn }}</a>
+    </p>
+  }
+  @case (views.FULL) {
+    <h1>{{ text.fullHeading }}</h1>
+    <p>{{ text.fullReason }}</p>
+    <p>
+      <a routerLink="/">{{ text.createOwn }}</a>
+    </p>
+  }
+}

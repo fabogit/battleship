@@ -1,0 +1,26 @@
+<h1>{{ text.heading }}</h1>
+<p>{{ text.playingAs(nickname()) }}</p>
+<p>{{ text.instructions }}</p>
+
+<div class="link">
+  <label for="room-link">{{ text.linkLabel }}</label>
+  <input id="room-link" type="url" readonly [value]="roomUrl()" (focus)="selectAll($event)" />
+</div>
+
+<div class="actions">
+  @if (canShare) {
+    <button type="button" (click)="share()">{{ text.share }}</button>
+  }
+  <button type="button" (click)="copy()">{{ text.copy }}</button>
+</div>
+
+<p class="outcome" aria-live="polite">
+  @switch (shareOutcome()) {
+    @case (shareOutcomes.COPIED) {
+      <span class="ok">{{ text.copied }}</span>
+    }
+    @case (shareOutcomes.COPY_FAILED) {
+      <span class="error">{{ text.copyFailed }}</span>
+    }
+  }
+</p>
