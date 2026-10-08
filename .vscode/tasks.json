@@ -1,42 +1,42 @@
 {
-  "version": "2.0.0",
   "tasks": [
     {
       "label": "build: server",
-      "detail": "tsc build of core and server, for the Server launch configuration",
-      "type": "shell",
       "command": "pnpm --filter @battleship/server... build",
-      "problemMatcher": []
+      "detail": "tsc build of core and server, for the Server launch configuration",
+      "problemMatcher": [],
+      "type": "shell"
     },
     {
       "label": "serve: client",
-      "detail": "ng serve on http://localhost:4200, against the local server",
-      "type": "shell",
       "command": "pnpm --filter @battleship/client start",
+      "detail": "ng serve on http://localhost:4200, against the local server",
       "isBackground": true,
       "problemMatcher": {
-        "owner": "angular",
-        "pattern": "$tsc",
         "background": {
           "beginsPattern": { "regexp": "Building|Changes detected" },
           "endsPattern": { "regexp": "bundle generation (complete|failed)" }
-        }
-      }
+        },
+        "owner": "angular",
+        "pattern": "$tsc"
+      },
+      "type": "shell"
     },
     {
       "label": "test: client (debug current file)",
-      "detail": "ng test --debug on the open spec; waits for a debugger on port 9229",
-      "type": "shell",
       "command": "pnpm --filter @battleship/client exec ng test --no-watch --debug --include '${file}'",
+      "detail": "ng test --debug on the open spec; waits for a debugger on port 9229",
       "isBackground": true,
       "problemMatcher": {
-        "owner": "angular",
-        "pattern": "$tsc",
         "background": {
           "beginsPattern": { "regexp": "Building" },
           "endsPattern": { "regexp": "Debugger listening on" }
-        }
-      }
+        },
+        "owner": "angular",
+        "pattern": "$tsc"
+      },
+      "type": "shell"
     }
-  ]
+  ],
+  "version": "2.0.0"
 }

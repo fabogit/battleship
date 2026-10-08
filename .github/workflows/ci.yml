@@ -30,6 +30,8 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      # Prettier on the whole repo: the pre-commit hook formats staged files but can be skipped (--no-verify).
+      - run: pnpm format:check
       # Typecheck, lint and tests read @battleship/core from its sources (ADR-0022): no build needed before them.
       - run: pnpm typecheck
       - run: pnpm lint

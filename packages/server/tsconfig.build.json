@@ -1,12 +1,12 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "dist",
-    "types": ["node"],
     // Nothing imports the server, so its type declarations would be dead output.
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "types": ["node"]
   },
   "include": ["src"]
 }

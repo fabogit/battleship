@@ -9,4 +9,4 @@ Incremental: the client sends its full draft layout on every change. Ships are m
 
 ## Links
 
-* Added on 2026-10-03 after the requirements analysis session.
+- Added on 2026-10-03 after the requirements analysis session.

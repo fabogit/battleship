@@ -1,58 +1,58 @@
 {
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Server",
-      "type": "node",
-      "request": "launch",
-      "preLaunchTask": "build: server",
-      "cwd": "${workspaceFolder}/packages/server",
-      "runtimeArgs": ["--env-file-if-exists=.env"],
-      "program": "${workspaceFolder}/packages/server/dist/index.js",
-      "outFiles": ["${workspaceFolder}/packages/{core,server}/dist/**/*.js"],
-      // Ctrl+C in this terminal reaches node alone, so the graceful shutdown runs (D27).
-      "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
-    },
-    {
-      "name": "Client",
-      "type": "chrome",
-      "request": "launch",
-      "preLaunchTask": "serve: client",
-      "url": "http://localhost:4200",
-      // Source maps list `src/...` relative to the Angular project.
-      "webRoot": "${workspaceFolder}/packages/client",
-      // Any installed Chrome or Chromium: js-debug ranks a plain `chromium` as "custom", not "stable".
-      "runtimeExecutable": "*"
-    },
-    {
-      "name": "Server tests: current file",
-      "type": "node",
-      "request": "launch",
-      "cwd": "${workspaceFolder}/packages/server",
-      "program": "${workspaceFolder}/packages/server/node_modules/vitest/vitest.mjs",
-      "args": ["run", "${file}"],
-      "autoAttachChildProcesses": true,
-      "smartStep": true,
-      "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
-    },
-    {
-      "name": "Client tests: current file",
-      "type": "node",
-      "request": "attach",
-      "preLaunchTask": "test: client (debug current file)",
-      "port": 9229,
-      // `ng test --debug` waits on the first line until a debugger attaches.
-      "continueOnAttach": true,
-      "skipFiles": ["<node_internals>/**", "**/node_modules/**"]
-    }
-  ],
   "compounds": [
     {
       "name": "Server + Client",
       "configurations": ["Server", "Client"],
       "stopAll": true
     }
-  ]
+  ],
+  "configurations": [
+    {
+      "name": "Server",
+      // Ctrl+C in this terminal reaches node alone, so the graceful shutdown runs (D27).
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/packages/server",
+      "outFiles": ["${workspaceFolder}/packages/{core,server}/dist/**/*.js"],
+      "preLaunchTask": "build: server",
+      "program": "${workspaceFolder}/packages/server/dist/index.js",
+      "request": "launch",
+      "runtimeArgs": ["--env-file-if-exists=.env"],
+      "skipFiles": ["<node_internals>/**"],
+      "type": "node"
+    },
+    {
+      "name": "Client",
+      "preLaunchTask": "serve: client",
+      "request": "launch",
+      // Any installed Chrome or Chromium: js-debug ranks a plain `chromium` as "custom", not "stable".
+      "runtimeExecutable": "*",
+      "type": "chrome",
+      "url": "http://localhost:4200",
+      // Source maps list `src/...` relative to the Angular project.
+      "webRoot": "${workspaceFolder}/packages/client"
+    },
+    {
+      "name": "Server tests: current file",
+      "args": ["run", "${file}"],
+      "autoAttachChildProcesses": true,
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/packages/server",
+      "program": "${workspaceFolder}/packages/server/node_modules/vitest/vitest.mjs",
+      "request": "launch",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "smartStep": true,
+      "type": "node"
+    },
+    {
+      "name": "Client tests: current file",
+      // `ng test --debug` waits on the first line until a debugger attaches.
+      "continueOnAttach": true,
+      "port": 9229,
+      "preLaunchTask": "test: client (debug current file)",
+      "request": "attach",
+      "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+      "type": "node"
+    }
+  ],
+  "version": "0.2.0"
 }

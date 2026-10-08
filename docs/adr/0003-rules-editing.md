@@ -9,4 +9,4 @@ Both players may edit. Any edit resets both confirmations. Match proceeds when b
 
 ## Links
 
-* Added on 2026-10-03 after the requirements analysis session.
+- Added on 2026-10-03 after the requirements analysis session.

@@ -1,0 +1,8 @@
+# Files Prettier skips; .gitignore is read too (node_modules/, dist/, .angular/, coverage/, .agents/, …).
+
+# Written by tools, not by hand
+pnpm-lock.yaml
+skills-lock.json
+# Postman desktop app, Native Git (ADR-0028)
+postman/
+.postman/

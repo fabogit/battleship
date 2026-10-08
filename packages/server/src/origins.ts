@@ -21,7 +21,9 @@ export function parseOriginEntry(entry: string): string {
       ? entry.slice(WILDCARD_PREFIX.length).replace(/\/$/, '').toLowerCase()
       : '';
     if (!HOSTNAME.test(suffix) || SHARED_SUFFIXES.has(suffix)) {
-      throw new Error(`Invalid wildcard origin in ALLOWED_ORIGINS: "${entry}" (expected https://*.<project>.pages.dev)`);
+      throw new Error(
+        `Invalid wildcard origin in ALLOWED_ORIGINS: "${entry}" (expected https://*.<project>.pages.dev)`,
+      );
     }
     return `${WILDCARD_PREFIX}${suffix}`;
   }

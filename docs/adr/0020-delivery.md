@@ -9,9 +9,9 @@ Phase 0 deploy spike, then vertical slices (see [Implementation roadmap](../road
 
 ## Considered options
 
-* **Layer-by-layer roadmap vs. vertical slices:** layer-by-layer only yields a playable game at the end and tests the client/server contract late (D20).
+- **Layer-by-layer roadmap vs. vertical slices:** layer-by-layer only yields a playable game at the end and tests the client/server contract late (D20).
 
 ## Links
 
-* Added on 2026-10-03 after the requirements analysis session.
-* Spec: [Roadmap: Implementation roadmap](../roadmap.md#implementation-roadmap)
+- Added on 2026-10-03 after the requirements analysis session.
+- Spec: [Roadmap: Implementation roadmap](../roadmap.md#implementation-roadmap)

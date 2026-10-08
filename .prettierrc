@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/prettierrc",
+  "jsonRecursiveSort": true,
+  "jsonSortOrder": "{\"$schema\": null, \"extends\": null, \"name\": null, \"label\": null, \"/.*/\": \"lexical\"}",
+  "overrides": [
+    {
+      "files": "packages/client/**/*.html",
+      "options": { "parser": "angular" }
+    },
+    {
+      "files": "*.md",
+      "options": { "embeddedLanguageFormatting": "off" }
+    }
+  ],
+  "plugins": ["prettier-plugin-sort-json"],
+  "printWidth": 120,
+  "singleQuote": true,
+  "trailingComma": "all"
+}

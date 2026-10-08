@@ -9,9 +9,9 @@ Socket.io is attached directly to Fastify's HTTP server and exposed as `app.io` 
 
 ## Considered options
 
-* **`fastify-socket.io` plugin vs. direct attach:** the plugin's last release (5.1.0, Aug 2024) requires Fastify 4, has open Fastify 5 typing bugs, is reported abandoned, and its default shutdown disconnects sockets without flushing, which loses `SERVER_SHUTDOWN` for polling clients. It is ~30 lines; the one useful idea, decorating the instance with `io`, is kept (D23).
+- **`fastify-socket.io` plugin vs. direct attach:** the plugin's last release (5.1.0, Aug 2024) requires Fastify 4, has open Fastify 5 typing bugs, is reported abandoned, and its default shutdown disconnects sockets without flushing, which loses `SERVER_SHUTDOWN` for polling clients. It is ~30 lines; the one useful idea, decorating the instance with `io`, is kept (D23).
 
 ## Links
 
-* Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
-* Spec: [Deployment: Backend (Render)](../deployment.md#backend-render)
+- Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
+- Spec: [Deployment: Backend (Render)](../deployment.md#backend-render)

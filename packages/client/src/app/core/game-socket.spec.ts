@@ -97,7 +97,9 @@ let service: GameSocketService;
 
 beforeEach(() => {
   socket = new FakeSocket();
-  vi.mocked(io).mockReset().mockReturnValue(socket as unknown as Socket);
+  vi.mocked(io)
+    .mockReset()
+    .mockReturnValue(socket as unknown as Socket);
   TestBed.configureTestingModule({
     providers: [{ provide: SERVER_URL, useValue: 'https://server.test' }],
   });

@@ -9,7 +9,7 @@ Typecheck, lint, tests and `ng serve` resolve `@battleship/core` from its source
 
 ## Considered options
 
-* **`dist/` typings vs. source export condition vs. TypeScript project references:** `dist/` needs no config and tests the same artefact Render runs, but core must be rebuilt after every change. A `"@battleship/source"` condition removes the rebuild at the cost of configuring every consumer (tsconfig, Vitest, Angular) while keeping production builds on `dist/`. Project references (`tsc -b`) add `composite`/build-info constraints that Angular CLI and Vitest ignore anyway. The source condition was chosen once the client consumed core; production builds still use `dist/`, so the artefact Render runs is unchanged (D22, #46).
+- **`dist/` typings vs. source export condition vs. TypeScript project references:** `dist/` needs no config and tests the same artefact Render runs, but core must be rebuilt after every change. A `"@battleship/source"` condition removes the rebuild at the cost of configuring every consumer (tsconfig, Vitest, Angular) while keeping production builds on `dist/`. Project references (`tsc -b`) add `composite`/build-info constraints that Angular CLI and Vitest ignore anyway. The source condition was chosen once the client consumed core; production builds still use `dist/`, so the artefact Render runs is unchanged (D22, #46).
 
 ## History
 
@@ -21,6 +21,6 @@ and its alternative ended with "`dist/` now, source condition when the client la
 
 ## Links
 
-* Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
-* Spec: [Development: Resolving `@battleship/core`](../development.md#resolving-battleshipcore) · [Development: Monorepo topology](../development.md#monorepo-topology)
-* Issues: [#46](https://github.com/fabogit/battleship/issues/46)
+- Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
+- Spec: [Development: Resolving `@battleship/core`](../development.md#resolving-battleshipcore) · [Development: Monorepo topology](../development.md#monorepo-topology)
+- Issues: [#46](https://github.com/fabogit/battleship/issues/46)

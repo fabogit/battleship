@@ -9,4 +9,4 @@ date: 2026-10-03
 
 ## Links
 
-* Added on 2026-10-03 after the requirements analysis session.
+- Added on 2026-10-03 after the requirements analysis session.

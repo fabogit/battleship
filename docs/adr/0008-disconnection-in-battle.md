@@ -9,4 +9,4 @@ Match auto-pauses. The connected player can resume/re-pause. Pause freezes the t
 
 ## Links
 
-* Added on 2026-10-03 after the requirements analysis session.
+- Added on 2026-10-03 after the requirements analysis session.

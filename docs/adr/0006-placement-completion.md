@@ -9,4 +9,4 @@ When both have confirmed, a start countdown of `min(5 s, remaining placement tim
 
 ## Links
 
-* Added on 2026-10-03 after the requirements analysis session.
+- Added on 2026-10-03 after the requirements analysis session.

@@ -9,9 +9,9 @@ date: 2026-10-04
 
 ## Considered options
 
-* **Origin enforcement (403) vs. standard CORS vs. no check:** browsers block a foreign origin either way, but standard CORS still executes the HTTP request and does not apply to WebSocket upgrades at all, so any site could open sockets and spend the free tier's resources. Enforcing on both channels gives one rule, testable from outside a browser. The players' data is not at stake (no cookies; credentials travel in the handshake `auth`), so this guards resources, not sessions (D21).
+- **Origin enforcement (403) vs. standard CORS vs. no check:** browsers block a foreign origin either way, but standard CORS still executes the HTTP request and does not apply to WebSocket upgrades at all, so any site could open sockets and spend the free tier's resources. Enforcing on both channels gives one rule, testable from outside a browser. The players' data is not at stake (no cookies; credentials travel in the handshake `auth`), so this guards resources, not sessions (D21).
 
 ## Links
 
-* Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
-* Spec: [Development: Monorepo topology](../development.md#monorepo-topology) · [Deployment: Backend (Render)](../deployment.md#backend-render) · [Client: Cold-start handling](../client.md#cold-start-handling)
+- Added on 2026-10-04 during the Phase 0 server spike ([#3](https://github.com/fabogit/battleship/issues/3)).
+- Spec: [Development: Monorepo topology](../development.md#monorepo-topology) · [Deployment: Backend (Render)](../deployment.md#backend-render) · [Client: Cold-start handling](../client.md#cold-start-handling)
