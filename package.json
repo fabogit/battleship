@@ -25,6 +25,7 @@
     "husky": "catalog:",
     "lint-staged": "catalog:",
     "prettier": "catalog:",
+    "prettier-plugin-sort-json": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:"
   },
