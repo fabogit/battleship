@@ -1,8 +1,10 @@
 import { signal, type Provider } from '@angular/core';
 import {
   DEFAULT_RULES,
+  PLACEMENT_TIME_LIMIT_MS,
   ROOM_PHASES,
   SEATS,
+  type PlacementSnapshot,
   type PlayerStateSnapshot,
   type ServerToClientEvents,
 } from '@battleship/core';
@@ -79,5 +81,28 @@ export function waitingSnapshot(roomId: string, nickname = 'Ada'): PlayerStateSn
     placement: null,
     battle: null,
     gameOver: null,
+  };
+}
+
+/**
+ * A snapshot of a room in `PLACEMENT`, seen by its creator Ada playing against Grace; both fleets start empty and
+ * unconfirmed.
+ * @param roomId The room's id.
+ * @param placement Fields of the `PLACEMENT` part to override.
+ * @returns The snapshot.
+ */
+export function placementSnapshot(roomId: string, placement: Partial<PlacementSnapshot> = {}): PlayerStateSnapshot {
+  return {
+    ...waitingSnapshot(roomId, 'Ada'),
+    phase: ROOM_PHASES.PLACEMENT,
+    opponent: { seat: SEATS.P2, nickname: 'Grace', isConnected: true, forfeitRemainingMs: null },
+    hasConfirmedRules: { me: true, opponent: true },
+    placement: {
+      myShips: [],
+      hasConfirmed: { me: false, opponent: false },
+      remainingMs: PLACEMENT_TIME_LIMIT_MS,
+      startCountdownMs: null,
+      ...placement,
+    },
   };
 }

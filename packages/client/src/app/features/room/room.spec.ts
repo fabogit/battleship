@@ -19,6 +19,7 @@ import { TRANSPORT_ERRORS } from '../../core/game-socket';
 import { ROOM_ENTRY_TEXT } from '../../core/room-entry.text';
 import { SessionStore } from '../../core/session-store';
 import { LOBBY_TEXT } from '../lobby/lobby.text';
+import { PLACEMENT_TEXT } from '../placement/placement.text';
 import { ROOM_VIEWS } from './room';
 import { ROOM_TEXT } from './room.text';
 
@@ -103,7 +104,7 @@ async function receive(snapshot: PlayerStateSnapshot): Promise<void> {
 // Written out on purpose (ADR-0043): renaming a key is a refactor, changing a value is not.
 describe('ROOM_VIEWS', () => {
   it('pins the values', () => {
-    expect(Object.values(ROOM_VIEWS)).toEqual(['join', 'entering', 'lobby', 'match', 'not-found', 'full']);
+    expect(Object.values(ROOM_VIEWS)).toEqual(['join', 'entering', 'lobby', 'placement', 'match', 'not-found', 'full']);
   });
 });
 
@@ -134,8 +135,8 @@ describe('Room', () => {
 
       await receive(joinedSnapshot());
 
-      expect(heading()).toBe(ROOM_TEXT.matchHeading);
-      expect(page().textContent).toContain(ROOM_TEXT.opponentIs('Ada'));
+      expect(heading()).toBe(PLACEMENT_TEXT.heading);
+      expect(page().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Ada'));
     });
 
     it('shows a not-found screen with a way home for ROOM_NOT_FOUND', async () => {
@@ -213,6 +214,31 @@ describe('Room', () => {
 
       const joined = joinedSnapshot();
       await receive({ ...joined, me: joined.opponent ?? joined.me, opponent: joined.me });
+
+      expect(heading()).toBe(PLACEMENT_TEXT.heading);
+      expect(page().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Grace'));
+    });
+
+    it('shows the match placeholder once both fleets are confirmed, until the battle view (#20)', async () => {
+      const joined = joinedSnapshot();
+      await receive({
+        ...joined,
+        me: joined.opponent ?? joined.me,
+        opponent: joined.me,
+        phase: ROOM_PHASES.IN_PROGRESS,
+        placement: null,
+        battle: {
+          myShips: [],
+          incomingShots: [],
+          outgoingShots: [],
+          currentTurn: SEATS.P1,
+          shotsAllowed: 1,
+          myDraftTargets: [],
+          turnRemainingMs: null,
+          isPaused: false,
+          afkCount: { me: 0, opponent: 0 },
+        },
+      });
 
       expect(heading()).toBe(ROOM_TEXT.matchHeading);
       expect(page().textContent).toContain(ROOM_TEXT.opponentIs('Grace'));

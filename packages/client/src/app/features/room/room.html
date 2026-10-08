@@ -18,6 +18,9 @@
       <app-lobby [roomId]="snapshot.roomId" [nickname]="snapshot.me.nickname" />
     }
   }
+  @case (views.PLACEMENT) {
+    <app-placement />
+  }
   @case (views.MATCH) {
     <h1>{{ text.matchHeading }}</h1>
     @if (snapshot()?.opponent; as opponent) {
