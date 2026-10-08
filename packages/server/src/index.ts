@@ -1,6 +1,6 @@
 import { PROTOCOL_VERSION } from '@battleship/core';
 
-import { loadConfig } from './config.js';
+import { LOG_FORMATS, loadConfig } from './config.js';
 import { createServer } from './server.js';
 import { handleShutdownSignals } from './shutdown.js';
 
@@ -10,7 +10,7 @@ const app = createServer({
   logger: {
     level: config.logLevel,
     // pino-pretty is a dev dependency: `LOG_FORMAT=pretty` is meant for local runs only.
-    ...(config.logFormat === 'pretty' ? { transport: { target: 'pino-pretty' } } : {}),
+    ...(config.logFormat === LOG_FORMATS.PRETTY ? { transport: { target: 'pino-pretty' } } : {}),
   },
 });
 

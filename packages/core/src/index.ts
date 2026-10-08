@@ -15,7 +15,7 @@ export {
   SESSION_STORE_TTL_MS,
   START_COUNTDOWN_MS,
 } from './constants.js';
-export { randomTargets, resolveTurn, shotsAllowed, validateTargets } from './engine.js';
+export { randomTargets, resolveTurn, shotsAllowed, TARGET_VIOLATIONS, validateTargets } from './engine.js';
 export type {
   Battle,
   Board,
@@ -29,12 +29,13 @@ export type {
 export {
   completeFleet,
   generateRandomFleet,
+  PLACEMENT_VIOLATIONS,
   toPlacedShip,
   validateDraft,
   validateFleet,
 } from './placement.js';
 export type { InvalidPlacement, PlacementValidation, PlacementViolation, ValidPlacement } from './placement.js';
-export { ERROR_CODES } from './protocol.js';
+export { CLIENT_EVENTS, ERROR_CODES, SERVER_EVENTS } from './protocol.js';
 export type {
   Ack,
   AckFailure,
@@ -73,7 +74,18 @@ export type {
 export { createCryptoRng, createSeededRng } from './random.js';
 export type { Rng } from './random.js';
 export { DEFAULT_RULES } from './rules.js';
-export { FLEET, SHIP_LENGTH } from './types.js';
+export {
+  FLEET,
+  GAME_OVER_REASONS,
+  ORIENTATIONS,
+  REMATCH_CHOICES,
+  ROOM_PHASES,
+  SEATS,
+  SHIP_LENGTH,
+  SHIP_TYPES,
+  SHOT_OUTCOMES,
+  TIMEOUT_ACTIONS,
+} from './types.js';
 export type {
   Coordinate,
   GameOverReason,

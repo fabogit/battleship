@@ -1,10 +1,14 @@
 import {
+  CLIENT_EVENTS,
   createSeededRng,
+  ERROR_CODES,
   MAX_ROOMS,
-  PAYLOAD_PARSERS,
   parseSessionCredentials,
+  PAYLOAD_PARSERS,
   ROOM_ID_ALPHABET,
   ROOM_ID_LENGTH,
+  ROOM_PHASES,
+  SEATS,
   type Rng,
 } from '@battleship/core';
 import { describe, expect, it } from 'vitest';
@@ -55,7 +59,10 @@ describe('RoomManager', () => {
     expect(parseSessionCredentials({ roomId: created.roomId, playerSecret: created.playerSecret })).not.toBeNull();
     expect(rooms.size).toBe(1);
     expect(rooms.get(created.roomId)).toBe(created.state);
-    expect(created.state).toMatchObject({ phase: 'WAITING_FOR_OPPONENT', players: { P1: { nickname: 'Alice' } } });
+    expect(created.state).toMatchObject({
+      phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
+      players: { P1: { nickname: 'Alice' } },
+    });
   });
 
   it('draws again when an id is already taken', () => {
@@ -73,7 +80,7 @@ describe('RoomManager', () => {
     for (let index = 0; index < MAX_ROOMS; index++) {
       expect(rooms.createRoom({ nickname: `Player ${String(index)}` }).ok).toBe(true);
     }
-    expect(rooms.createRoom({ nickname: 'Late' })).toEqual({ ok: false, error: 'SERVER_FULL' });
+    expect(rooms.createRoom({ nickname: 'Late' })).toEqual({ ok: false, error: ERROR_CODES.SERVER_FULL });
     expect(rooms.size).toBe(MAX_ROOMS);
   });
 
@@ -84,16 +91,16 @@ describe('RoomManager', () => {
       expect.fail(created.error);
     }
     const joined = rooms.joinRoom({ roomId: created.roomId, nickname: 'Bob' }, NOW);
-    expect(joined).toMatchObject({ ok: true, state: { phase: 'PLACEMENT' } });
+    expect(joined).toMatchObject({ ok: true, state: { phase: ROOM_PHASES.PLACEMENT } });
     if (!joined.ok) {
       expect.fail(joined.error);
     }
     expect(joined.playerSecret).not.toBe(created.playerSecret);
     expect(parseSessionCredentials({ roomId: created.roomId, playerSecret: joined.playerSecret })).not.toBeNull();
-    expect(rooms.get(created.roomId)?.phase).toBe('PLACEMENT');
+    expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
     expect(rooms.joinRoom({ roomId: created.roomId, nickname: 'Carol' }, NOW)).toEqual({
       ok: false,
-      error: 'ROOM_FULL',
+      error: ERROR_CODES.ROOM_FULL,
     });
   });
 
@@ -101,11 +108,13 @@ describe('RoomManager', () => {
     const rooms = manager();
     expect(rooms.joinRoom({ roomId: UNKNOWN_ROOM_ID, nickname: 'Bob' }, NOW)).toEqual({
       ok: false,
-      error: 'ROOM_NOT_FOUND',
+      error: ERROR_CODES.ROOM_NOT_FOUND,
     });
-    expect(rooms.dispatch(UNKNOWN_ROOM_ID, { type: 'CONFIRM_PLACEMENT', seat: 'P1', payload: {} }, NOW)).toEqual({
+    expect(
+      rooms.dispatch(UNKNOWN_ROOM_ID, { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat: SEATS.P1, payload: {} }, NOW),
+    ).toEqual({
       ok: false,
-      error: 'ROOM_NOT_FOUND',
+      error: ERROR_CODES.ROOM_NOT_FOUND,
     });
   });
 
@@ -118,19 +127,19 @@ describe('RoomManager', () => {
     rooms.joinRoom({ roomId: created.roomId, nickname: 'Bob' }, NOW);
     const placed = rooms.dispatch(
       created.roomId,
-      { type: 'UPDATE_PLACEMENT', seat: 'P1', payload: { ships: fleet(1) } },
+      { type: CLIENT_EVENTS.UPDATE_PLACEMENT, seat: SEATS.P1, payload: { ships: fleet(1) } },
       NOW,
     );
     expect(placed.ok).toBe(true);
     const stored = rooms.get(created.roomId);
-    expect(stored?.phase === 'PLACEMENT' && stored.fleets.P1.ships).toHaveLength(5);
+    expect(stored?.phase === ROOM_PHASES.PLACEMENT && stored.fleets.P1.ships).toHaveLength(5);
 
     const refused = rooms.dispatch(
       created.roomId,
-      { type: 'FIRE', seat: 'P1', payload: { targets: [{ x: 0, y: 0 }] } },
+      { type: CLIENT_EVENTS.FIRE, seat: SEATS.P1, payload: { targets: [{ x: 0, y: 0 }] } },
       NOW,
     );
-    expect(refused).toEqual({ ok: false, error: 'WRONG_PHASE' });
+    expect(refused).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
     expect(rooms.get(created.roomId)).toBe(stored);
   });
 });

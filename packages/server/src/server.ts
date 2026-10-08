@@ -2,7 +2,9 @@ import { once } from 'node:events';
 
 import cors from '@fastify/cors';
 import {
+  CLIENT_EVENTS,
   PROTOCOL_VERSION,
+  SERVER_EVENTS,
   type Ack,
   type ClientToServerEvents,
   type EchoResponse,
@@ -116,7 +118,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
     });
 
     // Inbound arguments are untrusted: a client can emit without an ack, so it is checked before use.
-    socket.on('ECHO', (payload: unknown, ack: unknown) => {
+    socket.on(CLIENT_EVENTS.ECHO, (payload: unknown, ack: unknown) => {
       if (typeof ack !== 'function') {
         return;
       }
@@ -130,7 +132,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
   app.addHook('preClose', async () => {
     const signal = AbortSignal.timeout(SHUTDOWN_GRACE_MS);
     const closed = [...io.sockets.sockets.values()].map((socket) => once(socket.conn, 'close', { signal }));
-    io.emit('SERVER_SHUTDOWN', {});
+    io.emit(SERVER_EVENTS.SERVER_SHUTDOWN, {});
     io.disconnectSockets(true);
     await Promise.allSettled(closed);
   });

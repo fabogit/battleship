@@ -1,13 +1,34 @@
-import { BOARD_SIZE, type Coordinate, type PlacedShip, type ShotOutcome, type ShotResult } from '@battleship/core';
+import {
+  BOARD_SIZE,
+  SHOT_OUTCOMES,
+  type Coordinate,
+  type PlacedShip,
+  type ShotOutcome,
+  type ShotResult,
+} from '@battleship/core';
 
 /** Number of cells on a board. */
 export const CELL_COUNT = BOARD_SIZE * BOARD_SIZE;
 
 /**
- * What is known about a cell. `sunk` marks every cell of a sunk ship, not only the one whose shot sank it; draft
- * targets and the invalid preview are overlays on top of a state.
+ * What can be known about a cell, also rendered as its `data-state` attribute for the styles (ADR-0043). Draft targets
+ * and the invalid preview are overlays on top of a state.
  */
-export type CellState = 'empty' | 'ship' | 'miss' | 'hit' | 'sunk';
+export const CELL_STATES = {
+  /** No shot, and no ship drawn. */
+  EMPTY: 'empty',
+  /** A ship drawn, not shot. */
+  SHIP: 'ship',
+  /** A shot that found no ship. */
+  MISS: 'miss',
+  /** A shot on a ship not yet sunk. */
+  HIT: 'hit',
+  /** Every cell of a sunk ship, not only the one whose shot sank it. */
+  SUNK: 'sunk',
+} as const;
+
+/** One of the `CELL_STATES`. */
+export type CellState = (typeof CELL_STATES)[keyof typeof CELL_STATES];
 
 /** What the board grid draws on top of its ships and shots. */
 export interface BoardContent {
@@ -71,7 +92,7 @@ export function toBoardCells(content: BoardContent): BoardCell[] {
   );
   const isHit = (coordinate: Coordinate): boolean => {
     const outcome = outcomeAt.get(toCellIndex(coordinate));
-    return outcome === 'HIT' || outcome === 'SUNK';
+    return outcome === SHOT_OUTCOMES.HIT || outcome === SHOT_OUTCOMES.SUNK;
   };
   const sunkShips = new Set(content.ships.filter((ship) => ship.coordinates.every(isHit)));
   const draftTargets = new Set(content.draftTargets.map(toCellIndex));
@@ -80,16 +101,19 @@ export function toBoardCells(content: BoardContent): BoardCell[] {
   const stateAt = (index: number): CellState => {
     const outcome = outcomeAt.get(index);
     const ship = shipAt.get(index);
-    if (outcome === 'MISS') {
-      return 'miss';
+    if (outcome === SHOT_OUTCOMES.MISS) {
+      return CELL_STATES.MISS;
     }
-    if (outcome === 'SUNK' || (outcome === 'HIT' && ship !== undefined && sunkShips.has(ship))) {
-      return 'sunk';
+    if (
+      outcome === SHOT_OUTCOMES.SUNK ||
+      (outcome === SHOT_OUTCOMES.HIT && ship !== undefined && sunkShips.has(ship))
+    ) {
+      return CELL_STATES.SUNK;
     }
-    if (outcome === 'HIT') {
-      return 'hit';
+    if (outcome === SHOT_OUTCOMES.HIT) {
+      return CELL_STATES.HIT;
     }
-    return ship === undefined ? 'empty' : 'ship';
+    return ship === undefined ? CELL_STATES.EMPTY : CELL_STATES.SHIP;
   };
 
   return Array.from({ length: CELL_COUNT }, (_, index) => ({

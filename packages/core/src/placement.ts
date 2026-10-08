@@ -3,15 +3,28 @@
 import { BOARD_SIZE } from './constants.js';
 import { CELL_COUNT, isOnBoard, toCellIndex } from './grid.js';
 import type { Rng } from './random.js';
-import { FLEET, SHIP_LENGTH } from './types.js';
+import { FLEET, ORIENTATIONS, SHIP_LENGTH } from './types.js';
 import type { Coordinate, GameRules, Orientation, PlacedShip, ShipPlacement, ShipType } from './types.js';
 
 /**
- * Game rule a layout breaks, checked per ship in this order: `OUT_OF_BOUNDS`, `DUPLICATE_TYPE`, `OVERLAP`,
- * `ADJACENT_SHIPS` (only when `areAdjacentShipsAllowed === false`, diagonals included). `INCOMPLETE_FLEET` is reported
- * only by `validateFleet`, once every ship has passed.
+ * Game rules a layout can break, checked per ship in this order: `OUT_OF_BOUNDS`, `DUPLICATE_TYPE`, `OVERLAP`,
+ * `ADJACENT_SHIPS`. `INCOMPLETE_FLEET` is reported only by `validateFleet`, once every ship has passed.
  */
-export type PlacementViolation = 'OUT_OF_BOUNDS' | 'DUPLICATE_TYPE' | 'OVERLAP' | 'ADJACENT_SHIPS' | 'INCOMPLETE_FLEET';
+export const PLACEMENT_VIOLATIONS = {
+  /** A cell of the ship lies off the board. */
+  OUT_OF_BOUNDS: 'OUT_OF_BOUNDS',
+  /** A ship type appears twice. */
+  DUPLICATE_TYPE: 'DUPLICATE_TYPE',
+  /** Two ships share a cell. */
+  OVERLAP: 'OVERLAP',
+  /** Two ships touch, diagonals included; only when `areAdjacentShipsAllowed` is false. */
+  ADJACENT_SHIPS: 'ADJACENT_SHIPS',
+  /** A valid draft lacks a ship type. */
+  INCOMPLETE_FLEET: 'INCOMPLETE_FLEET',
+} as const;
+
+/** One of the `PLACEMENT_VIOLATIONS`. */
+export type PlacementViolation = (typeof PLACEMENT_VIOLATIONS)[keyof typeof PLACEMENT_VIOLATIONS];
 
 /** A layout that satisfies the placement rules. */
 export interface ValidPlacement {
@@ -37,8 +50,11 @@ export interface InvalidPlacement {
 /** Outcome of `validateDraft` and `validateFleet`: the derived ships, or why the layout was refused. */
 export type PlacementValidation = ValidPlacement | InvalidPlacement;
 
-/** Both directions a ship can extend in, in the order candidate placements are listed before shuffling. */
-const ORIENTATIONS: readonly Orientation[] = ['HORIZONTAL', 'VERTICAL'];
+/**
+ * Both directions a ship can extend in, in the order candidate placements are listed before shuffling; spelled out so
+ * that seeded fleets never depend on the key order of `ORIENTATIONS`.
+ */
+const ORIENTATION_ORDER: readonly Orientation[] = [ORIENTATIONS.HORIZONTAL, ORIENTATIONS.VERTICAL];
 
 /**
  * Ships `completeFleet` may place, backtracked ones included, while keeping a draft before it gives up and generates a
@@ -54,7 +70,7 @@ const COMPLETION_STEP_LIMIT = 1_000;
  * @returns A new ship holding only `type`, `start`, `orientation` and the `SHIP_LENGTH[type]` derived coordinates,
  * from `start` towards larger x (`HORIZONTAL`) or larger y (`VERTICAL`).
  * @example
- * toPlacedShip({ type: 'DESTROYER', start: { x: 3, y: 5 }, orientation: 'VERTICAL' }).coordinates;
+ * toPlacedShip({ type: SHIP_TYPES.DESTROYER, start: { x: 3, y: 5 }, orientation: ORIENTATIONS.VERTICAL }).coordinates;
  * // [{ x: 3, y: 5 }, { x: 3, y: 6 }]
  */
 export function toPlacedShip(placement: ShipPlacement): PlacedShip {
@@ -63,7 +79,9 @@ export function toPlacedShip(placement: ShipPlacement): PlacedShip {
   const coordinates: Coordinate[] = [];
   for (let offset = 0; offset < SHIP_LENGTH[type]; offset++) {
     coordinates.push(
-      orientation === 'HORIZONTAL' ? { x: start.x + offset, y: start.y } : { x: start.x, y: start.y + offset },
+      orientation === ORIENTATIONS.HORIZONTAL
+        ? { x: start.x + offset, y: start.y }
+        : { x: start.x, y: start.y + offset },
     );
   }
   return { type, start, orientation, coordinates };
@@ -81,8 +99,8 @@ export function toPlacedShip(placement: ShipPlacement): PlacedShip {
  * @example
  * const result = validateDraft(
  *   [
- *     { type: 'DESTROYER', start: { x: 0, y: 0 }, orientation: 'HORIZONTAL' },
- *     { type: 'CRUISER', start: { x: 2, y: 1 }, orientation: 'VERTICAL' },
+ *     { type: SHIP_TYPES.DESTROYER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.HORIZONTAL },
+ *     { type: SHIP_TYPES.CRUISER, start: { x: 2, y: 1 }, orientation: ORIENTATIONS.VERTICAL },
  *   ],
  *   DEFAULT_RULES,
  * );
@@ -115,7 +133,7 @@ export function validateDraft(ships: readonly ShipPlacement[], rules: GameRules)
 export function validateFleet(ships: readonly ShipPlacement[], rules: GameRules): PlacementValidation {
   const result = validateDraft(ships, rules);
   if (result.ok && result.ships.length !== FLEET.length) {
-    return { ok: false, reason: 'INCOMPLETE_FLEET', shipIndex: null };
+    return { ok: false, reason: PLACEMENT_VIOLATIONS.INCOMPLETE_FLEET, shipIndex: null };
   }
   return result;
 }
@@ -151,7 +169,7 @@ export function generateRandomFleet(rules: GameRules, rng: Rng): PlacedShip[] {
  * @returns The five ships in `FLEET` order; a complete valid draft comes back unchanged apart from the order.
  * @example
  * const fleet = completeFleet(
- *   [{ type: 'CARRIER', start: { x: 0, y: 0 }, orientation: 'HORIZONTAL' }],
+ *   [{ type: SHIP_TYPES.CARRIER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.HORIZONTAL }],
  *   DEFAULT_RULES,
  *   createSeededRng(42),
  * );
@@ -181,18 +199,18 @@ function findViolation(
   seenTypes: ReadonlySet<ShipType>,
   occupancy: Occupancy,
   rules: GameRules,
-): Exclude<PlacementViolation, 'INCOMPLETE_FLEET'> | null {
+): Exclude<PlacementViolation, typeof PLACEMENT_VIOLATIONS.INCOMPLETE_FLEET> | null {
   if (!ship.coordinates.every(isOnBoard)) {
-    return 'OUT_OF_BOUNDS';
+    return PLACEMENT_VIOLATIONS.OUT_OF_BOUNDS;
   }
   if (seenTypes.has(ship.type)) {
-    return 'DUPLICATE_TYPE';
+    return PLACEMENT_VIOLATIONS.DUPLICATE_TYPE;
   }
   if (occupancy.overlaps(ship)) {
-    return 'OVERLAP';
+    return PLACEMENT_VIOLATIONS.OVERLAP;
   }
   if (!rules.areAdjacentShipsAllowed && occupancy.touches(ship)) {
-    return 'ADJACENT_SHIPS';
+    return PLACEMENT_VIOLATIONS.ADJACENT_SHIPS;
   }
   return null;
 }
@@ -259,9 +277,9 @@ function placeMissingShips(
 function listOnBoardPlacements(type: ShipType): PlacedShip[] {
   const lastStart = BOARD_SIZE - SHIP_LENGTH[type];
   const placements: PlacedShip[] = [];
-  for (const orientation of ORIENTATIONS) {
-    const lastX = orientation === 'HORIZONTAL' ? lastStart : BOARD_SIZE - 1;
-    const lastY = orientation === 'VERTICAL' ? lastStart : BOARD_SIZE - 1;
+  for (const orientation of ORIENTATION_ORDER) {
+    const lastX = orientation === ORIENTATIONS.HORIZONTAL ? lastStart : BOARD_SIZE - 1;
+    const lastY = orientation === ORIENTATIONS.VERTICAL ? lastStart : BOARD_SIZE - 1;
     for (let y = 0; y <= lastY; y++) {
       for (let x = 0; x <= lastX; x++) {
         placements.push(toPlacedShip({ type, start: { x, y }, orientation }));
@@ -281,8 +299,8 @@ function listOnBoardPlacements(type: ShipType): PlacedShip[] {
 function listSurroundingCells(ship: PlacedShip): number[] {
   const { start } = ship;
   const length = SHIP_LENGTH[ship.type];
-  const endX = ship.orientation === 'HORIZONTAL' ? start.x + length - 1 : start.x;
-  const endY = ship.orientation === 'VERTICAL' ? start.y + length - 1 : start.y;
+  const endX = ship.orientation === ORIENTATIONS.HORIZONTAL ? start.x + length - 1 : start.x;
+  const endY = ship.orientation === ORIENTATIONS.VERTICAL ? start.y + length - 1 : start.y;
   const indexes: number[] = [];
   for (let y = Math.max(start.y - 1, 0); y <= Math.min(endY + 1, BOARD_SIZE - 1); y++) {
     for (let x = Math.max(start.x - 1, 0); x <= Math.min(endX + 1, BOARD_SIZE - 1); x++) {

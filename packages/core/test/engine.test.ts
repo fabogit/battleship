@@ -4,9 +4,14 @@ import {
   BOARD_SIZE,
   createSeededRng,
   DEFAULT_RULES,
+  ORIENTATIONS,
   randomTargets,
   resolveTurn,
+  SEATS,
+  SHIP_TYPES,
+  SHOT_OUTCOMES,
   shotsAllowed,
+  TARGET_VIOLATIONS,
   toPlacedShip,
   validateTargets,
   type Battle,
@@ -26,7 +31,7 @@ const EXTRA_TURN: GameRules = { ...STANDARD, isExtraTurnOnHitEnabled: true };
 const SALVO: GameRules = { ...STANDARD, isSalvoModeEnabled: true };
 const SEED_COUNT = 200;
 
-function ship(type: ShipType, x: number, y: number, orientation: Orientation = 'HORIZONTAL'): PlacedShip {
+function ship(type: ShipType, x: number, y: number, orientation: Orientation = ORIENTATIONS.HORIZONTAL): PlacedShip {
   return toPlacedShip({ type, start: { x, y }, orientation });
 }
 
@@ -35,11 +40,11 @@ function cell(x: number, y: number): Coordinate {
 }
 
 function miss(x: number, y: number): ShotResult {
-  return { coordinate: cell(x, y), outcome: 'MISS' };
+  return { coordinate: cell(x, y), outcome: SHOT_OUTCOMES.MISS };
 }
 
 function hit(x: number, y: number): ShotResult {
-  return { coordinate: cell(x, y), outcome: 'HIT' };
+  return { coordinate: cell(x, y), outcome: SHOT_OUTCOMES.HIT };
 }
 
 /**
@@ -57,20 +62,20 @@ function hit(x: number, y: number): ShotResult {
  *   8 DD........
  */
 const TARGET_FLEET: readonly PlacedShip[] = [
-  ship('CARRIER', 0, 0),
-  ship('BATTLESHIP', 0, 2),
-  ship('CRUISER', 0, 4),
-  ship('SUBMARINE', 0, 6),
-  ship('DESTROYER', 0, 8),
+  ship(SHIP_TYPES.CARRIER, 0, 0),
+  ship(SHIP_TYPES.BATTLESHIP, 0, 2),
+  ship(SHIP_TYPES.CRUISER, 0, 4),
+  ship(SHIP_TYPES.SUBMARINE, 0, 6),
+  ship(SHIP_TYPES.DESTROYER, 0, 8),
 ];
 
 /** P1's fleet; P1 always shoots first in these tests, so it is only there to make the battle complete. */
 const SHOOTER_FLEET: readonly PlacedShip[] = [
-  ship('CARRIER', 5, 0, 'VERTICAL'),
-  ship('BATTLESHIP', 7, 0, 'VERTICAL'),
-  ship('CRUISER', 9, 0, 'VERTICAL'),
-  ship('SUBMARINE', 5, 7),
-  ship('DESTROYER', 9, 5, 'VERTICAL'),
+  ship(SHIP_TYPES.CARRIER, 5, 0, ORIENTATIONS.VERTICAL),
+  ship(SHIP_TYPES.BATTLESHIP, 7, 0, ORIENTATIONS.VERTICAL),
+  ship(SHIP_TYPES.CRUISER, 9, 0, ORIENTATIONS.VERTICAL),
+  ship(SHIP_TYPES.SUBMARINE, 5, 7),
+  ship(SHIP_TYPES.DESTROYER, 9, 5, ORIENTATIONS.VERTICAL),
 ];
 
 /** Shots that hit every cell of `TARGET_FLEET` but the last cell of the destroyer at (1, 8). */
@@ -85,7 +90,7 @@ function battle(targetShots: readonly ShotResult[] = [], shooterShots: readonly 
       P1: { ships: SHOOTER_FLEET, shots: shooterShots },
       P2: { ships: TARGET_FLEET, shots: targetShots },
     },
-    currentTurn: 'P1',
+    currentTurn: SEATS.P1,
   };
 }
 
@@ -133,7 +138,7 @@ describe('validateTargets', () => {
   ])('rejects %s targets', (_name, targets, count) => {
     expect(validateTargets(targets, [], count)).toEqual({
       ok: false,
-      reason: 'WRONG_TARGET_COUNT',
+      reason: TARGET_VIOLATIONS.WRONG_TARGET_COUNT,
       targetIndex: null,
     });
   });
@@ -148,7 +153,7 @@ describe('validateTargets', () => {
   ])('rejects a target %s', (_name, target) => {
     expect(validateTargets([cell(0, 0), target], [], 2)).toEqual({
       ok: false,
-      reason: 'OUT_OF_BOUNDS',
+      reason: TARGET_VIOLATIONS.OUT_OF_BOUNDS,
       targetIndex: 1,
     });
   });
@@ -156,7 +161,7 @@ describe('validateTargets', () => {
   it('rejects a cell targeted twice in the same turn, pointing at the second', () => {
     expect(validateTargets([cell(3, 3), cell(4, 4), cell(3, 3)], [], 3)).toEqual({
       ok: false,
-      reason: 'DUPLICATE_TARGET',
+      reason: TARGET_VIOLATIONS.DUPLICATE_TARGET,
       targetIndex: 2,
     });
   });
@@ -167,7 +172,7 @@ describe('validateTargets', () => {
   ])('rejects a cell shot in an earlier turn (%s)', (_name, earlier) => {
     expect(validateTargets([cell(0, 0), cell(6, 6)], [earlier], 2)).toEqual({
       ok: false,
-      reason: 'ALREADY_TARGETED',
+      reason: TARGET_VIOLATIONS.ALREADY_TARGETED,
       targetIndex: 1,
     });
   });
@@ -176,7 +181,7 @@ describe('validateTargets', () => {
     const targets = [cell(1, 1), cell(1, 1), cell(BOARD_SIZE, 0)];
     expect(validateTargets(targets, [miss(1, 1)], 3)).toEqual({
       ok: false,
-      reason: 'ALREADY_TARGETED',
+      reason: TARGET_VIOLATIONS.ALREADY_TARGETED,
       targetIndex: 0,
     });
   });
@@ -189,7 +194,7 @@ describe('resolveTurn', () => {
       expect(turn.results).toEqual([miss(9, 9)]);
       expect(turn.results[0]).not.toHaveProperty('sunkShip');
       expect(turn.winner).toBeNull();
-      expect(turn.battle.currentTurn).toBe('P2');
+      expect(turn.battle.currentTurn).toBe(SEATS.P2);
     });
 
     it('hits a ship that still has intact cells', () => {
@@ -200,21 +205,23 @@ describe('resolveTurn', () => {
 
     it('reports the whole ship when the shot sinks it', () => {
       const turn = fired(resolveTurn(battle([hit(0, 4), miss(3, 4), hit(2, 4)]), [cell(1, 4)], STANDARD));
-      expect(turn.results).toEqual([{ coordinate: cell(1, 4), outcome: 'SUNK', sunkShip: TARGET_FLEET[2] }]);
+      expect(turn.results).toEqual([
+        { coordinate: cell(1, 4), outcome: SHOT_OUTCOMES.SUNK, sunkShip: TARGET_FLEET[2] },
+      ]);
       expect(turn.winner).toBeNull();
-      expect(turn.battle.currentTurn).toBe('P2');
+      expect(turn.battle.currentTurn).toBe(SEATS.P2);
     });
 
     it('derives hits from the coordinates, not from the stored outcomes', () => {
       const turn = fired(resolveTurn(battle([miss(0, 8)]), [cell(1, 8)], STANDARD));
-      expect(turn.results[0]?.outcome).toBe('SUNK');
+      expect(turn.results[0]?.outcome).toBe(SHOT_OUTCOMES.SUNK);
     });
 
     it('rejects a repeated shot and leaves the battle unchanged', () => {
       const before = deepFreeze(battle([miss(9, 9)]));
       expect(resolveTurn(before, [cell(9, 9)], STANDARD)).toEqual({
         ok: false,
-        reason: 'ALREADY_TARGETED',
+        reason: TARGET_VIOLATIONS.ALREADY_TARGETED,
         targetIndex: 0,
       });
       expect(before).toEqual(battle([miss(9, 9)]));
@@ -224,13 +231,16 @@ describe('resolveTurn', () => {
       ['no target', []],
       ['two targets', [cell(9, 9), cell(9, 8)]],
     ])('rejects %s in standard mode', (_name, targets) => {
-      expect(resolveTurn(battle(), targets, STANDARD)).toMatchObject({ ok: false, reason: 'WRONG_TARGET_COUNT' });
+      expect(resolveTurn(battle(), targets, STANDARD)).toMatchObject({
+        ok: false,
+        reason: TARGET_VIOLATIONS.WRONG_TARGET_COUNT,
+      });
     });
 
     it('rejects a target off the board', () => {
       expect(resolveTurn(battle(), [cell(0, BOARD_SIZE)], STANDARD)).toEqual({
         ok: false,
-        reason: 'OUT_OF_BOUNDS',
+        reason: TARGET_VIOLATIONS.OUT_OF_BOUNDS,
         targetIndex: 0,
       });
     });
@@ -243,23 +253,25 @@ describe('resolveTurn', () => {
   describe('victory', () => {
     it('ends the match when the last ship sinks', () => {
       const turn = fired(resolveTurn(battle(ALL_BUT_ONE_HIT), [cell(1, 8)], STANDARD));
-      expect(turn.results).toEqual([{ coordinate: cell(1, 8), outcome: 'SUNK', sunkShip: TARGET_FLEET[4] }]);
-      expect(turn.winner).toBe('P1');
-      expect(turn.battle.currentTurn).toBe('P1');
+      expect(turn.results).toEqual([
+        { coordinate: cell(1, 8), outcome: SHOT_OUTCOMES.SUNK, sunkShip: TARGET_FLEET[4] },
+      ]);
+      expect(turn.winner).toBe(SEATS.P1);
+      expect(turn.battle.currentTurn).toBe(SEATS.P1);
     });
 
     it('goes on while a ship is left', () => {
       const turn = fired(resolveTurn(battle(ALL_BUT_ONE_HIT.slice(1)), [cell(1, 8)], STANDARD));
-      expect(turn.results[0]?.outcome).toBe('SUNK');
+      expect(turn.results[0]?.outcome).toBe(SHOT_OUTCOMES.SUNK);
       expect(turn.winner).toBeNull();
     });
 
     it('lets P2 win against P1', () => {
       const shooterHits = SHOOTER_FLEET.flatMap((placed) => placed.coordinates).map(({ x, y }) => hit(x, y));
       const [last, ...earlier] = shooterHits;
-      const p2Turn: Battle = { ...battle([], earlier), currentTurn: 'P2' };
+      const p2Turn: Battle = { ...battle([], earlier), currentTurn: SEATS.P2 };
       const turn = fired(resolveTurn(p2Turn, [last?.coordinate ?? cell(0, 0)], STANDARD));
-      expect(turn.winner).toBe('P2');
+      expect(turn.winner).toBe(SEATS.P2);
       expect(turn.battle.boards.P1.shots).toHaveLength(shooterHits.length);
     });
   });
@@ -270,18 +282,18 @@ describe('resolveTurn', () => {
       ['a sink', cell(1, 8)],
     ])('gives the shooter another turn after %s with extra turn on', (_name, target) => {
       const turn = fired(resolveTurn(battle([hit(0, 8)]), [target], EXTRA_TURN));
-      expect(turn.battle.currentTurn).toBe('P1');
+      expect(turn.battle.currentTurn).toBe(SEATS.P1);
     });
 
     it('passes the turn after a miss with extra turn on', () => {
-      expect(fired(resolveTurn(battle(), [cell(9, 9)], EXTRA_TURN)).battle.currentTurn).toBe('P2');
+      expect(fired(resolveTurn(battle(), [cell(9, 9)], EXTRA_TURN)).battle.currentTurn).toBe(SEATS.P2);
     });
 
     it.each([
       ['a hit', cell(2, 0)],
       ['a miss', cell(9, 9)],
     ])('passes the turn after %s with extra turn off', (_name, target) => {
-      expect(fired(resolveTurn(battle(), [target], STANDARD)).battle.currentTurn).toBe('P2');
+      expect(fired(resolveTurn(battle(), [target], STANDARD)).battle.currentTurn).toBe(SEATS.P2);
     });
   });
 
@@ -311,8 +323,8 @@ describe('resolveTurn', () => {
         winner = turn.winner;
         turns++;
       }
-      const loser = winner === 'P1' ? 'P2' : 'P1';
-      const sunk = current.boards[loser].shots.filter((shot) => shot.outcome === 'SUNK');
+      const loser = winner === SEATS.P1 ? SEATS.P2 : SEATS.P1;
+      const sunk = current.boards[loser].shots.filter((shot) => shot.outcome === SHOT_OUTCOMES.SUNK);
       expect(sunk.map((shot) => shot.sunkShip?.type).sort()).toEqual(
         current.boards[loser].ships.map((placed) => placed.type).sort(),
       );
@@ -339,7 +351,7 @@ describe('randomTargets', () => {
   });
 
   it('aims at the opponent of the current turn', () => {
-    const p2Turn: Battle = { ...battle([], [miss(0, 0)]), currentTurn: 'P2' };
+    const p2Turn: Battle = { ...battle([], [miss(0, 0)]), currentTurn: SEATS.P2 };
     for (let seed = 0; seed < SEED_COUNT; seed++) {
       expect(randomTargets(p2Turn, 1, createSeededRng(seed))).not.toContainEqual(cell(0, 0));
     }

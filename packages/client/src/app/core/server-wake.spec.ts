@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SERVER_URL } from './server-url';
-import { GIVE_UP_AFTER_MS, ServerWakeService } from './server-wake';
+import { GIVE_UP_AFTER_MS, ServerWakeService, WAKE_STATUSES } from './server-wake';
 
 const HEALTH_URL = 'https://server.test/health';
 const HEALTHY = { status: 'ok', uptime: 1 };
@@ -31,15 +31,22 @@ function failAsWaking(): void {
   http.expectOne(HEALTH_URL).error(new ProgressEvent('error'), { status: 0 });
 }
 
+// Written out on purpose (ADR-0043): renaming a key is a refactor, changing a value is not.
+describe('WAKE_STATUSES', () => {
+  it('pins the values', () => {
+    expect(Object.values(WAKE_STATUSES)).toEqual(['idle', 'waking', 'awake', 'unreachable']);
+  });
+});
+
 describe('ServerWakeService', () => {
   it('reports awake as soon as /health answers', async () => {
     const isAwake = service.wake();
-    expect(service.status()).toBe('waking');
+    expect(service.status()).toBe(WAKE_STATUSES.WAKING);
 
     http.expectOne(HEALTH_URL).flush(HEALTHY);
 
     await expect(isAwake).resolves.toBe(true);
-    expect(service.status()).toBe('awake');
+    expect(service.status()).toBe(WAKE_STATUSES.AWAKE);
   });
 
   it('treats failed, non-JSON and unexpected responses as still waking', async () => {
@@ -51,7 +58,7 @@ describe('ServerWakeService', () => {
     await vi.advanceTimersToNextTimerAsync();
     http.expectOne(HEALTH_URL).flush({ status: 'starting' });
     await vi.advanceTimersToNextTimerAsync();
-    expect(service.status()).toBe('waking');
+    expect(service.status()).toBe(WAKE_STATUSES.WAKING);
     http.expectOne(HEALTH_URL).flush(HEALTHY);
 
     await expect(isAwake).resolves.toBe(true);
@@ -105,7 +112,7 @@ describe('ServerWakeService', () => {
     await vi.runAllTimersAsync();
 
     expect(isAwake).toBe(false);
-    expect(service.status()).toBe('unreachable');
+    expect(service.status()).toBe(WAKE_STATUSES.UNREACHABLE);
     http.expectNone(HEALTH_URL);
   });
 
@@ -121,10 +128,10 @@ describe('ServerWakeService', () => {
 
     expect(isAwake).toBe(false);
     expect(Date.now() - start).toBe(GIVE_UP_AFTER_MS);
-    expect(service.status()).toBe('unreachable');
+    expect(service.status()).toBe(WAKE_STATUSES.UNREACHABLE);
 
     const retried = service.wake();
-    expect(service.status()).toBe('waking');
+    expect(service.status()).toBe(WAKE_STATUSES.WAKING);
     http.expectOne(HEALTH_URL).flush(HEALTHY);
     await expect(retried).resolves.toBe(true);
   });

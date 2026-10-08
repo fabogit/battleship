@@ -20,12 +20,12 @@ battleship/
     ├── core/                      # Pure domain + protocol contract (zero runtime deps)
     │   ├── src/
     │   │   ├── constants.ts       # Board size, timings, limits, PROTOCOL_VERSION
-    │   │   ├── types.ts           # Domain entities
+    │   │   ├── types.ts           # Domain entities and their named value sets (SEATS, ROOM_PHASES, …)
     │   │   ├── rules.ts           # Defaults, rules validation
     │   │   ├── placement.ts       # Layout validation, random generation, completion
     │   │   ├── engine.ts          # Shot resolution, shot count, victory check
     │   │   ├── random.ts          # Rng interface, seeded (tests) and crypto (production) implementations
-    │   │   ├── protocol.ts        # Socket.io event maps, snapshot, error codes
+    │   │   ├── protocol.ts        # Socket.io event maps and names, snapshot, error codes
     │   │   ├── validation.ts      # Runtime guards for every client→server payload
     │   │   └── index.ts
     │   └── test/                  # Vitest
@@ -77,6 +77,31 @@ Decision: [ADR-0022](adr/0022-workspace-type-resolution.md).
 | `ngc`/`tsc` typecheck of the client | `customConditions` in `packages/client/tsconfig.json` | Inherited by `tsconfig.app.json` and `tsconfig.spec.json`. |
 
 A new consumer of core (or a new workspace package consumed the same way) needs the matching row before it works on a checkout without `dist/`.
+
+## Code conventions
+
+Decision: [ADR-0043](adr/0043-named-constants.md).
+
+* **Closed string sets:** each set of values (phases, seats, error codes, event names, violation reasons, a service's states) is an `as const` object with a plural `UPPER_SNAKE_CASE` name and keys. Its type is derived from it under the singular name, and code names every value through the object:
+
+  ```typescript
+  export const ROOM_PHASES = {
+    WAITING_FOR_OPPONENT: 'WAITING_FOR_OPPONENT',
+    // …
+    GAME_OVER: 'GAME_OVER',
+  } as const;
+  export type RoomPhase = (typeof ROOM_PHASES)[keyof typeof ROOM_PHASES];
+
+  if (state.phase === ROOM_PHASES.GAME_OVER) { … }
+  ```
+
+  * Comparisons, returns, emits and listeners use the object, type positions too (`typeof ROOM_PHASES.PLACEMENT`). An Angular template reads it from a component field (`protected readonly wakeStatuses = WAKE_STATUSES`).
+  * No `enum` and no `const enum`: the values stay plain strings, and the code runs under type stripping.
+  * Sets shared by server and client live in core and are exported from `@battleship/core`. A set one package owns stays there: `CELL_STATES`, `CONNECTION_STATUSES`, `TRANSPORT_ERRORS` and `WAKE_STATUSES` in the client, `LOG_FORMATS` in the server.
+  * A runtime list is `Object.values(…)`, in declaration order; a guard checks membership against the values, never the keys.
+* **Pinned values:** one test per object writes its values out. Renaming a key is a refactor; changing a value changes the protocol (and `PROTOCOL_VERSION`), the logs or the styles.
+* **Left as literals:** the `ok` discriminant of acks and results; object keys and property names (`boards.P1`); third-party values (Pino levels, Socket.io and DOM event names, OS signals, keyboard keys); log messages and UI text; comments and the pinning tests.
+* **New values:** a new set, or a new value of an existing one, follows the same pattern. A new protocol value also goes into its pinning test and into [Protocol](protocol.md).
 
 ## Local tooling
 

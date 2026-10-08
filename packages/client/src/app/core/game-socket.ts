@@ -1,10 +1,28 @@
 import { DestroyRef, Service, inject, signal } from '@angular/core';
-import type { ClientToServerEvents, CommandEvent, CommandPayload, EchoResponse, ServerToClientEvents } from '@battleship/core';
+import {
+  CLIENT_EVENTS,
+  type ClientToServerEvents,
+  type CommandEvent,
+  type CommandPayload,
+  type EchoResponse,
+  type ServerToClientEvents,
+} from '@battleship/core';
 import { io } from 'socket.io-client';
 
 import { SERVER_URL } from './server-url';
 
-export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
+/** The states of the Socket.io connection, as `GameSocketService.status` reports them (ADR-0043). */
+export const CONNECTION_STATUSES = {
+  /** Not opened yet, closed by the client or the server, or refused by a server middleware. */
+  DISCONNECTED: 'disconnected',
+  /** Opening, or retrying after a drop. */
+  CONNECTING: 'connecting',
+  /** The handshake succeeded. */
+  CONNECTED: 'connected',
+} as const;
+
+/** One of the `CONNECTION_STATUSES`. */
+export type ConnectionStatus = (typeof CONNECTION_STATUSES)[keyof typeof CONNECTION_STATUSES];
 
 /**
  * How long a command waits for its ack, in ms, before resolving as `NO_ACK` (ADR-0035). The server acks right after a
@@ -12,12 +30,19 @@ export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected';
  */
 export const ACK_TIMEOUT_MS = 5_000;
 
-/**
- * Why a command got no reply from the server (ADR-0035): `NOT_CONNECTED` when it was not sent because the socket was
- * not connected; `NO_ACK` when it was sent but the ack did not arrive within `ACK_TIMEOUT_MS`, or the connection
- * dropped first. After `NO_ACK` the server may or may not have applied the command; the next `STATE` tells.
- */
-export type TransportError = 'NOT_CONNECTED' | 'NO_ACK';
+/** Why a command can get no reply from the server (ADR-0035); kept apart from core's `ERROR_CODES`. */
+export const TRANSPORT_ERRORS = {
+  /** Not sent, because the socket was not connected. */
+  NOT_CONNECTED: 'NOT_CONNECTED',
+  /**
+   * Sent, but the ack did not arrive within `ACK_TIMEOUT_MS`, or the connection dropped first. The server may or may
+   * not have applied the command; the next `STATE` tells.
+   */
+  NO_ACK: 'NO_ACK',
+} as const;
+
+/** One of the `TRANSPORT_ERRORS`. */
+export type TransportError = (typeof TRANSPORT_ERRORS)[keyof typeof TRANSPORT_ERRORS];
 
 /** Resolved by `emitWithAck` when the server did not reply; shaped like `AckFailure`, so callers branch on `ok` once. */
 export interface TransportFailure {
@@ -45,7 +70,7 @@ export type CommandResult<E extends CommandEvent> = AckOf<E> | TransportFailure;
  */
 @Service()
 export class GameSocketService {
-  private readonly statusSignal = signal<ConnectionStatus>('disconnected');
+  private readonly statusSignal = signal<ConnectionStatus>(CONNECTION_STATUSES.DISCONNECTED);
   /** `connecting` from `connect()` until the handshake succeeds, and while Socket.io retries after a drop. */
   readonly status = this.statusSignal.asReadonly();
 
@@ -69,16 +94,16 @@ export class GameSocketService {
   constructor() {
     const socket = this.socket;
     socket.on('connect', () => {
-      this.statusSignal.set('connected');
+      this.statusSignal.set(CONNECTION_STATUSES.CONNECTED);
     });
     // `active` drops to false only when the client closes the socket, the server disconnects it, or a server
     // middleware rejects the connection (`next(err)`). A handshake refused by `allowRequest` (foreign origin, HTTP 403)
-    // keeps it true, so the socket stays 'connecting' and retries (#51, F9).
+    // keeps it true, so the socket stays `CONNECTING` and retries (#51, F9).
     socket.on('disconnect', () => {
-      this.statusSignal.set(socket.active ? 'connecting' : 'disconnected');
+      this.statusSignal.set(socket.active ? CONNECTION_STATUSES.CONNECTING : CONNECTION_STATUSES.DISCONNECTED);
     });
     socket.on('connect_error', () => {
-      this.statusSignal.set(socket.active ? 'connecting' : 'disconnected');
+      this.statusSignal.set(socket.active ? CONNECTION_STATUSES.CONNECTING : CONNECTION_STATUSES.DISCONNECTED);
     });
     inject(DestroyRef).onDestroy(() => socket.close());
   }
@@ -92,7 +117,7 @@ export class GameSocketService {
     if (this.socket.active) {
       return;
     }
-    this.statusSignal.set('connecting');
+    this.statusSignal.set(CONNECTION_STATUSES.CONNECTING);
     this.socket.connect();
   }
 
@@ -130,7 +155,7 @@ export class GameSocketService {
    * @throws When the socket is not connected or no ack arrives, with the `TransportError` as message.
    */
   async echo(payload: unknown): Promise<EchoResponse> {
-    const response = await this.send('ECHO', payload);
+    const response = await this.send(CLIENT_EVENTS.ECHO, payload);
     if (!response.ok) {
       throw new Error(response.error);
     }
@@ -149,12 +174,12 @@ export class GameSocketService {
     payload: Parameters<ClientToServerEvents[E]>[0],
   ): Promise<AckOf<E> | TransportFailure> {
     if (!this.socket.connected) {
-      return Promise.resolve({ ok: false, error: 'NOT_CONNECTED' });
+      return Promise.resolve({ ok: false, error: TRANSPORT_ERRORS.NOT_CONNECTED });
     }
     return new Promise((resolve) => {
       // The error is `null` when the ack arrives in time.
       this.socket.timeout(ACK_TIMEOUT_MS).emit(event, payload, (error: Error | null, response: AckOf<E>) => {
-        resolve(error === null ? response : { ok: false, error: 'NO_ACK' });
+        resolve(error === null ? response : { ok: false, error: TRANSPORT_ERRORS.NO_ACK });
       });
     });
   }

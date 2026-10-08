@@ -1,6 +1,7 @@
 // Per-player projection of a room into the `STATE` snapshot (docs/protocol.md#snapshot, ADR-0038).
 
 import {
+  ROOM_PHASES,
   shotsAllowed,
   type BattleSnapshot,
   type GameOverSnapshot,
@@ -36,7 +37,7 @@ export function projectSnapshot(state: RoomState, seat: Seat, now: number): Play
   const opponentSeat = otherSeat(seat);
   const opponent = state.players[opponentSeat];
   // Rules are fixed until negotiation lands (#26): every phase past it counts as both players having confirmed them.
-  const haveRulesBeenAgreed = state.phase !== 'WAITING_FOR_OPPONENT';
+  const haveRulesBeenAgreed = state.phase !== ROOM_PHASES.WAITING_FOR_OPPONENT;
   return {
     roomId: state.roomId,
     phase: state.phase,
@@ -45,9 +46,9 @@ export function projectSnapshot(state: RoomState, seat: Seat, now: number): Play
     rules: state.rules,
     rulesVersion: state.rulesVersion,
     hasConfirmedRules: { me: haveRulesBeenAgreed, opponent: haveRulesBeenAgreed },
-    placement: state.phase === 'PLACEMENT' ? toPlacementSnapshot(state, seat, now) : null,
-    battle: state.phase === 'IN_PROGRESS' ? toBattleSnapshot(state, seat) : null,
-    gameOver: state.phase === 'GAME_OVER' ? toGameOverSnapshot(state, seat) : null,
+    placement: state.phase === ROOM_PHASES.PLACEMENT ? toPlacementSnapshot(state, seat, now) : null,
+    battle: state.phase === ROOM_PHASES.IN_PROGRESS ? toBattleSnapshot(state, seat) : null,
+    gameOver: state.phase === ROOM_PHASES.GAME_OVER ? toGameOverSnapshot(state, seat) : null,
   };
 }
 

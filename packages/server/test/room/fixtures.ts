@@ -1,7 +1,10 @@
 import {
+  CLIENT_EVENTS,
   createSeededRng,
   DEFAULT_RULES,
   generateRandomFleet,
+  ROOM_PHASES,
+  SEATS,
   type PlacedShip,
   type Seat,
   type ShipPlacement,
@@ -53,22 +56,22 @@ export function waitingRoom(): WaitingRoom {
 export function placementRoom(now = NOW): PlacementRoom {
   const state = apply(
     waitingRoom(),
-    { type: 'JOIN_ROOM', payload: { roomId: ROOM_ID, nickname: 'Bob' }, playerSecret: P2_SECRET },
+    { type: CLIENT_EVENTS.JOIN_ROOM, payload: { roomId: ROOM_ID, nickname: 'Bob' }, playerSecret: P2_SECRET },
     now,
   );
-  expect(state.phase).toBe('PLACEMENT');
+  expect(state.phase).toBe(ROOM_PHASES.PLACEMENT);
   return state as PlacementRoom;
 }
 
 export function placeAndConfirm(state: RoomState, seat: Seat, ships: readonly ShipPlacement[]): RoomState {
-  const placed = apply(state, { type: 'UPDATE_PLACEMENT', seat, payload: { ships } });
-  return apply(placed, { type: 'CONFIRM_PLACEMENT', seat, payload: {} });
+  const placed = apply(state, { type: CLIENT_EVENTS.UPDATE_PLACEMENT, seat, payload: { ships } });
+  return apply(placed, { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat, payload: {} });
 }
 
 /** A room in battle with fleets from seeds 1 (P1) and 2 (P2). */
 export function battleRoom(): BattleRoom {
-  const state = placeAndConfirm(placeAndConfirm(placementRoom(), 'P1', fleet(1)), 'P2', fleet(2));
-  expect(state.phase).toBe('IN_PROGRESS');
+  const state = placeAndConfirm(placeAndConfirm(placementRoom(), SEATS.P1, fleet(1)), SEATS.P2, fleet(2));
+  expect(state.phase).toBe(ROOM_PHASES.IN_PROGRESS);
   return state as BattleRoom;
 }
 

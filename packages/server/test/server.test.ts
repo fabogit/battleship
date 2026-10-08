@@ -1,4 +1,10 @@
-import { PROTOCOL_VERSION, type ClientToServerEvents, type ServerToClientEvents } from '@battleship/core';
+import {
+  CLIENT_EVENTS,
+  PROTOCOL_VERSION,
+  SERVER_EVENTS,
+  type ClientToServerEvents,
+  type ServerToClientEvents,
+} from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -98,7 +104,7 @@ describe.each(TRANSPORTS)('Socket.io over %s', (transport) => {
 
     const payload = { hello: 'battleship', n: 42 };
     // socket.io-client types `timeout().emitWithAck()` as Promise<any>; the assertion checks the shape.
-    const response: unknown = await socket.timeout(2_000).emitWithAck('ECHO', payload);
+    const response: unknown = await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, payload);
 
     expect(response).toEqual({ ok: true, payload, protocolVersion: PROTOCOL_VERSION });
   });
@@ -114,7 +120,7 @@ describe.each(TRANSPORTS)('Socket.io over %s', (transport) => {
     const socket = client(transport, ALLOWED);
     await nextEvent(socket, 'connect');
 
-    const shutdown = nextEvent(socket, 'SERVER_SHUTDOWN');
+    const shutdown = nextEvent(socket, SERVER_EVENTS.SERVER_SHUTDOWN);
     const disconnected = nextEvent(socket, 'disconnect');
     await app.close();
 
@@ -141,8 +147,8 @@ describe('ECHO without an ack', () => {
     await nextEvent(socket, 'connect');
 
     // Bypasses the typed event map to send what a misbehaving client could.
-    (socket as Socket).emit('ECHO', 'no ack', 'not a function');
-    const response: unknown = await socket.timeout(2_000).emitWithAck('ECHO', 'still alive');
+    (socket as Socket).emit(CLIENT_EVENTS.ECHO, 'no ack', 'not a function');
+    const response: unknown = await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'still alive');
 
     expect(response).toMatchObject({ ok: true, payload: 'still alive' });
   });
