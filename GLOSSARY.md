@@ -72,6 +72,14 @@ _Avoid_: navy
 A player's unconfirmed, freely changeable choice, synced to the server on every change: the ship layout during placement (0–5 ships), or the targets of the current turn before `FIRE`.
 _Avoid_: selection, pending layout
 
+**Dock**:
+The list of the fleet's ships in the placement view, largest first; a ship tapped there becomes the selected ship, and a removed ship goes back to it.
+_Avoid_: tray, palette
+
+**Selected ship**:
+The ship the next tap on the placement board puts or moves, with that cell as its start; "Rotate" and "Remove" act on it. It stays selected after it lands.
+_Avoid_: active ship, ship in hand
+
 **Start countdown**:
 The delay of `min(START_COUNTDOWN_MS, time to deadline)` that runs once both fleets are confirmed; an unlock cancels it.
 
