@@ -4,7 +4,9 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import { createOriginMatcher } from './origins.js';
 import echo from './plugins/echo.js';
 import originPolicy from './plugins/origin-policy.js';
+import roomHandlers from './plugins/room-handlers.js';
 import socketIo from './plugins/socket-io.js';
+import { RoomManager } from './room/room-manager.js';
 
 /** Pino levels at which every request and socket event is logged. */
 const VERBOSE_LEVELS: readonly string[] = ['debug', 'trace'];
@@ -15,6 +17,10 @@ export interface ServerOptions {
   readonly allowedOrigins: readonly string[];
   /** Options for Fastify's built-in Pino logger; `false` disables logging. */
   readonly logger: NonNullable<FastifyServerOptions['logger']>;
+  /** The room registry; a new `RoomManager` with crypto randomness by default. Tests pass a seeded one (ADR-0030). */
+  readonly rooms?: RoomManager;
+  /** Current time in epoch ms; `Date.now` by default. Tests pass a fixed clock. */
+  readonly now?: () => number;
 }
 
 /**
@@ -22,7 +28,7 @@ export interface ServerOptions {
  * the `/health` route. Socket.io is available as `app.io` once the instance is ready (`listen()` or `ready()`).
  * `app.close()` performs the graceful shutdown: every socket gets `SERVER_SHUTDOWN` and is disconnected before the HTTP
  * server closes.
- * @param options Allowed origins and logger settings.
+ * @param options Allowed origins, logger settings and, in tests, the room registry and the clock.
  * @returns The Fastify instance, ready for `listen()`.
  */
 export function createServer(options: ServerOptions): FastifyInstance {
@@ -43,6 +49,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
 
   void app.register(socketIo, { isOriginAllowed });
   void app.register(echo);
+  void app.register(roomHandlers, { rooms: options.rooms ?? new RoomManager(), now: options.now ?? Date.now });
 
   return app;
 }
