@@ -8,6 +8,8 @@ export interface BoardGridText {
   readonly draftTarget: string;
   /** Added to a cell of an invalid placement preview. */
   readonly invalidPreview: string;
+  /** Added to a cell of the ship selected during placement. */
+  readonly selected: string;
 }
 
 /**
@@ -24,4 +26,5 @@ export const BOARD_GRID_TEXT: BoardGridText = {
   },
   draftTarget: 'target',
   invalidPreview: 'invalid position',
+  selected: 'selected',
 };

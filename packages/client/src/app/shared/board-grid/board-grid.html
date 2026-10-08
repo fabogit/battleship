@@ -16,6 +16,7 @@
             [attr.data-state]="cell.state"
             [class.is-draft-target]="cell.isDraftTarget"
             [class.is-invalid-preview]="cell.isInvalidPreview"
+            [class.is-selected]="cell.isSelected"
             [attr.aria-label]="cell.label"
             [attr.aria-disabled]="isInteractive() ? null : 'true'"
             [tabIndex]="cell.index === activeIndex() ? 0 : -1"

@@ -150,16 +150,24 @@ describe('BoardGrid rendering', () => {
     expect(cell('B3').dataset['state']).toBe(CELL_STATES.SUNK);
   });
 
-  it('overlays draft targets and the invalid preview on the cell state', async () => {
+  it('overlays draft targets, the invalid preview and the selected ship on the cell state', async () => {
     const draftTargets: Coordinate[] = [{ x: 9, y: 9 }];
-    await setInputs({ ships: [CRUISER], draftTargets, invalidPreview: [{ x: 4, y: 3 }] });
+    await setInputs({
+      ships: [DESTROYER, CRUISER],
+      draftTargets,
+      invalidPreview: [{ x: 4, y: 3 }],
+      selectedCells: DESTROYER.coordinates,
+    });
 
     expect(cell('J10').classList).toContain('is-draft-target');
     expect(cell('J10').dataset['state']).toBe(CELL_STATES.EMPTY);
     expect(cell('D5').classList).toContain('is-invalid-preview');
     expect(cell('D5').dataset['state']).toBe(CELL_STATES.SHIP);
+    expect(cell('B2').classList).toContain('is-selected');
+    expect(cell('B3').dataset['state']).toBe(CELL_STATES.SHIP);
     expect(cell('A1').classList).not.toContain('is-draft-target');
     expect(cell('A1').classList).not.toContain('is-invalid-preview');
+    expect(cell('A1').classList).not.toContain('is-selected');
   });
 });
 
@@ -183,6 +191,13 @@ describe('BoardGrid accessible labels', () => {
     expect(cell('E5').getAttribute('aria-label')).toBe('E5, hit');
     expect(cell('F5').getAttribute('aria-label')).toBe('F5, ship, invalid position');
     expect(cell('G5').getAttribute('aria-label')).toBe('G5, invalid position');
+  });
+
+  it('adds "selected" to the cells of the selected ship', async () => {
+    await setInputs({ ships: [DESTROYER], selectedCells: DESTROYER.coordinates, invalidPreview: [{ x: 2, y: 1 }] });
+
+    expect(cell('B2').getAttribute('aria-label')).toBe('B2, ship, selected');
+    expect(cell('B3').getAttribute('aria-label')).toBe('B3, ship, invalid position, selected');
   });
 
   it('labels the cells in row-letter, column-number order', () => {
