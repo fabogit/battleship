@@ -2,3 +2,6 @@
 
 # Format the repository with Prettier (#86)
 96f339f9df8091097526ae59c288b852e6f22ccb
+
+# Sort the keys of the JSON files (#86)
+8af4501f5c8d39abda7487df2891adfcfbeac9dd
