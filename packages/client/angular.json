@@ -1,79 +1,73 @@
 {
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
-  "version": 1,
   "cli": {
-    "packageManager": "pnpm",
-    "analytics": false
+    "analytics": false,
+    "packageManager": "pnpm"
   },
   "newProjectRoot": "projects",
   "projects": {
     "client": {
-      "projectType": "application",
-      "schematics": {},
-      "root": "",
-      "sourceRoot": "src",
-      "prefix": "app",
       "architect": {
         "build": {
           "builder": "@angular/build:application",
+          "configurations": {
+            "development": {
+              "conditions": ["@battleship/source", "module", "development"],
+              "extractLicenses": false,
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.development.ts"
+                }
+              ],
+              "optimization": false,
+              "sourceMap": true
+            },
+            "production": {
+              "budgets": [
+                {
+                  "maximumError": "1MB",
+                  "maximumWarning": "500kB",
+                  "type": "initial"
+                },
+                {
+                  "maximumError": "8kB",
+                  "maximumWarning": "4kB",
+                  "type": "anyComponentStyle"
+                }
+              ],
+              "outputHashing": "all"
+            }
+          },
+          "defaultConfiguration": "production",
           "options": {
-            "browser": "src/main.ts",
-            "tsConfig": "tsconfig.app.json",
             "assets": [
               {
                 "glob": "**/*",
                 "input": "public"
               }
             ],
-            "styles": ["src/styles.css"]
-          },
-          "configurations": {
-            "production": {
-              "budgets": [
-                {
-                  "type": "initial",
-                  "maximumWarning": "500kB",
-                  "maximumError": "1MB"
-                },
-                {
-                  "type": "anyComponentStyle",
-                  "maximumWarning": "4kB",
-                  "maximumError": "8kB"
-                }
-              ],
-              "outputHashing": "all"
-            },
-            "development": {
-              "optimization": false,
-              "extractLicenses": false,
-              "sourceMap": true,
-              "conditions": ["@battleship/source", "module", "development"],
-              "fileReplacements": [
-                {
-                  "replace": "src/environments/environment.ts",
-                  "with": "src/environments/environment.development.ts"
-                }
-              ]
-            }
-          },
-          "defaultConfiguration": "production"
+            "browser": "src/main.ts",
+            "styles": ["src/styles.css"],
+            "tsConfig": "tsconfig.app.json"
+          }
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "configurations": {
+            "development": {
+              "buildTarget": "client:build:development"
+            },
+            "production": {
+              "buildTarget": "client:build:production"
+            }
+          },
+          "defaultConfiguration": "development",
           "options": {
             "prebundle": {
               "exclude": ["@battleship/core"]
             }
-          },
-          "configurations": {
-            "production": {
-              "buildTarget": "client:build:production"
-            },
-            "development": {
-              "buildTarget": "client:build:development"
-            }
-          },
-          "defaultConfiguration": "development"
+          }
         },
         "test": {
           "builder": "@angular/build:unit-test",
@@ -81,7 +75,13 @@
             "runnerConfig": "vitest-base.config.ts"
           }
         }
-      }
+      },
+      "prefix": "app",
+      "projectType": "application",
+      "root": "",
+      "schematics": {},
+      "sourceRoot": "src"
     }
-  }
+  },
+  "version": 1
 }
