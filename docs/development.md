@@ -8,7 +8,7 @@ battleship/
 ├── pnpm-workspace.yaml            # packages, allowBuilds (D26), catalogs (default + angular), engineStrict
 ├── tsconfig.base.json             # Strict compiler options
 ├── eslint.config.js               # Flat config for every package (typescript-eslint strictTypeChecked)
-├── .prettierrc                    # Prettier options; Angular parser for client templates (D44)
+├── .prettierrc                    # Prettier options; Angular parser for templates, JSON keys sorted (D44)
 ├── .prettierignore                # Files written by tools: lockfiles, postman/, .postman/
 ├── .husky/                        # pre-commit hook: lint-staged, prettier --write on the staged files (D44)
 ├── .git-blame-ignore-revs         # Formatting-only commits, skipped by git blame
@@ -87,7 +87,7 @@ A new consumer of core (or a new workspace package consumed the same way) needs 
 
 Decisions: [ADR-0043](adr/0043-named-constants.md), [ADR-0044](adr/0044-code-formatter.md).
 
-- **Formatting:** Prettier owns layout in every TypeScript, template, CSS, JSON, YAML and Markdown file (`.prettierrc`: `printWidth: 120`, `singleQuote: true`, `trailingComma: "all"`); ESLint checks correctness only. The pre-commit hook formats staged files and CI fails on any file `pnpm format:check` flags. Markdown keeps its prose lines and its code blocks as written; files written by tools are listed in `.prettierignore`.
+- **Formatting:** Prettier owns layout in every TypeScript, template, CSS, JSON, YAML and Markdown file (`.prettierrc`: `printWidth: 120`, `singleQuote: true`, `trailingComma: "all"`); ESLint checks correctness only. The pre-commit hook formats staged files and CI fails on any file `pnpm format:check` flags. JSON keys are sorted at every level, with `$schema`, `extends`, `name` and `label` first; arrays and `package.json` files keep their order. A comment in a JSON file sits above the key it describes, since it moves with it. Markdown keeps its prose lines and its code blocks as written; files written by tools are listed in `.prettierignore`.
 
 - **Closed string sets:** each set of values (phases, seats, error codes, event names, violation reasons, a service's states) is an `as const` object with a plural `UPPER_SNAKE_CASE` name and keys. Its type is derived from it under the singular name, and code names every value through the object:
 
@@ -122,5 +122,5 @@ Decisions: [ADR-0028](adr/0028-local-tooling.md), [ADR-0029](adr/0029-watch-mode
 - **Format:** `pnpm format` writes the whole repo, `pnpm format:check` lists the files that differ (the CI step). In VS Code, the recommended Prettier extension formats on save (`.vscode/settings.json`).
 - **Before a pull request:** `pnpm verify` runs `format:check`, `lint`, `typecheck`, `test` and `build` on the whole workspace, stopping at the first failure.
 - **Pre-commit hook:** `pnpm install` sets it up (root `prepare` script, Husky). lint-staged runs `prettier --write` on the staged files only and adds the result to the commit; unstaged changes are left alone. It does nothing else, so commits stay fast; `git commit --no-verify` skips it, and CI still checks the format.
-- **Blame:** GitHub skips the commits in `.git-blame-ignore-revs`; for local `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once. A formatting-only commit (a Prettier upgrade that changes its output) goes into the file, with its full SHA, and its pull request is merged with a merge commit so the SHA survives.
+- **Blame:** GitHub skips the commits in `.git-blame-ignore-revs`; for local `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once. A formatting-only commit (a Prettier or plugin upgrade that changes its output) goes into the file, with its full SHA, and its pull request is merged with a merge commit so the SHA survives.
 - **YAML schema:** SchemaStore's CrowdSec schema matches `**/collections/*/*.yaml`, so `.vscode/settings.json` maps `postman/**` to a permissive schema. Postman publishes no JSON schema for Collection v3; `postman-cli collection lint` is the real check.
