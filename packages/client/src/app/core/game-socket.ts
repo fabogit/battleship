@@ -1,10 +1,8 @@
 import { DestroyRef, Service, inject, signal } from '@angular/core';
 import {
-  CLIENT_EVENTS,
   type ClientToServerEvents,
   type CommandEvent,
   type CommandPayload,
-  type EchoResponse,
   type ServerToClientEvents,
 } from '@battleship/core';
 import { io } from 'socket.io-client';
@@ -81,7 +79,7 @@ export class GameSocketService {
    * the first transport and keeps retrying WebSocket (#51, F3).
    *
    * Left with Socket.io's untyped event maps on purpose: its typed `emit` and `on` resolve payloads through conditional
-   * types that a generic event name cannot narrow, so `emitWithAck`, `on` and `send` carry the contract's types instead
+   * types that a generic event name cannot narrow, so `emitWithAck` and `on` carry the contract's types instead
    * (ADR-0035). They are the only way to reach the socket's events.
    */
   private readonly socket = io(inject(SERVER_URL), {
@@ -130,7 +128,16 @@ export class GameSocketService {
    * @returns The server's reply, or why there was none.
    */
   emitWithAck<E extends CommandEvent>(event: E, payload: CommandPayload<E>): Promise<CommandResult<E>> {
-    return this.send(event, payload);
+    if (!this.socket.connected) {
+      return Promise.resolve({ ok: false, error: TRANSPORT_ERRORS.NOT_CONNECTED });
+    }
+    return new Promise((resolve) => {
+      // Socket.io calls the ack with an error both on timeout and when the connection drops first; either way the
+      // reply is lost, so both are `NO_ACK`. The error is `null` when the ack arrives in time.
+      this.socket.timeout(ACK_TIMEOUT_MS).emit(event, payload, (error: Error | null, response: AckOf<E>) => {
+        resolve(error === null ? response : { ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      });
+    });
   }
 
   /**
@@ -146,41 +153,5 @@ export class GameSocketService {
     return () => {
       this.socket.off(name, listener);
     };
-  }
-
-  /**
-   * Phase 0 connectivity check.
-   * @param payload Anything; the server sends it back.
-   * @returns The server's ack.
-   * @throws When the socket is not connected or no ack arrives, with the `TransportError` as message.
-   */
-  async echo(payload: unknown): Promise<EchoResponse> {
-    const response = await this.send(CLIENT_EVENTS.ECHO, payload);
-    if (!response.ok) {
-      throw new Error(response.error);
-    }
-    return response;
-  }
-
-  /**
-   * Emits any client→server event with an `ACK_TIMEOUT_MS` timeout. Socket.io calls the ack with an error both on
-   * timeout and when the connection drops first; either way the reply is lost, so both are `NO_ACK`.
-   * @param event The event.
-   * @param payload Its payload.
-   * @returns The ack, or why there was none.
-   */
-  private send<E extends keyof ClientToServerEvents>(
-    event: E,
-    payload: Parameters<ClientToServerEvents[E]>[0],
-  ): Promise<AckOf<E> | TransportFailure> {
-    if (!this.socket.connected) {
-      return Promise.resolve({ ok: false, error: TRANSPORT_ERRORS.NOT_CONNECTED });
-    }
-    return new Promise((resolve) => {
-      // The error is `null` when the ack arrives in time.
-      this.socket.timeout(ACK_TIMEOUT_MS).emit(event, payload, (error: Error | null, response: AckOf<E>) => {
-        resolve(error === null ? response : { ok: false, error: TRANSPORT_ERRORS.NO_ACK });
-      });
-    });
   }
 }
