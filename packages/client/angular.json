@@ -13,13 +13,10 @@
           "configurations": {
             "development": {
               "conditions": ["@battleship/source", "module", "development"],
+              "define": {
+                "BUILD_SERVER_URL": "\"http://localhost:3000\""
+              },
               "extractLicenses": false,
-              "fileReplacements": [
-                {
-                  "replace": "src/environments/environment.ts",
-                  "with": "src/environments/environment.development.ts"
-                }
-              ],
               "optimization": false,
               "sourceMap": true
             },

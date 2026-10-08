@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0052
 date: 2026-10-05
 ---
 
 # ADR-0025: Client server URL
+
+> Superseded by [ADR-0052](0052-server-url-build-variable.md): the URL now comes from a `SERVER_URL` build variable (#48).
 
 The server URL lives in Angular environment files: `environment.ts` holds the Render URL for every Pages build (production and previews share one server), `environment.development.ts` points `ng serve`/`ng test` at `http://localhost:3000`. Planned switch to a `SERVER_URL` build-time variable (set on Pages and in CI, build fails when missing): #48.
 
