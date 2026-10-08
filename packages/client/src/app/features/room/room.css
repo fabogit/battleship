@@ -1,0 +1,17 @@
+:host {
+  display: grid;
+  gap: 1rem;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+.pending {
+  color: var(--color-pending);
+}
+
+.error {
+  color: var(--color-error);
+}

@@ -8,7 +8,8 @@ Architecture of the Angular client, `packages/client`.
 - Services use Angular 22's `@Service()` decorator (root-provided). The server URL is the `SERVER_URL` injection token, so tests can override it.
 - **Services:**
   - `ServerWakeService` — cold-start polling ([Cold-start handling](#cold-start-handling)).
-  - `SessionStore` — credential persistence ([Sessions & reconnection](server.md#sessions--reconnection)); the only module touching `localStorage` for sessions.
+  - `SessionStore` — credential persistence ([Sessions & reconnection](server.md#sessions--reconnection)); the only module touching `localStorage` for sessions. Until #21 it keeps the credentials in memory only ([Routes & lobby flow](#routes--lobby-flow)).
+  - `RoomEntryService` — `CREATE_ROOM` and `JOIN_ROOM`: stores the credentials of an accepted command in `SessionStore` and returns the room id or the error ([Routes & lobby flow](#routes--lobby-flow)).
   - `GameSocketService` — Socket.io lifecycle, connection-status signal, typed emit-with-ack helper and server-event listeners ([Socket service](#socket-service)).
   - `GameStateService` — a read-only `snapshot` signal (`PlayerStateSnapshot | null`, `null` until the first `STATE`) plus `computed` views, and local countdown signals re-synced from snapshots ([Game state](#game-state)).
   - `I18nService` — `locale` signal (`it` | `en`), default from `navigator.language`, persisted in `localStorage`. Typed dictionaries where a missing key is a compile error.
@@ -77,6 +78,30 @@ Each one is the value sent minus the time elapsed since the snapshot arrived (`p
   - Invalid positions are previewed client-side using the same `core` validators.
 - **Targeting:** tap cells to toggle draft targets (synced via `UPDATE_TARGETS`), then "Fire". This also prevents accidental single taps on mobile.
 
+## Routes & lobby flow
+
+Two routes, both under the app shell, which shows the app name (a link home) and the server status above every page ([ADR-0049](adr/0049-room-route.md)):
+
+| Route        | Page   | Shows                                                                      |
+| ------------ | ------ | -------------------------------------------------------------------------- |
+| `/`          | `Home` | Nickname and "Create room"                                                 |
+| `/r/:roomId` | `Room` | The room for both players: join form, waiting screen, then the match views |
+
+Any other address redirects to `/`. The room id reaches `Room` as an input (`withComponentInputBinding()`).
+
+- **Server status** (`ServerStatus`, `shared/server-status`): started by the shell, it runs the wake-up poll, then opens the socket ([Cold-start handling](#cold-start-handling)), and shows "Waking up the server…" (with the "about half a minute" hint), "The server is not responding" with a retry button, "Connecting…", "Connected", or "Disconnected from the server" with a retry button. The line is an `aria-live` region.
+- **Nickname** (`NicknameForm`, `shared/nickname-form`): one labelled field and one submit button, shared by the home and join screens and built with Signal Forms ([ADR-0051](adr/0051-signal-forms.md)). It validates with core's `parseNickname` (trimmed, 1 to `NICKNAME_MAX_LENGTH` UTF-16 code units) and carries `maxlength`, so it accepts exactly what the server's guard accepts and hands over the trimmed nickname. An error shows after a submit, with `aria-invalid` on the field.
+- **Before the connection** ([ADR-0050](adr/0050-entry-before-connection.md)): the field is usable while the server wakes up. The submit button stays focusable but inactive (`aria-disabled`) until the socket is connected, with the hint "Available once the server is connected"; a submit then does nothing, so a command is never queued. While the command runs, the button reads "Creating room…" / "Joining room…" and ignores further submits.
+- **Create** (`Home`): `CREATE_ROOM { nickname }`, then navigation to `/r/<roomId>`. A refusal stays on the home screen with its message (`SERVER_FULL`: "The server is full right now…"; no reply: "The server did not answer…").
+- **Room page** (`Room`): picks one view, in this order:
+  1. A room id that fails core's `isRoomId` → "Room not found", without asking the server.
+  2. The latest snapshot belongs to this room → by phase: `WAITING_FOR_OPPONENT` shows the waiting screen; any later phase shows the match, for now "Your opponent is here" with their nickname, until placement (#19) and battle (#20) take over.
+  3. `SessionStore` holds a seat in this room but no snapshot has arrived → "Entering the room…".
+  4. Otherwise the join form: "Join room" sends `JOIN_ROOM { roomId, nickname }`. `ROOM_NOT_FOUND` replaces it with "Room not found", `ROOM_FULL` with "This room is full", both with a "Create a new room" link home; any other failure keeps the form with its message. Opening another room's address forgets the failure.
+- **Waiting screen** (`Lobby`, `features/lobby`): "Waiting for your opponent", the player's nickname and the room link, `/r/<roomId>` as an absolute URL, in a labelled read-only field that selects itself on focus. "Share link" opens the Web Share API sheet where the browser offers it (most phones); closing the sheet is not an error, and a sheet that fails to open falls back to copying. "Copy link" is always there and writes the link to the clipboard; it says "Link copied", or, without clipboard access, asks to copy the link from the field. The rules part of the lobby comes with #27.
+- **Credentials:** `RoomEntryService` saves the `{ roomId, playerSecret }` of an accepted `CREATE_ROOM` or `JOIN_ROOM` in `SessionStore`, which keeps them in memory for the tab. Persistence in `localStorage`, the handshake `auth` and reconnection are #21: until then a reload of `/r/<roomId>` loses the seat and shows the join form.
+- **Words:** each screen keeps its strings in one typed object next to it (`HOME_TEXT`, `ROOM_TEXT`, `LOBBY_TEXT`, `NICKNAME_FORM_TEXT`, `SERVER_STATUS_TEXT`, `ROOM_ENTRY_TEXT` for the failure messages), for `I18nService` (#37).
+
 ## Layout
 
 - Mobile: one board at a time with a toggle ("My fleet" / "Enemy waters"). During the player's turn it auto-focuses on enemy waters, otherwise on their own fleet.
@@ -89,7 +114,7 @@ Each one is the value sent minus the time elapsed since the snapshot arrived (`p
 
 1. On app start, `GET /health` until it answers, giving up after 90 s. Each attempt may use all the time left before giving up, since Render holds the request open until the instance is ready (step 2); failed attempts are spaced by an exponential backoff (500 ms doubling, cap 5 s). Giving up shows a retry button.
 2. While Render serves its loading page the request fails as a CORS/parse error: treat any non-JSON or failed response as "still waking". _Measured (#8):_ Render held `fetch` requests open until the instance was up rather than serving the loading page. With the original 10 s per-attempt timeout, two attempts were aborted and the third succeeded about 23 s after the page opened (24.4 s to a connected socket, three requests). _Re-measured after the fix (#51):_ one request, held open by Render and answered with 200 after 22.8 s; connected after 23.2 s. The gain (about 1 s) is within noise: the fix removes the aborted requests rather than shortening the wait. The non-JSON handling stays as a fallback. The waking hint says a sleeping server "usually takes about half a minute".
-3. UI shows a "Waking up the server…" state; nickname entry stays usable meanwhile.
+3. UI shows a "Waking up the server…" state; nickname entry stays usable meanwhile ([Routes & lobby flow](#routes--lobby-flow)).
 4. The Socket.io connection is opened only after `/health` succeeds.
 
 _A refused origin looks like a cold start (#51):_ `/health` answers a foreign origin with a 403 without CORS headers ([D21](adr/0021-origin-policy.md)), which the browser cannot tell apart from Render's loading page, so the page shows "Waking up the server…" for 90 s and then "The server is not responding". A Socket.io handshake refused by `allowRequest` likewise keeps the socket active and retrying; only a middleware error (`next(err)`, used by #22 for `PROTOCOL_MISMATCH`/`SESSION_INVALID`) stops it. Telling "refused" apart from "retrying" is deferred to #25.

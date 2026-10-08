@@ -50,7 +50,7 @@ battleship/
     │   │   ├── server.ts              # Fastify bootstrap, /health, origin policy, Socket.io (app.io), graceful shutdown
     │   │   ├── shutdown.ts            # SIGTERM/SIGINT → app.close(); repeats ignored, 10 s deadline (D27)
     │   │   └── index.ts               # Entry point: config, server, signal handling, listen
-    │   ├── scripts/echo-client.ts     # Smoke test against a running server (Phase 0)
+    │   ├── scripts/echo-client.ts     # Production smoke test: handshake + ECHO round trip (D48)
     │   ├── .env.example               # Local PORT / ALLOWED_ORIGINS / LOG_*: copy to .env (Local tooling)
     │   └── test/                      # Room unit tests (fake clock) + socket integration tests
     │
@@ -58,11 +58,14 @@ battleship/
         ├── vitest-base.config.ts  # `ng test` runnerConfig: resolves core from source (D22)
         └── src/
             ├── environments/      # serverUrl per build: production (Render) / development (localhost), D25
-            └── app/
-                ├── core/          # GameSocketService, GameStateService, SessionStore, I18nService, ServerWakeService
-                ├── features/      # home (nickname, create/join), lobby (waiting + rules), placement, battle, game-over
-                │                  # (Phase 0: connection-check test page, replaced by home in Phase 1)
-                └── shared/        # Board grid, timer, dice, modal, language switch
+            ├── app/
+            │   ├── app.routes.ts  # `/` home, `/r/:roomId` room (D49)
+            │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService, I18nService,
+            │   │                  # ServerWakeService
+            │   ├── features/      # home (nickname, create), room (join + one view per phase), lobby (waiting + rules),
+            │   │                  # placement, battle, game-over
+            │   └── shared/        # Server status, nickname form, board grid, timer, dice, modal, language switch
+            └── testing/           # Test doubles shared by the specs (FakeGameSocket), left out of the app build
 ```
 
 ## Resolving `@battleship/core`

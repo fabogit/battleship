@@ -4,7 +4,7 @@ import {
   provideBrowserGlobalErrorListeners,
   provideZonelessChangeDetection,
 } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
 
 import { routes } from './app.routes';
 
@@ -14,6 +14,7 @@ export const appConfig: ApplicationConfig = {
     // Already the Angular 22 default; explicit because the app relies on it (no zone.js, docs/client.md#reactive-model).
     provideZonelessChangeDetection(),
     provideHttpClient(),
-    provideRouter(routes),
+    // Route parameters reach the page components as inputs, e.g. `Room.roomId`.
+    provideRouter(routes, withComponentInputBinding()),
   ],
 };

@@ -46,7 +46,9 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 | `SURRENDER`         | `{}`                         | —                              | `IN_PROGRESS`                                          |
 | `REMATCH_CHOICE`    | `{ choice: RematchChoice }`  | —                              | `GAME_OVER`                                            |
 | `LEAVE_ROOM`        | `{}`                         | —                              | any                                                    |
-| `ECHO`              | any                          | `{ payload, protocolVersion }` | Phase 0 connectivity check only; no guard, never fails |
+| `ECHO`              | any                          | `{ payload, protocolVersion }` | any; the smoke check (ADR-0048), no guard, never fails |
+
+`ECHO` is permanent ([ADR-0048](adr/0048-echo-smoke-check.md)): after every deploy, `pnpm --filter @battleship/server echo <url>` connects with the handshake `auth`, sends it and expects its ack, so the check covers the origin policy, the transport, the handshake and one event round trip without opening a room (a `CREATE_ROOM` would use up one of the `MAX_ROOMS` until #24 removes rooms). It is not a command: the client never sends it, and `emitWithAck` refuses it at compile time. The Postman collection keeps its `ECHO` requests ([Local tooling](development.md#local-tooling)).
 
 ## Payload validation
 

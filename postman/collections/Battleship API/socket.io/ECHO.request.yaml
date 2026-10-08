@@ -1,6 +1,6 @@
 $kind: socket.io-request
 description: |-
-  Phase 0 connectivity check (issue #3) over the WebSocket transport.
+  Smoke check (ADR-0048) over the WebSocket transport: the request `pnpm --filter @battleship/server echo <url>` sends after every deploy.
 
   1. **Connect**: the `SERVER_SHUTDOWN` listener is armed on connect.
   2. Send the saved `hello` message: `ECHO` with an ack.

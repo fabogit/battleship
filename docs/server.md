@@ -137,7 +137,7 @@ Behaviour of the game server, `packages/server`.
 | --------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `origin-policy` | `origin-policy.ts` | HTTP side of the [origin policy](deployment.md#backend-render): 403 `onRequest` hook and `@fastify/cors`                             |
 | `socket-io`     | `socket-io.ts`     | Socket.io on the HTTP server: `allowRequest` origin check, `app.io` decorator, connection logs, `preClose` flush and `onClose` close |
-| `echo`          | `echo.ts`          | The Phase 0 `ECHO` check, kept for the production smoke test                                                                         |
+| `echo`          | `echo.ts`          | The `ECHO` smoke check, sent after every deploy ([ADR-0048](adr/0048-echo-smoke-check.md))                                           |
 | `room-handlers` | `room-handlers.ts` | Every command, wired to room logic ([Socket handlers](#socket-handlers))                                                             |
 
 - `echo` and `room-handlers` declare `dependencies: ['socket-io']`; so will the per-socket rate limit (#24), registered before the handlers.

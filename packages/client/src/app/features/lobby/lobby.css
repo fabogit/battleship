@@ -1,0 +1,41 @@
+:host {
+  display: grid;
+  gap: 1rem;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+.link {
+  display: grid;
+  gap: 0.25rem;
+}
+
+label {
+  font-weight: 600;
+}
+
+input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.outcome {
+  min-height: 1.5rem;
+}
+
+.ok {
+  color: var(--color-ok);
+}
+
+.error {
+  color: var(--color-error);
+}

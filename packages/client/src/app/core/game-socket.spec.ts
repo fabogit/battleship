@@ -278,10 +278,4 @@ describe('GameSocketService', () => {
       expect(listener).toHaveBeenCalledExactlyOnceWith(snapshot);
     });
   });
-
-  describe('echo', () => {
-    it('rejects with the transport error when not connected', async () => {
-      await expect(service.echo(null)).rejects.toThrow(TRANSPORT_ERRORS.NOT_CONNECTED);
-    });
-  });
 });

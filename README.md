@@ -9,7 +9,7 @@ Real-time 1v1 Battleship in the browser: create a private room, share the link a
 | Client (Cloudflare Pages) | <https://battleship-ac7.pages.dev>                                                                              |
 | Server (Render)           | <https://battleship-server-jumc.onrender.com> ([`/health`](https://battleship-server-jumc.onrender.com/health)) |
 
-The server runs on Render's free tier and sleeps when idle: the first visit waits about 25 s while it wakes up. Until milestone M1 the client is a connection check, not the game yet (see the [roadmap](docs/roadmap.md)).
+The server runs on Render's free tier and sleeps when idle: the first visit waits about 25 s while it wakes up. Until milestone M1 is complete, two players can meet in a room but not play yet (see the [roadmap](docs/roadmap.md)).
 
 ## Prerequisites
 

@@ -1,0 +1,34 @@
+<form [formRoot]="nicknameForm">
+  <label for="nickname">{{ text.label }}</label>
+  <input
+    id="nickname"
+    type="text"
+    autocomplete="nickname"
+    spellcheck="false"
+    [formField]="nicknameForm.nickname"
+    [attr.aria-invalid]="nicknameForm.nickname().touched() && nicknameForm.nickname().invalid()"
+    aria-describedby="nickname-hint nickname-error"
+  />
+  <p id="nickname-hint" class="hint">{{ text.hint(maxLength) }}</p>
+  <p id="nickname-error" class="error" aria-live="polite">
+    @if (nicknameForm.nickname().touched() && nicknameForm.nickname().invalid()) {
+      {{ text.invalid }}
+    }
+  </p>
+
+  <div class="actions">
+    <button
+      type="submit"
+      [attr.aria-disabled]="!isConnected() || nicknameForm().submitting()"
+      [attr.aria-busy]="nicknameForm().submitting()"
+      aria-describedby="nickname-wait"
+    >
+      {{ nicknameForm().submitting() ? submittingLabel() : submitLabel() }}
+    </button>
+    <p id="nickname-wait" class="hint">
+      @if (!isConnected()) {
+        {{ text.waitingForServer }}
+      }
+    </p>
+  </div>
+</form>

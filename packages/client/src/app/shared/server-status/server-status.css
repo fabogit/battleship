@@ -1,0 +1,33 @@
+:host {
+  display: block;
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  min-height: 1.5rem;
+}
+
+p {
+  margin: 0;
+}
+
+.pending {
+  color: var(--color-pending);
+}
+
+.ok {
+  color: var(--color-ok);
+}
+
+.error {
+  color: var(--color-error);
+}
+
+.hint {
+  flex-basis: 100%;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}

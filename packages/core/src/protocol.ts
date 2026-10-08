@@ -23,7 +23,7 @@ export interface HealthResponse {
   readonly uptime: number;
 }
 
-/** Reply to the Phase 0 `ECHO` connectivity check. */
+/** Reply to `ECHO`, the production smoke check (ADR-0048). */
 export interface EchoResponse {
   readonly ok: true;
   readonly payload: unknown;
@@ -168,7 +168,10 @@ export interface UpdateRulesAckData {
  * guard in `validation.ts` is refused with `INVALID_PAYLOAD`; a command sent in another phase with `WRONG_PHASE`.
  */
 export interface ClientToServerEvents {
-  /** Phase 0 connectivity check (issue #3): the server acks with the payload it received, which no guard checks. */
+  /**
+   * Smoke check, sent by `pnpm --filter @battleship/server echo` after every deploy (ADR-0048), never by the client: the
+   * server acks with the payload it received, which no guard checks. It needs no room, so it never uses up `MAX_ROOMS`.
+   */
   ECHO: (payload: unknown, ack: Ack<EchoResponse>) => void;
   /** Opens a room from the home screen; the ack carries the credentials to store (`SERVER_FULL` above `MAX_ROOMS`). */
   CREATE_ROOM: (payload: CreateRoomPayload, ack: Ack<AckResponse<SessionCredentials>>) => void;
@@ -219,7 +222,7 @@ export const CLIENT_EVENTS = {
   LEAVE_ROOM: 'LEAVE_ROOM',
 } as const satisfies { readonly [E in keyof ClientToServerEvents]: E };
 
-/** Client→server events whose payload passes a guard: every command but the Phase 0 `ECHO`. */
+/** Client→server events whose payload passes a guard: every command but the `ECHO` smoke check. */
 export type CommandEvent = Exclude<keyof ClientToServerEvents, typeof CLIENT_EVENTS.ECHO>;
 
 /**

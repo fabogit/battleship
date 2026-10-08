@@ -1,4 +1,4 @@
-// The Phase 0 `ECHO` connectivity check (#3), kept for the production smoke test (`pnpm --filter @battleship/server echo`).
+// The `ECHO` smoke check (#3, ADR-0048), sent after every deploy by `pnpm --filter @battleship/server echo`.
 
 import { CLIENT_EVENTS, PROTOCOL_VERSION, type Ack, type EchoResponse } from '@battleship/core';
 import fp from 'fastify-plugin';

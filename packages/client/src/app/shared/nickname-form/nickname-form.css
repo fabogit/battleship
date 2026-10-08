@@ -1,0 +1,37 @@
+:host {
+  display: block;
+}
+
+form {
+  display: grid;
+  gap: 0.25rem;
+}
+
+label {
+  font-weight: 600;
+}
+
+input {
+  max-width: 20rem;
+}
+
+p {
+  margin: 0;
+}
+
+.hint {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.error {
+  min-height: 1.5rem;
+  color: var(--color-error);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+}

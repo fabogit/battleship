@@ -1,0 +1,21 @@
+:host {
+  display: block;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+header {
+  display: grid;
+  gap: 0.25rem;
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 0.0625rem solid var(--color-border);
+}
+
+.brand {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: inherit;
+  text-decoration: none;
+}

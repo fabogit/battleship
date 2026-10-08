@@ -1,0 +1,26 @@
+<div class="status" aria-live="polite">
+  @switch (wake.status()) {
+    @case (wakeStatuses.WAKING) {
+      <p class="pending">{{ text.waking }}</p>
+      <p class="hint">{{ text.wakingHint }}</p>
+    }
+    @case (wakeStatuses.UNREACHABLE) {
+      <p class="error">{{ text.unreachable }}</p>
+      <button type="button" (click)="start()">{{ text.retry }}</button>
+    }
+    @case (wakeStatuses.AWAKE) {
+      @switch (socket.status()) {
+        @case (connectionStatuses.CONNECTED) {
+          <p class="ok">{{ text.connected }}</p>
+        }
+        @case (connectionStatuses.CONNECTING) {
+          <p class="pending">{{ text.connecting }}</p>
+        }
+        @case (connectionStatuses.DISCONNECTED) {
+          <p class="error">{{ text.disconnected }}</p>
+          <button type="button" (click)="start()">{{ text.retry }}</button>
+        }
+      }
+    }
+  }
+</div>
