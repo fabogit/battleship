@@ -180,7 +180,11 @@ describe('GameStateService', () => {
       receive(battle());
 
       expect(state.myFleet()).toEqual({ ships: MY_SHIPS, shots: INCOMING });
-      expect(state.trackingBoard()).toEqual({ ships: [SUNK_DESTROYER], shots: OUTGOING, draftTargets: [{ x: 3, y: 3 }] });
+      expect(state.trackingBoard()).toEqual({
+        ships: [SUNK_DESTROYER],
+        shots: OUTGOING,
+        draftTargets: [{ x: 3, y: 3 }],
+      });
     });
 
     it('tells whose turn it is', () => {

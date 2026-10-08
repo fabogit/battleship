@@ -54,7 +54,8 @@ export function createServer(options: ServerOptions): FastifyInstance {
    * @param origin The request's `Origin` header, absent for same-origin and non-browser requests.
    * @returns The origin to echo in `Access-Control-Allow-Origin`, or `false` for no CORS headers.
    */
-  const corsOrigin = (origin: string | undefined): string | false => (isOriginAllowed(origin) ? (origin ?? false) : false);
+  const corsOrigin = (origin: string | undefined): string | false =>
+    isOriginAllowed(origin) ? (origin ?? false) : false;
 
   const app = Fastify({ logger: options.logger });
 

@@ -169,7 +169,10 @@ describe('BoardGrid accessible labels', () => {
       ships: [DESTROYER, CRUISER],
       shots: SHOTS,
       draftTargets: [{ x: 6, y: 1 }],
-      invalidPreview: [{ x: 4, y: 5 }, { x: 4, y: 6 }],
+      invalidPreview: [
+        { x: 4, y: 5 },
+        { x: 4, y: 6 },
+      ],
     });
 
     expect(buttons()[0]?.getAttribute('aria-label')).toBe('A1, miss');

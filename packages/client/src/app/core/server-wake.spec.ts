@@ -15,7 +15,11 @@ let http: HttpTestingController;
 beforeEach(() => {
   vi.useFakeTimers();
   TestBed.configureTestingModule({
-    providers: [provideHttpClient(), provideHttpClientTesting(), { provide: SERVER_URL, useValue: 'https://server.test' }],
+    providers: [
+      provideHttpClient(),
+      provideHttpClientTesting(),
+      { provide: SERVER_URL, useValue: 'https://server.test' },
+    ],
   });
   service = TestBed.inject(ServerWakeService);
   http = TestBed.inject(HttpTestingController);

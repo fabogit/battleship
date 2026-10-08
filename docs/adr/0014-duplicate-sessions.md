@@ -9,8 +9,8 @@ Latest connection wins; the previous socket is told `SESSION_REPLACED` and disco
 
 ## Considered options
 
-* **"First connection wins" vs. "latest wins":** on mobile a backgrounded tab leaves a zombie socket that the server only detects after the heartbeat timeout (~45 s); "first wins" would lock the returning player out. Latest wins chosen (D14).
+- **"First connection wins" vs. "latest wins":** on mobile a backgrounded tab leaves a zombie socket that the server only detects after the heartbeat timeout (~45 s); "first wins" would lock the returning player out. Latest wins chosen (D14).
 
 ## Links
 
-* Added on 2026-10-03 after the requirements analysis session.
+- Added on 2026-10-03 after the requirements analysis session.
