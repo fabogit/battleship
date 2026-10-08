@@ -47,5 +47,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0041](0041-board-keyboard-navigation.md)     | Board keyboard navigation              | Accepted, 2026-10-07 |
 | [ADR-0042](0042-board-cell-size.md)               | Board cell size                        | Accepted, 2026-10-07 |
 | [ADR-0043](0043-named-constants.md)               | Named constants for closed string sets | Accepted, 2026-10-07 |
+| [ADR-0044](0044-code-formatter.md)                | Code formatter                         | Accepted, 2026-10-08 |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

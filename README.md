@@ -29,13 +29,14 @@ pnpm dev   # server on http://localhost:3000 (try: curl localhost:3000/health), 
 ## Checks
 
 ```bash
+pnpm format:check
 pnpm typecheck
 pnpm lint
 pnpm test
 pnpm build
 ```
 
-CI runs the same steps, in this order, on every pull request and on every push to `main` ([`ci.yml`](.github/workflows/ci.yml)).
+CI runs the same steps, in this order, on every pull request and on every push to `main` ([`ci.yml`](.github/workflows/ci.yml)); `pnpm verify` runs them all locally. A pre-commit hook formats the staged files with Prettier ([Local tooling](docs/development.md#local-tooling)).
 
 ## Docs
 

@@ -8,10 +8,15 @@ battleship/
 ├── pnpm-workspace.yaml            # packages, allowBuilds (D26), catalogs (default + angular), engineStrict
 ├── tsconfig.base.json             # Strict compiler options
 ├── eslint.config.js               # Flat config for every package (typescript-eslint strictTypeChecked)
+├── .prettierrc                    # Prettier options; Angular parser for client templates (D44)
+├── .prettierignore                # Files written by tools: lockfiles, postman/, .postman/
+├── .husky/                        # pre-commit hook: lint-staged, prettier --write on the staged files (D44)
+├── .git-blame-ignore-revs         # Formatting-only commits, skipped by git blame
 ├── .editorconfig
 ├── .nvmrc                         # 24
-├── .github/workflows/ci.yml       # install → typecheck → lint → test → build, required on main
-├── .vscode/                       # Debug configurations, YAML schema override for postman/ (D28)
+├── .github/workflows/ci.yml       # install → format:check → typecheck → lint → test → build, required on main
+├── .vscode/                       # Debug configurations, format on save, YAML schema override for postman/ (D28)
+│   └── extensions.json            # Recommended extensions: Prettier
 ├── .postman/                      # Postman Native Git workspace link (D28)
 ├── postman/                       # Collection v3 YAML + localhost environment (Local tooling, D28)
 ├── docs/                          # Specification, one document per topic
@@ -80,7 +85,9 @@ A new consumer of core (or a new workspace package consumed the same way) needs 
 
 ## Code conventions
 
-Decision: [ADR-0043](adr/0043-named-constants.md).
+Decisions: [ADR-0043](adr/0043-named-constants.md), [ADR-0044](adr/0044-code-formatter.md).
+
+- **Formatting:** Prettier owns layout in every TypeScript, template, CSS, JSON, YAML and Markdown file (`.prettierrc`: `printWidth: 120`, `singleQuote: true`, `trailingComma: "all"`); ESLint checks correctness only. The pre-commit hook formats staged files and CI fails on any file `pnpm format:check` flags. Markdown keeps its prose lines and its code blocks as written; files written by tools are listed in `.prettierignore`.
 
 - **Closed string sets:** each set of values (phases, seats, error codes, event names, violation reasons, a service's states) is an `as const` object with a plural `UPPER_SNAKE_CASE` name and keys. Its type is derived from it under the singular name, and code names every value through the object:
 
@@ -106,10 +113,14 @@ Decision: [ADR-0043](adr/0043-named-constants.md).
 
 ## Local tooling
 
-Decisions: [ADR-0028](adr/0028-local-tooling.md), [ADR-0029](adr/0029-watch-mode.md).
+Decisions: [ADR-0028](adr/0028-local-tooling.md), [ADR-0029](adr/0029-watch-mode.md), [ADR-0044](adr/0044-code-formatter.md).
 
 - **Run:** `cp packages/server/.env.example packages/server/.env` (allows `http://localhost:4200` and sets `LOG_FORMAT=pretty` and `LOG_LEVEL=debug`, so the terminal shows every request and socket event in readable form, [Logging](server.md#logging); without it the server refuses to start, [Backend (Render)](deployment.md#backend-render)), then `pnpm dev`: the server restarts on every change to its own or core's sources (`tsx watch`, sources read through `@battleship/source`), the client rebuilds and reloads (`ng serve`), and every output line is prefixed with its package. Set the server port in `.env`, not in the shell: `ng serve` reads `PORT` too. Ctrl+C kills the server partway through its shutdown (ADR-0029). To run what production runs: `pnpm build && pnpm --filter @battleship/server start` (`start` runs `dist/`, so rebuild after every change).
 - **Debug (VS Code, `.vscode/launch.json`):** `Server` (builds core and server, runs `dist/` with source maps in the integrated terminal), `Client` (`ng serve` + Chrome/Chromium), `Server + Client`, `Server tests: current file` (Vitest), `Client tests: current file` (`ng test --debug`, attach on port 9229).
 - **Manual checks (Postman):** open the repo folder in the Postman desktop app (Native Git, free plan) and select the `localhost` environment (`baseUrl`, `allowedOrigin`). The `health` folder runs in the Collection Runner; Socket.IO requests (`ECHO`, `ECHO — foreign origin`) are sent by hand. Outside the app: `npx postman-cli collection lint "postman/collections/Battleship API"` and `npx postman-cli collection run "postman/collections/Battleship API" -e postman/environments/localhost.environment.yaml -i health`.
 - **Keeping it current:** an issue that adds a REST route or a Socket.IO event adds the matching request, message or listener to the collection.
+- **Format:** `pnpm format` writes the whole repo, `pnpm format:check` lists the files that differ (the CI step). In VS Code, the recommended Prettier extension formats on save (`.vscode/settings.json`).
+- **Before a pull request:** `pnpm verify` runs `format:check`, `lint`, `typecheck`, `test` and `build` on the whole workspace, stopping at the first failure.
+- **Pre-commit hook:** `pnpm install` sets it up (root `prepare` script, Husky). lint-staged runs `prettier --write` on the staged files only and adds the result to the commit; unstaged changes are left alone. It does nothing else, so commits stay fast; `git commit --no-verify` skips it, and CI still checks the format.
+- **Blame:** GitHub skips the commits in `.git-blame-ignore-revs`; for local `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once. A formatting-only commit (a Prettier upgrade that changes its output) goes into the file, with its full SHA, and its pull request is merged with a merge commit so the SHA survives.
 - **YAML schema:** SchemaStore's CrowdSec schema matches `**/collections/*/*.yaml`, so `.vscode/settings.json` maps `postman/**` to a permissive schema. Postman publishes no JSON schema for Collection v3; `postman-cli collection lint` is the real check.
