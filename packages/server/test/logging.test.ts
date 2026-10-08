@@ -1,4 +1,14 @@
-import { CLIENT_EVENTS, SERVER_EVENTS, type ClientToServerEvents, type ServerToClientEvents } from '@battleship/core';
+import {
+  CLIENT_EVENTS,
+  ERROR_CODES,
+  ORIENTATIONS,
+  PLACEMENT_VIOLATIONS,
+  SEATS,
+  SERVER_EVENTS,
+  SHIP_TYPES,
+  type ClientToServerEvents,
+  type ServerToClientEvents,
+} from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -137,5 +147,54 @@ describe('socket logs', () => {
     expect(lines).toEqual(
       expect.arrayContaining([expect.objectContaining({ msg: 'Socket.io handshake refused', origin: FOREIGN })]),
     );
+  });
+});
+
+describe('room logs', () => {
+  it('record rooms and refused commands at info, with the violation', async () => {
+    const { baseUrl, lines } = await start('info');
+    const socket = client(baseUrl);
+    const created: unknown = await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const { roomId } = created as { roomId: string };
+    const ship = { type: SHIP_TYPES.CARRIER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.HORIZONTAL };
+    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [ship] });
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Room created', roomId, seat: SEATS.P1 }),
+        expect.objectContaining({
+          msg: 'Command refused',
+          event: CLIENT_EVENTS.UPDATE_PLACEMENT,
+          error: ERROR_CODES.WRONG_PHASE,
+        }),
+      ]),
+    );
+  });
+
+  it('never contain a player secret, even at debug', async () => {
+    const { baseUrl, lines } = await start('debug');
+    const [p1, p2] = [client(baseUrl), client(baseUrl)];
+    const created: unknown = await p1.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const { roomId, playerSecret } = created as { roomId: string; playerSecret: string };
+    const joined: unknown = await p2.timeout(2_000).emitWithAck(CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
+    const ship = { type: SHIP_TYPES.CARRIER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.VERTICAL };
+    const refused: unknown = await p2
+      .timeout(2_000)
+      .emitWithAck(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [ship, ship] });
+
+    expect(refused).toEqual({ ok: false, error: ERROR_CODES.INVALID_PLACEMENT });
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Room joined', roomId, seat: SEATS.P2 }),
+        expect.objectContaining({
+          msg: 'Command refused',
+          error: ERROR_CODES.INVALID_PLACEMENT,
+          violation: PLACEMENT_VIOLATIONS.DUPLICATE_TYPE,
+        }),
+      ]),
+    );
+    const log = JSON.stringify(lines);
+    expect(log).not.toContain(playerSecret);
+    expect(log).not.toContain((joined as { playerSecret: string }).playerSecret);
   });
 });

@@ -1,0 +1,10 @@
+$kind: socket.io-message
+eventName: CREATE_ROOM
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "nickname": "Alice"
+      }
+    contentType: json
+order: 1000

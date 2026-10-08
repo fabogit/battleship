@@ -35,10 +35,17 @@ export function parseOriginEntry(entry: string): string {
 }
 
 /**
+ * Tells whether a request's `Origin` header is admitted (ADR-0021).
+ * @param origin The header, absent for same-origin and non-browser requests, which are always admitted.
+ * @returns Whether the request may proceed.
+ */
+export type OriginMatcher = (origin: string | undefined) => boolean;
+
+/**
  * Builds the predicate shared by the HTTP hook, `@fastify/cors` and the Socket.io handshake.
  * A request without an `Origin` header is not a browser cross-origin request, so CORS does not apply to it.
  */
-export function createOriginMatcher(entries: readonly string[]): (origin: string | undefined) => boolean {
+export function createOriginMatcher(entries: readonly string[]): OriginMatcher {
   const exact = new Set(entries.filter((entry) => !entry.startsWith(WILDCARD_PREFIX)));
   const suffixes = entries
     .filter((entry) => entry.startsWith(WILDCARD_PREFIX))
@@ -56,4 +63,15 @@ export function createOriginMatcher(entries: readonly string[]): (origin: string
     // Exactly one label before the suffix, anchored at both ends: no extra labels, no port, no path.
     return dot > 0 && SINGLE_LABEL.test(host.slice(0, dot)) && suffixes.includes(host.slice(dot + 1));
   };
+}
+
+/**
+ * The CORS origin callback's answer, shared by `@fastify/cors` and Socket.io: reflect an allowed `Origin`, send no
+ * CORS headers otherwise.
+ * @param isOriginAllowed The matcher from `createOriginMatcher`.
+ * @param origin The request's `Origin` header, absent for same-origin and non-browser requests.
+ * @returns The origin to echo in `Access-Control-Allow-Origin`, or `false` for no CORS headers.
+ */
+export function corsOrigin(isOriginAllowed: OriginMatcher, origin: string | undefined): string | false {
+  return isOriginAllowed(origin) ? (origin ?? false) : false;
 }

@@ -1,0 +1,11 @@
+$kind: socket.io-message
+eventName: JOIN_ROOM
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "roomId": "{{roomId}}",
+        "nickname": "Bob"
+      }
+    contentType: json
+order: 1000

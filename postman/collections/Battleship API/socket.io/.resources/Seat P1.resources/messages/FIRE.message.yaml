@@ -1,0 +1,15 @@
+$kind: socket.io-message
+eventName: FIRE
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "targets": [
+          {
+            "x": 0,
+            "y": 0
+          }
+        ]
+      }
+    contentType: json
+order: 6000

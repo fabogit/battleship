@@ -123,11 +123,43 @@ Behaviour of the game server, `packages/server`.
 
 - **Commands** are the event name, the sender's `seat` and the payload as its guard returned it. `JOIN_ROOM` has no seat yet; it carries the joiner's new secret instead.
 - **Results:** `{ ok: true, state, effects }` or `{ ok: false, error }`. A refused command returns no state and mutates nothing; `INVALID_PLACEMENT` and `INVALID_TARGETS` add the core `violation`, for the log only.
-- **After an accepted command** the caller stores the state (`RoomManager` does), sends `STATE` to every seated player and performs the effects in order. The only effect so far is `SHOT_RESOLVED`, for both players.
+- **After an accepted command** the caller stores the state (`RoomManager` does), performs the effects in order, then sends `STATE` to every seated player ([Socket handlers](#socket-handlers)). The only effect so far is `SHOT_RESOLVED`, for both players.
 - **Time:** `now` is epoch ms. Deadlines are stored as timestamps (`PlacementRoom.deadline`) and projected as remaining milliseconds.
 - **Phase checks:** a placement command outside `PLACEMENT` and a turn command outside `IN_PROGRESS` → `WRONG_PHASE`; the phase is checked before the seat or the payload.
 - **Projection:** the receiver's own fleet and both shot lists; the opponent's fleet only in `GAME_OVER`; never a secret. Fields whose feature is not built yet hold neutral values ([ADR-0038](adr/0038-snapshot-projection.md)).
 - **Registry:** `createRoom` → `SERVER_FULL` at `MAX_ROOMS`; `joinRoom` → `ROOM_NOT_FOUND` for an unknown id; `dispatch` runs a seated player's command. Rooms are not removed until the TTL sweeps (#24).
+
+## Plugins
+
+`createServer` (`packages/server/src/server.ts`) only composes plugins and routes. The plugins live in `packages/server/src/plugins/`, each wrapped with `fastify-plugin` so that what it adds reaches the root instance ([ADR-0023](adr/0023-socket-io-integration.md)).
+
+| Plugin          | Module             | Role                                                                                                                                 |
+| --------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `origin-policy` | `origin-policy.ts` | HTTP side of the [origin policy](deployment.md#backend-render): 403 `onRequest` hook and `@fastify/cors`                             |
+| `socket-io`     | `socket-io.ts`     | Socket.io on the HTTP server: `allowRequest` origin check, `app.io` decorator, connection logs, `preClose` flush and `onClose` close |
+| `echo`          | `echo.ts`          | The Phase 0 `ECHO` check, kept for the production smoke test                                                                         |
+| `room-handlers` | `room-handlers.ts` | Every command, wired to room logic ([Socket handlers](#socket-handlers))                                                             |
+
+- `echo` and `room-handlers` declare `dependencies: ['socket-io']`; so will the per-socket rate limit (#24), registered before the handlers.
+- `createServer` takes the room registry and the clock as options (`rooms`, `now`), so tests pass a seeded `RoomManager` and a fixed time; production gets a `RoomManager` with crypto randomness and `Date.now`.
+- `app.io` exists once the instance is ready (`listen()` or `ready()`).
+
+## Socket handlers
+
+`room-handlers` listens to every command on every socket. Decisions: [ADR-0045](adr/0045-socket-seat-binding.md), [ADR-0046](adr/0046-commands-ahead-of-room-logic.md), [ADR-0047](adr/0047-reply-order.md).
+
+1. **Ack check:** a command without an ack callback is ignored, like `ECHO` ([Client → server](protocol.md#client--server)).
+2. **Guard:** the payload goes through its `PAYLOAD_PARSERS` guard; `null` → `INVALID_PAYLOAD`, before any other check.
+3. **Dispatch:**
+   - `CREATE_ROOM` → `RoomManager.createRoom` (`SERVER_FULL` at `MAX_ROOMS`); the socket is bound to `P1`.
+   - `JOIN_ROOM` → `RoomManager.joinRoom` (`ROOM_NOT_FOUND`, `ROOM_FULL`); the socket is bound to `P2`. Joining the room the socket already sits in → `NOT_ALLOWED`.
+   - `UPDATE_PLACEMENT`, `CONFIRM_PLACEMENT`, `UNLOCK_PLACEMENT`, `UPDATE_TARGETS`, `FIRE` → `RoomManager.dispatch` with the sender's bound seat; a socket without a seat → `NOT_ALLOWED`.
+   - `UPDATE_RULES`, `CONFIRM_RULES`, `SET_PAUSED`, `SURRENDER`, `REMATCH_CHOICE`, `LEAVE_ROOM` → `NOT_ALLOWED` until their room logic lands (#23, #26, #35, #36).
+4. **Replies:** a refused command gets `{ ok: false, error }` and nothing else. An accepted one gets the ack (`{ ok: true }`, plus the credentials for `CREATE_ROOM` / `JOIN_ROOM`), then each effect goes to both players (`SHOT_RESOLVED`), then every seated socket gets `STATE` with its own projection.
+
+- **Seat binding:** `socket.data.binding` holds `{ roomId, seat }`, and the socket joins the Socket.io room named after the room id; `STATE` goes to each socket of that room. The binding goes away with the socket until #22 binds sessions at the handshake. Creating or joining another room moves the socket there; the seat it leaves stays taken until #23.
+- **Time:** one `now()` per command, shared by the transition and the projections it triggers.
+- **Room cap:** rooms are never removed until the TTL sweeps (#24), so a server answers `SERVER_FULL` after `MAX_ROOMS` rooms over its lifetime, until a restart ([ADR-0039](adr/0039-room-registry.md)).
 
 ## Sessions & reconnection
 
@@ -152,13 +184,14 @@ Behaviour of the game server, `packages/server`.
 
 Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `LOG_FORMAT` how it is written ([Backend (Render)](deployment.md#backend-render)).
 
-| Level                    | Logged                                                                                                                                                                     |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `info` (default, Render) | HTTP requests except `/health`; socket connections (transport, origin, address) and disconnections (reason); handshakes refused by the origin policy; startup and shutdown |
-| `debug` (local `.env`)   | Also `/health` requests, every socket event received or sent with its payload (broadcasts included, ack callbacks left out), and transport upgrades                        |
+| Level                    | Logged                                                                                                                                                                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `info` (default, Render) | HTTP requests except `/health`; socket connections (transport, origin, address) and disconnections (reason); handshakes refused by the origin policy; rooms created and joined, room phase changes and refused commands; startup and shutdown |
+| `debug` (local `.env`)   | Also `/health` requests, every socket event received or sent with its payload (broadcasts included, ack callbacks left out), and transport upgrades                                                                                           |
 
 - Every socket line carries the `socketId`, so one client's history can be followed.
-- Ack replies are not logged: Socket.io has no hook for them, so handlers log their own results where needed.
+- Room lines carry the `roomId` and, for creation and joining, the `seat`. A refused command logs its event and error code and, for `INVALID_PLACEMENT` and `INVALID_TARGETS`, the core violation, which is never sent ([ADR-0032](adr/0032-fleet-placement.md)).
+- Ack replies are not logged: Socket.io has no hook for them, so the handlers log refusals and room changes themselves. Player secrets travel only in acks, so they never reach the log.
 - Payloads stay at `debug` because they will carry player data; when sessions arrive (#22), `playerSecret` must be redacted (Pino `redact`).
 - Socket.io's own internals (handshakes, polling, heartbeats) are not routed through Pino: run with `DEBUG=engine,socket.io*` to see them.
 
@@ -166,4 +199,4 @@ Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `L
 
 - Room logic is a pure transition function `(state, command, now) → { state, effects }`; timers are scheduled effects executed by a thin `scheduler.ts` over an injectable `Clock`.
 - The `Rng` is injected (dice, auto shots, auto placement); production uses `createCryptoRng()`, tests `createSeededRng(seed)` ([Randomness](domain.md#randomness)).
-- Unit tests drive rooms with a fake clock and a fixed seed. Integration tests use real `socket.io-client` instances against an in-process server.
+- Unit tests drive rooms with a fake clock and a fixed seed. Integration tests use real `socket.io-client` instances against an in-process server on an ephemeral port: `test/game.test.ts` plays a whole match (create → join → place → play to victory) with seeded fleets, a seeded registry and a fixed clock, reading every event each client receives in order.

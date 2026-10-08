@@ -1,0 +1,51 @@
+$kind: socket.io-message
+eventName: UPDATE_PLACEMENT
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "ships": [
+          {
+            "type": "CARRIER",
+            "start": {
+              "x": 0,
+              "y": 0
+            },
+            "orientation": "VERTICAL"
+          },
+          {
+            "type": "BATTLESHIP",
+            "start": {
+              "x": 2,
+              "y": 0
+            },
+            "orientation": "VERTICAL"
+          },
+          {
+            "type": "CRUISER",
+            "start": {
+              "x": 4,
+              "y": 0
+            },
+            "orientation": "VERTICAL"
+          },
+          {
+            "type": "SUBMARINE",
+            "start": {
+              "x": 6,
+              "y": 0
+            },
+            "orientation": "VERTICAL"
+          },
+          {
+            "type": "DESTROYER",
+            "start": {
+              "x": 8,
+              "y": 0
+            },
+            "orientation": "VERTICAL"
+          }
+        ]
+      }
+    contentType: json
+order: 2000

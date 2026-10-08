@@ -172,6 +172,9 @@ importers:
       fastify:
         specifier: ^5.12.5
         version: 5.12.5
+      fastify-plugin:
+        specifier: ^6.0.0
+        version: 6.0.0
       socket.io:
         specifier: 'catalog:'
         version: 4.8.4(supports-color@8.1.1)
