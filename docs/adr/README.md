@@ -58,5 +58,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0052](0052-server-url-build-variable.md)     | Server URL as a build variable         | Accepted, 2026-10-08   |
 | [ADR-0053](0053-placement-taps.md)                | Placement by taps                      | Accepted, 2026-10-08   |
 | [ADR-0054](0054-placement-draft-sync.md)          | Placement draft on the client          | Accepted, 2026-10-08   |
+| [ADR-0055](0055-isolated-client-tests.md)         | Isolated client test files             | Accepted, 2026-10-08   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
