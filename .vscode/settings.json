@@ -1,4 +1,6 @@
 {
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.formatOnSave": true,
   "yaml.schemas": {
     "./.vscode/postman-v3.schema.json": ["postman/**/*.yaml", ".postman/*.yaml"]
   }
