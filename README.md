@@ -20,6 +20,7 @@ The server runs on Render's free tier and sleeps when idle: the first visit wait
 
 ```bash
 cp packages/server/.env.example packages/server/.env   # local PORT, ALLOWED_ORIGINS and log settings
+cp packages/client/.env.example packages/client/.env   # SERVER_URL the client talks to (the local server)
 pnpm install
 pnpm dev   # server on http://localhost:3000 (try: curl localhost:3000/health), client on http://localhost:4200
 ```

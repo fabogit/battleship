@@ -13,9 +13,6 @@
           "configurations": {
             "development": {
               "conditions": ["@battleship/source", "module", "development"],
-              "define": {
-                "BUILD_SERVER_URL": "\"http://localhost:3000\""
-              },
               "extractLicenses": false,
               "optimization": false,
               "sourceMap": true

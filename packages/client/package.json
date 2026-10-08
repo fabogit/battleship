@@ -5,9 +5,9 @@
   "description": "Angular browser client",
   "type": "module",
   "scripts": {
-    "start": "ng serve",
-    "dev": "ng serve",
-    "build": "node --env-file-if-exists=.env scripts/build.ts",
+    "start": "node --env-file-if-exists=.env scripts/ng.ts serve",
+    "dev": "node --env-file-if-exists=.env scripts/ng.ts serve",
+    "build": "node --env-file-if-exists=.env scripts/ng.ts build",
     "typecheck": "ngc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit && tsc -p scripts --noEmit",
     "test": "ng test --no-watch",
     "lint": "eslint ."
