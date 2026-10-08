@@ -104,20 +104,23 @@ function isBoardIndex(value: unknown): value is number {
 }
 
 /**
- * Checks a room id against its fixed format, so lookups never see arbitrary strings.
+ * Checks a room id against its fixed format, so lookups never see arbitrary strings. The client runs it on the id of a
+ * `/r/<roomId>` link, so a malformed link shows "room not found" without asking the server
+ * (docs/client.md#routes--lobby-flow).
  * @param value The untrusted value.
  * @returns Whether the value is `ROOM_ID_LENGTH` characters of `ROOM_ID_ALPHABET`.
  */
-function isRoomId(value: unknown): value is string {
+export function isRoomId(value: unknown): value is string {
   return typeof value === 'string' && ROOM_ID_PATTERN.test(value);
 }
 
 /**
- * Trims a nickname and checks its length (NICKNAME_MAX_LENGTH counts UTF-16 code units, like HTML `maxlength`).
+ * Trims a nickname and checks its length (NICKNAME_MAX_LENGTH counts UTF-16 code units, like HTML `maxlength`). The
+ * client validates the nickname field with it, so the form accepts exactly what the guard does.
  * @param value The untrusted value.
  * @returns The trimmed nickname, or `null` when the value is not a string or is empty or too long once trimmed.
  */
-function parseNickname(value: unknown): string | null {
+export function parseNickname(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
   }

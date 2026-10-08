@@ -102,5 +102,5 @@ export type {
   TimeoutAction,
   TurnTimeLimitSeconds,
 } from './types.js';
-export { PAYLOAD_PARSERS, parseSessionCredentials } from './validation.js';
+export { isRoomId, parseNickname, PAYLOAD_PARSERS, parseSessionCredentials } from './validation.js';
 export type { PayloadParser } from './validation.js';

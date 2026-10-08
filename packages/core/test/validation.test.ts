@@ -5,8 +5,10 @@ import {
   CLIENT_EVENTS,
   DEFAULT_RULES,
   FLEET,
+  isRoomId,
   NICKNAME_MAX_LENGTH,
   ORIENTATIONS,
+  parseNickname,
   parseSessionCredentials,
   PAYLOAD_PARSERS,
   REMATCH_CHOICES,
@@ -164,6 +166,20 @@ describe('JOIN_ROOM', () => {
 
   it('refuses a missing room id', () => {
     expect(parse(CLIENT_EVENTS.JOIN_ROOM, { nickname: 'Grace' })).toBeNull();
+  });
+});
+
+// The client runs these two on its own (the nickname field, the room link), so they are exported as they are.
+describe('isRoomId and parseNickname', () => {
+  it('accept what the JOIN_ROOM guard accepts', () => {
+    expect(isRoomId(ROOM_ID)).toBe(true);
+    expect(parseNickname(' Grace ')).toBe('Grace');
+  });
+
+  it('refuse what the JOIN_ROOM guard refuses', () => {
+    expect(isRoomId('AB23CD45')).toBe(false);
+    expect(parseNickname(' \t ')).toBeNull();
+    expect(parseNickname('n'.repeat(NICKNAME_MAX_LENGTH + 1))).toBeNull();
   });
 });
 
