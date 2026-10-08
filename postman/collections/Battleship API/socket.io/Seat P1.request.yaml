@@ -1,0 +1,33 @@
+$kind: socket.io-request
+id: 15fa97653dc0f819d3d2f8c1
+name: Seat P1
+description: |-
+  The room creator, `P1`. Connect it together with **Seat P2**, then send the saved messages in this order:
+
+  1. `CREATE_ROOM` (P1): the ack is `{ "ok": true, "roomId": "…", "playerSecret": "…" }`, then a `STATE` in `WAITING_FOR_OPPONENT`.
+     Copy `roomId` into the collection variable `roomId`.
+  2. `JOIN_ROOM` (P2): both get a `STATE` in `PLACEMENT`.
+  3. `UPDATE_PLACEMENT` and `CONFIRM_PLACEMENT` from each seat; `UNLOCK_PLACEMENT` reverts a confirmed fleet.
+     The second confirmation starts the match (`IN_PROGRESS`), `P1` first.
+  4. `UPDATE_TARGETS` (optional draft) and `FIRE` from the seat whose turn it is; each `FIRE` sends `SHOT_RESOLVED`,
+     then `STATE`, to both. Edit the target before firing again: a cell already shot is `INVALID_TARGETS`.
+
+  Every accepted command acks `{ "ok": true }` (plus credentials for `CREATE_ROOM` / `JOIN_ROOM`); a refused one
+  `{ "ok": false, "error": "<ErrorCode>" }` and nothing else. `CREATE_ROOM — invalid payload` shows `INVALID_PAYLOAD`.
+  A reconnected socket has no seat until #22: reconnect means starting a new room.
+  The server answers `SERVER_FULL` after 50 rooms until it restarts (rooms are never removed before #24).
+url: '{{baseUrl}}'
+events:
+  - name: STATE
+    description: The receiver's snapshot (fog-of-war), after every accepted command; it follows the ack and any SHOT_RESOLVED.
+    subscribeOnConnect: true
+  - name: SHOT_RESOLVED
+    description: A fired turn, for animation; sent to both players before the STATE that reflects it.
+    subscribeOnConnect: true
+  - name: SERVER_SHUTDOWN
+    description: The server is restarting; any match in progress is lost (docs/deployment.md#backend-render).
+    subscribeOnConnect: true
+settings:
+  version: '4'
+messages: .resources/Seat P1.resources/messages
+order: 3000

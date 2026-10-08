@@ -1,0 +1,15 @@
+$kind: socket.io-message
+eventName: UPDATE_TARGETS
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "targets": [
+          {
+            "x": 0,
+            "y": 0
+          }
+        ]
+      }
+    contentType: json
+order: 5000

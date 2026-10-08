@@ -11,7 +11,11 @@ description: |-
   **Variables**
   - `baseUrl`, `allowedOrigin` (environment): server root, and an origin listed in the server's `ALLOWED_ORIGINS`
   - `foreignOrigin`: any origin not in `ALLOWED_ORIGINS`, to check the 403s (ADR-0021)
+  - `roomId`: the room of the **Seat P1** / **Seat P2** match, copied by hand from the `CREATE_ROOM` ack
 variables:
   - key: foreignOrigin
     value: 'http://evil.example'
     description: 'An origin NOT in ALLOWED_ORIGINS, used to verify the 403s'
+  - key: roomId
+    value: ''
+    description: 'The room id from the CREATE_ROOM ack of Seat P1; JOIN_ROOM of Seat P2 sends it'

@@ -1,0 +1,8 @@
+$kind: socket.io-message
+eventName: UNLOCK_PLACEMENT
+acknowledgement: true
+args:
+  - content: |-
+      {}
+    contentType: json
+order: 4000
