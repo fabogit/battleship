@@ -48,5 +48,8 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0042](0042-board-cell-size.md)               | Board cell size                        | Accepted, 2026-10-07 |
 | [ADR-0043](0043-named-constants.md)               | Named constants for closed string sets | Accepted, 2026-10-07 |
 | [ADR-0044](0044-code-formatter.md)                | Code formatter                         | Accepted, 2026-10-08 |
+| [ADR-0045](0045-socket-seat-binding.md)           | Socket seat binding                    | Accepted, 2026-10-08 |
+| [ADR-0046](0046-commands-ahead-of-room-logic.md)  | Commands ahead of their room logic     | Accepted, 2026-10-08 |
+| [ADR-0047](0047-reply-order.md)                   | Reply order                            | Accepted, 2026-10-08 |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

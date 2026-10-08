@@ -26,6 +26,10 @@ _Avoid_: token, password
 A room id plus its player secret, stored by `SessionStore`, that binds a reconnecting socket back to its seat. The latest connection to a seat wins.
 _Avoid_: login
 
+**Seat binding**:
+The link between a connected socket and the seat it plays, set when the socket creates or joins a room; the server takes the sender's seat from it. It lasts as long as the socket; a session restores it after a reconnection.
+_Avoid_: login, attachment
+
 **Phase**:
 The stage a room is in: `WAITING_FOR_OPPONENT`, `RULES_NEGOTIATION`, `PLACEMENT`, `IN_PROGRESS` or `GAME_OVER`.
 _Avoid_: stage, status

@@ -25,6 +25,12 @@ export interface SessionCredentials {
 
 All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: false, error: ErrorCode })` (`AckResponse<T>`). Code names the events through `CLIENT_EVENTS` (`CLIENT_EVENTS.JOIN_ROOM`), which `satisfies` the `ClientToServerEvents` map ([ADR-0043](adr/0043-named-constants.md)).
 
+- A command sent without an ack callback is ignored: not applied, not answered.
+- A refused command gets only its ack. An accepted one gets its ack, then any effect (`SHOT_RESOLVED`) and then `STATE` reach both players ([ADR-0047](adr/0047-reply-order.md)).
+- The commands after `JOIN_ROOM` come from the socket that created or joined the room; from any other socket they are `NOT_ALLOWED` ([ADR-0045](adr/0045-socket-seat-binding.md)). Until sessions are bound at the handshake (#22), a reconnected socket has no seat.
+- `UPDATE_RULES`, `CONFIRM_RULES`, `SET_PAUSED`, `SURRENDER`, `REMATCH_CHOICE` and `LEAVE_ROOM` pass their guard, then are `NOT_ALLOWED` until their room logic lands ([ADR-0046](adr/0046-commands-ahead-of-room-logic.md)).
+- Until rules negotiation lands (#26), `JOIN_ROOM` moves the room straight to `PLACEMENT`.
+
 | Event               | Payload                      | Ack data                       | Phase                                                  |
 | ------------------- | ---------------------------- | ------------------------------ | ------------------------------------------------------ |
 | `CREATE_ROOM`       | `{ nickname }`               | `{ roomId, playerSecret }`     | —                                                      |
@@ -66,7 +72,7 @@ Code names these events through `SERVER_EVENTS` (`SERVER_EVENTS.STATE`), which `
 | Event              | Payload                                                  | Purpose                                                           |
 | ------------------ | -------------------------------------------------------- | ----------------------------------------------------------------- |
 | `STATE`            | `PlayerStateSnapshot`                                    | Source of truth; sent after every state change and on (re)connect |
-| `SHOT_RESOLVED`    | `{ shooter: Seat, results: ShotResult[] }`               | Animation/sound only (also reflected in `STATE`)                  |
+| `SHOT_RESOLVED`    | `{ shooter: Seat, results: ShotResult[] }`               | Animation/sound only; the `STATE` right after it reflects it      |
 | `DICE_ROLLED`      | `{ rolls: { P1: number, P2: number }[], starter: Seat }` | Dice animation, including re-rolls                                |
 | `SESSION_REPLACED` | `{}`                                                     | This socket was superseded by a newer one                         |
 | `SERVER_SHUTDOWN`  | `{}`                                                     | Server restarting; the match is lost                              |
@@ -132,20 +138,20 @@ Timers are sent as **remaining milliseconds** (not absolute timestamps) to avoid
 
 `ERROR_CODES` names them (`ERROR_CODES.ROOM_FULL`) and `ErrorCode` is their union; `Object.values(ERROR_CODES)` lists them at runtime, in this order ([ADR-0043](adr/0043-named-constants.md)).
 
-| Code                | When                                                                                                           |
-| ------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `PROTOCOL_MISMATCH` | Handshake `protocolVersion` differs from `PROTOCOL_VERSION`                                                    |
-| `INVALID_PAYLOAD`   | A payload failed its guard ([Payload validation](#payload-validation))                                         |
-| `RATE_LIMITED`      | More than `RATE_LIMIT_EVENTS_PER_SECOND` events from one socket                                                |
-| `SERVER_FULL`       | `CREATE_ROOM` with `MAX_ROOMS` rooms open                                                                      |
-| `ROOM_NOT_FOUND`    | `JOIN_ROOM` for a room that does not exist (or was lost in a restart)                                          |
-| `ROOM_FULL`         | `JOIN_ROOM` for a room with both seats taken                                                                   |
-| `SESSION_INVALID`   | Handshake `session` malformed, unknown or expired                                                              |
-| `WRONG_PHASE`       | A command outside the phases listed for it                                                                     |
-| `NOT_YOUR_TURN`     | `UPDATE_TARGETS` or `FIRE` during the opponent's turn                                                          |
-| `NOT_ALLOWED`       | A command the sender may not send now, e.g. `SET_PAUSED` while the opponent is connected                       |
-| `INVALID_RULES`     | `UPDATE_RULES` failing `validateRules`                                                                         |
-| `STALE_RULES`       | `CONFIRM_RULES` for a version other than the current one                                                       |
-| `INVALID_PLACEMENT` | `UPDATE_PLACEMENT` or `CONFIRM_PLACEMENT` with a layout that breaks the [placement rules](domain.md#placement) |
-| `PLACEMENT_LOCKED`  | `UPDATE_PLACEMENT` while the fleet is confirmed                                                                |
-| `INVALID_TARGETS`   | Targets that break the [shot engine](domain.md#shot-engine)'s constraints for this turn                        |
+| Code                | When                                                                                                                                                                                                                                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PROTOCOL_MISMATCH` | Handshake `protocolVersion` differs from `PROTOCOL_VERSION`                                                                                                                                                                                                                                 |
+| `INVALID_PAYLOAD`   | A payload failed its guard ([Payload validation](#payload-validation))                                                                                                                                                                                                                      |
+| `RATE_LIMITED`      | More than `RATE_LIMIT_EVENTS_PER_SECOND` events from one socket                                                                                                                                                                                                                             |
+| `SERVER_FULL`       | `CREATE_ROOM` with `MAX_ROOMS` rooms open                                                                                                                                                                                                                                                   |
+| `ROOM_NOT_FOUND`    | `JOIN_ROOM` for a room that does not exist (or was lost in a restart)                                                                                                                                                                                                                       |
+| `ROOM_FULL`         | `JOIN_ROOM` for a room with both seats taken                                                                                                                                                                                                                                                |
+| `SESSION_INVALID`   | Handshake `session` malformed, unknown or expired                                                                                                                                                                                                                                           |
+| `WRONG_PHASE`       | A command outside the phases listed for it                                                                                                                                                                                                                                                  |
+| `NOT_YOUR_TURN`     | `UPDATE_TARGETS` or `FIRE` during the opponent's turn                                                                                                                                                                                                                                       |
+| `NOT_ALLOWED`       | A command the sender may not send now: `SET_PAUSED` while the opponent is connected, a seat command from a socket without a seat, joining the room the socket already sits in, and every command whose room logic has not landed yet ([ADR-0046](adr/0046-commands-ahead-of-room-logic.md)) |
+| `INVALID_RULES`     | `UPDATE_RULES` failing `validateRules`                                                                                                                                                                                                                                                      |
+| `STALE_RULES`       | `CONFIRM_RULES` for a version other than the current one                                                                                                                                                                                                                                    |
+| `INVALID_PLACEMENT` | `UPDATE_PLACEMENT` or `CONFIRM_PLACEMENT` with a layout that breaks the [placement rules](domain.md#placement)                                                                                                                                                                              |
+| `PLACEMENT_LOCKED`  | `UPDATE_PLACEMENT` while the fleet is confirmed                                                                                                                                                                                                                                             |
+| `INVALID_TARGETS`   | Targets that break the [shot engine](domain.md#shot-engine)'s constraints for this turn                                                                                                                                                                                                     |
