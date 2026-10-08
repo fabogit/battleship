@@ -142,6 +142,9 @@ importers:
       '@angular/compiler-cli':
         specifier: catalog:angular
         version: 22.2.1(@angular/compiler@22.2.1)(typescript@6.0.3)
+      '@types/node':
+        specifier: 'catalog:'
+        version: 24.19.1
       eslint:
         specifier: 'catalog:'
         version: 10.12.0(supports-color@8.1.1)

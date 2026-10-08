@@ -5,10 +5,10 @@
   "description": "Angular browser client",
   "type": "module",
   "scripts": {
-    "start": "ng serve",
-    "dev": "ng serve",
-    "build": "ng build",
-    "typecheck": "ngc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit",
+    "start": "node --env-file-if-exists=.env scripts/ng.ts serve",
+    "dev": "node --env-file-if-exists=.env scripts/ng.ts serve",
+    "build": "node --env-file-if-exists=.env scripts/ng.ts build",
+    "typecheck": "ngc -p tsconfig.app.json --noEmit && tsc -p tsconfig.spec.json --noEmit && tsc -p scripts --noEmit",
     "test": "ng test --no-watch",
     "lint": "eslint ."
   },
@@ -28,6 +28,7 @@
     "@angular/build": "catalog:angular",
     "@angular/cli": "catalog:angular",
     "@angular/compiler-cli": "catalog:angular",
+    "@types/node": "catalog:",
     "eslint": "catalog:",
     "jsdom": "^30.0.0",
     "typescript": "catalog:",

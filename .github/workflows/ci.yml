@@ -18,6 +18,9 @@ jobs:
     name: ci
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Server URL baked into the client bundle; the build fails without it (docs/deployment.md, Frontend).
+      SERVER_URL: https://battleship-server-jumc.onrender.com
     steps:
       - uses: actions/checkout@v7
 
