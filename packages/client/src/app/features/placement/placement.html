@@ -1,0 +1,89 @@
+<h1>{{ text.heading }}</h1>
+
+<div class="status">
+  @if (timeLeft(); as time) {
+    <p role="timer">{{ text.timeLeft(time) }}</p>
+  }
+  <p aria-live="polite">
+    @if (startsInSeconds(); as seconds) {
+      {{ text.startsIn(seconds) }}
+    } @else if (store.isOpponentConfirmed()) {
+      <span class="ok">{{ text.opponentReady(opponentNickname()) }}</span>
+    } @else {
+      {{ text.opponentPlacing(opponentNickname()) }}
+    }
+  </p>
+</div>
+
+<ul class="dock" [attr.aria-label]="text.dockLabel">
+  @for (entry of dock(); track entry.type) {
+    <li>
+      <button
+        type="button"
+        [class.is-placed]="entry.isPlaced"
+        [attr.aria-pressed]="entry.isSelected"
+        [attr.aria-disabled]="store.isEditable() ? null : 'true'"
+        (click)="store.selectShip(entry.type)"
+      >
+        <span class="name">{{ entry.name }}</span>
+        <span class="cells" aria-hidden="true">
+          @for (cell of entry.cells; track cell) {
+            <span></span>
+          }
+        </span>
+        <span class="visually-hidden">{{ entry.details }}</span>
+      </button>
+    </li>
+  }
+</ul>
+
+<app-board-grid
+  [label]="text.boardLabel"
+  [ships]="store.ships()"
+  [invalidPreview]="store.invalidPreview()"
+  [selectedCells]="store.selectedCells()"
+  [isInteractive]="store.isEditable()"
+  (cellActivate)="store.activateCell($event)"
+/>
+
+<p class="feedback" aria-live="polite">{{ feedbackMessage() }}</p>
+
+<div class="ship-actions">
+  @if (store.selected(); as selected) {
+    <span class="selected-name">{{ text.selectedShip(selectedName() ?? '') }}</span>
+    <button type="button" (click)="store.rotate()">{{ text.rotate }}</button>
+    @if (selected.placement !== null) {
+      <button type="button" (click)="store.remove()">{{ text.remove }}</button>
+    }
+  }
+</div>
+
+<div class="fleet-actions">
+  <button type="button" [attr.aria-disabled]="store.isEditable() ? null : 'true'" (click)="store.randomize()">
+    {{ text.randomize }}
+  </button>
+  @if (store.isConfirmed()) {
+    <button
+      type="button"
+      class="primary"
+      aria-describedby="lock-hint"
+      [attr.aria-disabled]="store.isLockPending() ? 'true' : null"
+      (click)="store.unlock()"
+    >
+      {{ store.isLockPending() ? text.unlocking : text.unlock }}
+    </button>
+  } @else {
+    <button
+      type="button"
+      class="primary"
+      aria-describedby="lock-hint"
+      [attr.aria-disabled]="store.canConfirm() ? null : 'true'"
+      (click)="store.confirm()"
+    >
+      {{ store.isLockPending() ? text.confirming : text.confirm }}
+    </button>
+  }
+</div>
+<p id="lock-hint" class="hint">{{ lockHint() }}</p>
+
+<p class="error" role="alert">{{ errorMessage() }}</p>

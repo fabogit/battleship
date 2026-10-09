@@ -23,7 +23,8 @@ interface BoardRow {
 type NavigationKey = Pick<KeyboardEvent, 'key' | 'altKey' | 'ctrlKey' | 'metaKey' | 'shiftKey'>;
 
 /**
- * Names a cell for assistive technologies: its coordinate, then its state and overlays, e.g. "B7, hit".
+ * Names a cell for assistive technologies: its coordinate, then its state and overlays, e.g. "B7, hit" or
+ * "C3, ship, selected".
  * @param cell The cell to name.
  * @param text The words for states and overlays.
  * @returns The comma-separated label.
@@ -34,6 +35,7 @@ export function cellLabel(cell: BoardCell, text: BoardGridText): string {
     text.states[cell.state],
     cell.isDraftTarget ? text.draftTarget : null,
     cell.isInvalidPreview ? text.invalidPreview : null,
+    cell.isSelected ? text.selected : null,
   ];
   return parts.filter((part) => part !== null).join(', ');
 }
@@ -97,6 +99,8 @@ export class BoardGrid {
   readonly draftTargets = input<readonly Coordinate[]>([]);
   /** Cells of a ship position the placement rules refuse. */
   readonly invalidPreview = input<readonly Coordinate[]>([]);
+  /** Cells of the ship selected during placement. */
+  readonly selectedCells = input<readonly Coordinate[]>([]);
   /** Whether activating a cell does something; when false the cells stay focusable but report `aria-disabled`. */
   readonly isInteractive = input(true);
 
@@ -116,6 +120,7 @@ export class BoardGrid {
       shots: this.shots(),
       draftTargets: this.draftTargets(),
       invalidPreview: this.invalidPreview(),
+      selectedCells: this.selectedCells(),
     }).map((cell) => ({ ...cell, label: cellLabel(cell, BOARD_GRID_TEXT) }));
     return ROW_LETTERS.map((letter, y) => ({
       letter,

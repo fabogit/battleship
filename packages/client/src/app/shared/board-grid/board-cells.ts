@@ -11,8 +11,8 @@ import {
 export const CELL_COUNT = BOARD_SIZE * BOARD_SIZE;
 
 /**
- * What can be known about a cell, also rendered as its `data-state` attribute for the styles (ADR-0043). Draft targets
- * and the invalid preview are overlays on top of a state.
+ * What can be known about a cell, also rendered as its `data-state` attribute for the styles (ADR-0043). Draft targets,
+ * the invalid preview and the selected ship are overlays on top of a state.
  */
 export const CELL_STATES = {
   /** No shot, and no ship drawn. */
@@ -40,6 +40,8 @@ export interface BoardContent {
   readonly draftTargets: readonly Coordinate[];
   /** Cells of a ship position the placement rules refuse. */
   readonly invalidPreview: readonly Coordinate[];
+  /** Cells of the ship selected during placement. */
+  readonly selectedCells: readonly Coordinate[];
 }
 
 /** One cell as the board grid renders it. */
@@ -54,6 +56,8 @@ export interface BoardCell {
   readonly isDraftTarget: boolean;
   /** Whether the cell belongs to an invalid placement preview. */
   readonly isInvalidPreview: boolean;
+  /** Whether the cell belongs to the ship selected during placement. */
+  readonly isSelected: boolean;
 }
 
 /**
@@ -97,6 +101,7 @@ export function toBoardCells(content: BoardContent): BoardCell[] {
   const sunkShips = new Set(content.ships.filter((ship) => ship.coordinates.every(isHit)));
   const draftTargets = new Set(content.draftTargets.map(toCellIndex));
   const invalidPreview = new Set(content.invalidPreview.map(toCellIndex));
+  const selectedCells = new Set(content.selectedCells.map(toCellIndex));
 
   const stateAt = (index: number): CellState => {
     const outcome = outcomeAt.get(index);
@@ -122,5 +127,6 @@ export function toBoardCells(content: BoardContent): BoardCell[] {
     state: stateAt(index),
     isDraftTarget: draftTargets.has(index),
     isInvalidPreview: invalidPreview.has(index),
+    isSelected: selectedCells.has(index),
   }));
 }
