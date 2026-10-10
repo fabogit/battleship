@@ -105,9 +105,17 @@ _Avoid_: grid (for a player's side), map
 The opponent's board as a player knows it (fog-of-war): their own shots, the ships they sank and, at game over, the revealed fleet. The UI labels it "Enemy waters", and the player's own board "My fleet".
 _Avoid_: enemy board, radar
 
+**Board toggle**:
+The pair of buttons, "My fleet" and "Enemy waters", that picks the one board a narrow screen shows during battle. It follows the turn by itself, after holding the board the last shot landed on; a wide screen shows both boards and no toggle.
+_Avoid_: tabs, switcher
+
 **Cell name**:
 How the UI names a cell: the row letter (`A`–`J`, top to bottom) followed by the column number (`1`–`10`, left to right), e.g. `B7` for `{ x: 6, y: 1 }`. The protocol always uses zero-based coordinates.
 _Avoid_: cell ID, square
+
+**Target**:
+A cell of the tracking board picked to be fired at in the current turn. The turn's targets are its draft until "Fire" sends them with `FIRE`; with one shot allowed, a tap elsewhere moves the target.
+_Avoid_: aim, crosshair
 
 **Shot allowance**:
 The number of targets a turn fires (`shotsAllowed`): 1 in standard mode; in salvo mode, `min(shooter's surviving ships, opponent's unshot cells)`.
