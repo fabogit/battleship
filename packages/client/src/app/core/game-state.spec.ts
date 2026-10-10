@@ -17,6 +17,7 @@ import {
   type PlacementSnapshot,
   type PlayerStateSnapshot,
   type PlayerView,
+  type ShotResolvedPayload,
   type ShotResult,
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -113,6 +114,7 @@ function gameOver(overrides: Partial<GameOverSnapshot> = {}): PlayerStateSnapsho
 }
 
 let receiveState: ((snapshot: PlayerStateSnapshot) => void) | undefined;
+let receiveShots: ((payload: ShotResolvedPayload) => void) | undefined;
 let state: GameStateService;
 
 /** Delivers a `STATE` as the server would. */
@@ -123,17 +125,33 @@ function receive(snapshot: PlayerStateSnapshot): void {
   receiveState(snapshot);
 }
 
+/** Delivers a `SHOT_RESOLVED` as the server would. */
+function resolve(payload: ShotResolvedPayload): void {
+  if (receiveShots === undefined) {
+    throw new Error('GameStateService is not listening to SHOT_RESOLVED');
+  }
+  receiveShots(payload);
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   receiveState = undefined;
+  receiveShots = undefined;
   const socket = {
-    on: vi.fn((event: string, listener: (snapshot: PlayerStateSnapshot) => void) => {
+    on: vi.fn((event: string, listener: (payload: unknown) => void) => {
       if (event === SERVER_EVENTS.STATE) {
         receiveState = listener;
+        return () => {
+          receiveState = undefined;
+        };
       }
-      return () => {
-        receiveState = undefined;
-      };
+      if (event === SERVER_EVENTS.SHOT_RESOLVED) {
+        receiveShots = listener;
+        return () => {
+          receiveShots = undefined;
+        };
+      }
+      return () => undefined;
     }),
   };
   TestBed.configureTestingModule({ providers: [{ provide: GameSocketService, useValue: socket }] });
@@ -209,11 +227,58 @@ describe('GameStateService', () => {
       expect([state.canPause(), state.canResume()]).toEqual([false, false]);
     });
 
-    it('reveals the opponent fleet at game over', () => {
+    it('reveals the opponent fleet without shots at game over when the battle was not seen here', () => {
       receive(gameOver());
 
       expect(state.myFleet()).toBeNull();
       expect(state.trackingBoard()).toEqual({ ships: [SUNK_DESTROYER], shots: [], draftTargets: [] });
+    });
+
+    it('keeps both boards for game over, with the shot that ended the match', () => {
+      const finalShot: ShotResult = { coordinate: { x: 4, y: 4 }, outcome: SHOT_OUTCOMES.MISS };
+      receive(battle());
+      resolve({ shooter: SEATS.P2, results: [finalShot] });
+
+      receive(gameOver({ winner: SEATS.P2 }));
+
+      expect(state.myFleet()).toEqual({ ships: MY_SHIPS, shots: [...INCOMING, finalShot] });
+      expect(state.trackingBoard()).toEqual({ ships: [SUNK_DESTROYER], shots: OUTGOING, draftTargets: [] });
+    });
+
+    it("adds the receiver's own final shot to the revealed fleet", () => {
+      const finalShot: ShotResult = { coordinate: { x: 5, y: 7 }, outcome: SHOT_OUTCOMES.MISS };
+      receive(battle());
+      resolve({ shooter: SEATS.P1, results: [finalShot] });
+
+      receive(gameOver());
+
+      expect(state.trackingBoard()?.shots).toEqual([...OUTGOING, finalShot]);
+      expect(state.myFleet()?.shots).toEqual(INCOMING);
+    });
+
+    it('lets each battle snapshot replace the shots added since the previous one', () => {
+      receive(battle({ outgoingShots: [] }));
+      resolve({ shooter: SEATS.P1, results: OUTGOING });
+
+      receive(battle());
+      receive(gameOver());
+
+      expect(state.trackingBoard()?.shots).toEqual(OUTGOING);
+    });
+
+    it("forgets the battle record in another phase or another room's game over", () => {
+      receive(battle());
+      receive({ ...gameOver(), roomId: 'wxyz6789' });
+      expect(state.myFleet()).toBeNull();
+
+      receive(battle());
+      receive(placement());
+      receive(gameOver());
+      expect(state.myFleet()).toBeNull();
+      expect(state.trackingBoard()?.shots).toEqual([]);
+
+      resolve({ shooter: SEATS.P1, results: OUTGOING });
+      expect(state.trackingBoard()?.shots).toEqual([]);
     });
 
     it('tells whether the receiver won', () => {
@@ -235,6 +300,9 @@ describe('GameStateService', () => {
       expect(state.snapshot()).toBeNull();
       expect(state.turnRemainingMs()).toBeNull();
       expect(vi.getTimerCount()).toBe(0);
+
+      receive(gameOver());
+      expect(state.myFleet()).toBeNull();
     });
   });
 
@@ -322,6 +390,7 @@ describe('GameStateService', () => {
     TestBed.resetTestingModule();
 
     expect(receiveState).toBeUndefined();
+    expect(receiveShots).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
   });
 });

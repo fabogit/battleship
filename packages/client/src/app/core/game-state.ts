@@ -5,6 +5,8 @@ import {
   type PlacedShip,
   type PlayerStateSnapshot,
   type RoomPhase,
+  type Seat,
+  type ShotResolvedPayload,
   type ShotResult,
 } from '@battleship/core';
 
@@ -36,6 +38,23 @@ interface SyncedSnapshot {
   readonly snapshot: PlayerStateSnapshot;
   /** `performance.now()` when it arrived, in ms. */
   readonly receivedAt: number;
+}
+
+/**
+ * The battle boards of a room as the receiver last saw them, kept for game over, whose snapshot carries no shots and
+ * not the receiver's own fleet (ADR-0058).
+ */
+interface BattleRecord {
+  /** The room the boards belong to. */
+  readonly roomId: string;
+  /** The receiver's seat, to tell their shots from the opponent's. */
+  readonly seat: Seat;
+  /** The receiver's fleet. */
+  readonly myShips: readonly PlacedShip[];
+  /** The opponent's shots on the receiver's board, oldest first. */
+  readonly incomingShots: readonly ShotResult[];
+  /** The receiver's shots on the opponent's board, oldest first. */
+  readonly outgoingShots: readonly ShotResult[];
 }
 
 /** Where a countdown reads its remaining time in a snapshot. */
@@ -95,6 +114,12 @@ export class GameStateService {
   /** The interval refreshing `now`; set only while a countdown is running. */
   private ticker: ReturnType<typeof setInterval> | undefined;
 
+  /**
+   * The latest battle boards of the snapshot's room, plus the shots of every `SHOT_RESOLVED` since (ADR-0058); `null`
+   * before the room's battle and once the room moves to another phase than `GAME_OVER`.
+   */
+  private readonly battleRecord = signal<BattleRecord | null>(null);
+
   /** The latest snapshot; `null` before the first `STATE` and after `clear()`. */
   readonly snapshot = computed(() => this.synced()?.snapshot ?? null);
 
@@ -107,7 +132,11 @@ export class GameStateService {
     return snapshot?.battle ? snapshot.battle.currentTurn === snapshot.me.seat : false;
   });
 
-  /** The receiver's board: their ships, and in battle the opponent's shots on them; `null` outside placement and battle. */
+  /**
+   * The receiver's board: their ships, and in battle and at game over the opponent's shots on them. At game over it
+   * comes from the battle record (ADR-0058), so it is `null` when this client did not see the room's battle; `null`
+   * in the other phases too.
+   */
   readonly myFleet = computed<BoardView | null>(() => {
     const snapshot = this.snapshot();
     if (snapshot?.placement) {
@@ -116,12 +145,17 @@ export class GameStateService {
     if (snapshot?.battle) {
       return { ships: snapshot.battle.myShips, shots: snapshot.battle.incomingShots };
     }
+    const record = this.recordOf(snapshot);
+    if (snapshot?.gameOver && record !== null) {
+      return { ships: record.myShips, shots: record.incomingShots };
+    }
     return null;
   });
 
   /**
    * The opponent's board: in battle the receiver's shots, the ships they sank and their draft; at game over the
-   * revealed fleet, without shots (the game-over snapshot carries none). `null` in the other phases.
+   * revealed fleet under the receiver's shots from the battle record (ADR-0058), or without shots when this client did
+   * not see the room's battle. `null` in the other phases.
    */
   readonly trackingBoard = computed<TrackingBoardView | null>(() => {
     const snapshot = this.snapshot();
@@ -134,7 +168,8 @@ export class GameStateService {
       };
     }
     if (snapshot?.gameOver) {
-      return { ships: snapshot.gameOver.opponentShips, shots: [], draftTargets: [] };
+      const shots = this.recordOf(snapshot)?.outgoingShots ?? [];
+      return { ships: snapshot.gameOver.opponentShips, shots, draftTargets: [] };
     }
     return null;
   });
@@ -163,21 +198,36 @@ export class GameStateService {
   /** Time left before the disconnected opponent forfeits their seat, in ms; `null` while they are connected. */
   readonly opponentForfeitRemainingMs = this.countdown(OPPONENT_FORFEIT);
 
-  /** Applies every `STATE` from the socket; stops listening and ticking with the injector. */
+  /**
+   * Applies every `STATE` from the socket, and the shots of every `SHOT_RESOLVED` to the battle record; stops
+   * listening and ticking with the injector.
+   */
   constructor() {
-    const stopListening = inject(GameSocketService).on(SERVER_EVENTS.STATE, (snapshot) => {
-      this.apply(snapshot);
-    });
+    const socket = inject(GameSocketService);
+    const stopListening = [
+      socket.on(SERVER_EVENTS.STATE, (snapshot) => {
+        this.apply(snapshot);
+      }),
+      socket.on(SERVER_EVENTS.SHOT_RESOLVED, (payload) => {
+        this.record(payload);
+      }),
+    ];
     inject(DestroyRef).onDestroy(() => {
-      stopListening();
+      for (const stop of stopListening) {
+        stop();
+      }
       this.stopTicking();
     });
   }
 
-  /** Forgets the snapshot and stops the countdowns, e.g. after leaving the room; the next `STATE` starts over. */
+  /**
+   * Forgets the snapshot and the battle record and stops the countdowns, e.g. after leaving the room; the next `STATE`
+   * starts over.
+   */
   clear(): void {
     this.stopTicking();
     this.synced.set(null);
+    this.battleRecord.set(null);
   }
 
   /**
@@ -190,6 +240,12 @@ export class GameStateService {
     this.stopTicking();
     this.now.set(receivedAt);
     this.synced.set({ snapshot, receivedAt });
+    if (snapshot.battle) {
+      const { myShips, incomingShots, outgoingShots } = snapshot.battle;
+      this.battleRecord.set({ roomId: snapshot.roomId, seat: snapshot.me.seat, myShips, incomingShots, outgoingShots });
+    } else if (snapshot.gameOver === null || this.battleRecord()?.roomId !== snapshot.roomId) {
+      this.battleRecord.set(null);
+    }
 
     const longestMs = Math.max(
       0,
@@ -204,6 +260,32 @@ export class GameStateService {
         }
       }, COUNTDOWN_TICK_MS);
     }
+  }
+
+  /**
+   * Adds a fired turn to the battle record, so the board at game over includes the shot that ended the match: it
+   * arrives after the last battle `STATE` (ADR-0047). The next battle `STATE` replaces the record, shots included.
+   * @param payload The `SHOT_RESOLVED` just received.
+   */
+  private record({ shooter, results }: ShotResolvedPayload): void {
+    this.battleRecord.update((record) => {
+      if (record === null) {
+        return null;
+      }
+      return shooter === record.seat
+        ? { ...record, outgoingShots: [...record.outgoingShots, ...results] }
+        : { ...record, incomingShots: [...record.incomingShots, ...results] };
+    });
+  }
+
+  /**
+   * Reads the battle record of a snapshot's room.
+   * @param snapshot The latest snapshot.
+   * @returns The record, or `null` when there is none for that room.
+   */
+  private recordOf(snapshot: PlayerStateSnapshot | null): BattleRecord | null {
+    const record = this.battleRecord();
+    return record !== null && record.roomId === snapshot?.roomId ? record : null;
   }
 
   /** Clears the tick interval, if any. */
