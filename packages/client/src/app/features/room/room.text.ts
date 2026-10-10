@@ -1,4 +1,4 @@
-/** The words of the room page, apart from the waiting screen. */
+/** The words of the room page, apart from the views it hosts. */
 export interface RoomText {
   /** The heading of the join view. */
   readonly joinHeading: string;
@@ -14,16 +14,6 @@ export interface RoomText {
   readonly joining: string;
   /** While the room's first snapshot is on its way. */
   readonly entering: string;
-  /** The heading of the phases after placement, until the battle view (#20) takes over. */
-  readonly matchHeading: string;
-  /**
-   * Who the opponent is, after placement.
-   * @param nickname The opponent's nickname.
-   * @returns The sentence.
-   */
-  readonly opponentIs: (nickname: string) => string;
-  /** What comes next, until the battle view (#20) takes over. */
-  readonly matchNext: string;
   /** The heading of the not-found view. */
   readonly notFoundHeading: string;
   /** Why a room may not be found. */
@@ -46,9 +36,6 @@ export const ROOM_TEXT: RoomText = {
   join: 'Join room',
   joining: 'Joining room…',
   entering: 'Entering the room…',
-  matchHeading: 'Both fleets are ready',
-  opponentIs: (nickname) => `You are playing against ${nickname}.`,
-  matchNext: 'The battle board comes next.',
   notFoundHeading: 'Room not found',
   notFoundReason:
     'The link may be mistyped, or the room has closed: rooms do not survive a server restart and expire when left empty.',

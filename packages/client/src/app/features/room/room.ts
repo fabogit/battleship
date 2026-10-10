@@ -8,6 +8,7 @@ import { RoomEntryService, type RoomEntryError } from '../../core/room-entry';
 import { roomEntryErrorMessage } from '../../core/room-entry.text';
 import { SessionStore } from '../../core/session-store';
 import { NicknameForm } from '../../shared/nickname-form/nickname-form';
+import { Battle } from '../battle/battle';
 import { Lobby } from '../lobby/lobby';
 import { Placement } from '../placement/placement';
 import { ROOM_TEXT } from './room.text';
@@ -18,12 +19,12 @@ export const ROOM_VIEWS = {
   JOIN: 'join',
   /** Seated, waiting for the room's first `STATE`. */
   ENTERING: 'entering',
-  /** `WAITING_FOR_OPPONENT`: the waiting screen with the room link. */
+  /** `WAITING_FOR_OPPONENT`, and `RULES_NEGOTIATION` until its rules part lands (#27): the waiting screen. */
   LOBBY: 'lobby',
   /** `PLACEMENT`: the fleet placement view. */
   PLACEMENT: 'placement',
-  /** Any later phase: a placeholder until the battle (#20) and rules (#27) views take over. */
-  MATCH: 'match',
+  /** `IN_PROGRESS` and `GAME_OVER`: the battle view, which turns into the game-over screen (ADR-0058). */
+  BATTLE: 'battle',
   /** A malformed link, or `ROOM_NOT_FOUND`. */
   NOT_FOUND: 'not-found',
   /** `ROOM_FULL`. */
@@ -40,7 +41,7 @@ export type RoomView = (typeof ROOM_VIEWS)[keyof typeof ROOM_VIEWS];
  */
 @Component({
   selector: 'app-room',
-  imports: [Lobby, NicknameForm, Placement, RouterLink],
+  imports: [Battle, Lobby, NicknameForm, Placement, RouterLink],
   templateUrl: './room.html',
   styleUrl: './room.css',
 })
@@ -82,11 +83,13 @@ export class Room {
     if (snapshot !== null) {
       switch (snapshot.phase) {
         case ROOM_PHASES.WAITING_FOR_OPPONENT:
+        case ROOM_PHASES.RULES_NEGOTIATION:
           return ROOM_VIEWS.LOBBY;
         case ROOM_PHASES.PLACEMENT:
           return ROOM_VIEWS.PLACEMENT;
-        default:
-          return ROOM_VIEWS.MATCH;
+        case ROOM_PHASES.IN_PROGRESS:
+        case ROOM_PHASES.GAME_OVER:
+          return ROOM_VIEWS.BATTLE;
       }
     }
     if (this.sessions.get(roomId) !== null) {
