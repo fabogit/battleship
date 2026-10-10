@@ -32,6 +32,7 @@ export type GameServer = Server<ClientToServerEvents, ServerToClientEvents, Defa
 export type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, DefaultEventsMap, SocketData>;
 
 declare module 'fastify' {
+  /** Fastify's own instance type, augmented so that every plugin sees `app.io` typed. */
   interface FastifyInstance {
     /** Socket.io server sharing this instance's HTTP server (ADR-0023), decorated by the `socket-io` plugin. */
     readonly io: GameServer;

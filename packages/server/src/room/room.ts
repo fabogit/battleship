@@ -56,15 +56,20 @@ interface RoomBase {
 
 /** A room with only its creator seated. */
 export interface WaitingRoom extends RoomBase {
-  /** Discriminant. */
+  /** Discriminant: one seat taken. */
   readonly phase: typeof ROOM_PHASES.WAITING_FOR_OPPONENT;
-  /** `P2` is empty until `JOIN_ROOM`. */
-  readonly players: { readonly P1: RoomPlayer; readonly P2: null };
+  /** The seats, in the shape of the other phases' `players`. */
+  readonly players: {
+    /** The creator. */
+    readonly P1: RoomPlayer;
+    /** Empty until `JOIN_ROOM`. */
+    readonly P2: null;
+  };
 }
 
 /** A room where both players place their fleets. */
 export interface PlacementRoom extends RoomBase {
-  /** Discriminant. */
+  /** Discriminant: fleets are being placed. */
   readonly phase: typeof ROOM_PHASES.PLACEMENT;
   /** Both seats are taken from here on. */
   readonly players: Readonly<Record<Seat, RoomPlayer>>;
@@ -79,7 +84,7 @@ export interface PlacementRoom extends RoomBase {
 
 /** A room whose match is being played. */
 export interface BattleRoom extends RoomBase {
-  /** Discriminant. */
+  /** Discriminant: the match is on. */
   readonly phase: typeof ROOM_PHASES.IN_PROGRESS;
   /** Both seats are taken. */
   readonly players: Readonly<Record<Seat, RoomPlayer>>;
@@ -91,7 +96,7 @@ export interface BattleRoom extends RoomBase {
 
 /** A room whose match has ended. */
 export interface GameOverRoom extends RoomBase {
-  /** Discriminant. */
+  /** Discriminant: the match has ended. */
   readonly phase: typeof ROOM_PHASES.GAME_OVER;
   /** Both seats are taken. */
   readonly players: Readonly<Record<Seat, RoomPlayer>>;
@@ -168,9 +173,9 @@ export interface ShotResolvedEffect {
 /** What the caller must do after an accepted command, besides sending `STATE`. */
 export type RoomEffect = ShotResolvedEffect;
 
-/** An accepted command. */
+/** An accepted command: the room after it, and what the caller does next. */
 export interface AcceptedTransition {
-  /** Discriminant. */
+  /** Discriminant: the ack reports success. */
   readonly ok: true;
   /** The room after the command; the same object when the command changed nothing (a repeated confirm or unlock). */
   readonly state: RoomState;
@@ -180,7 +185,7 @@ export interface AcceptedTransition {
 
 /** A refused command: the room is left as it was, and `error` goes back in the ack. */
 export interface RejectedTransition {
-  /** Discriminant. */
+  /** Discriminant: the ack reports `error`. */
   readonly ok: false;
   /** What the ack reports (docs/protocol.md#error-codes). */
   readonly error: ErrorCode;
@@ -242,7 +247,7 @@ export function applyCommand(state: RoomState, command: RoomCommand, now: number
 /**
  * Seats the joiner as `P2` and starts placement. A room with both seats taken is `ROOM_FULL` in every phase, so
  * `JOIN_ROOM` never answers `WRONG_PHASE`.
- * @param state The room.
+ * @param state The room the payload's `roomId` named, in any phase.
  * @param command The join, with the joiner's nickname and secret.
  * @param now Current time in epoch ms; the placement deadline counts from it.
  * @returns The room in `PLACEMENT`, or `ROOM_FULL`.
@@ -392,29 +397,30 @@ function withFleet(state: PlacementRoom, seat: Seat, fleet: PlacementFleet): Pla
 }
 
 /**
- * Builds an accepted result.
+ * Builds an accepted result, so each transition ends in one readable `return`.
  * @param state The room after the command.
  * @param effects What the caller must do besides sending `STATE`; none by default.
- * @returns The result.
+ * @returns `{ ok: true, state, effects }`.
  */
 function accept(state: RoomState, effects: readonly RoomEffect[] = []): AcceptedTransition {
   return { ok: true, state, effects };
 }
 
 /**
- * Builds a refused result.
+ * Builds a refused result, so each transition ends in one readable `return`.
  * @param error The code for the ack.
  * @param violation The rule broken, for `INVALID_PLACEMENT` and `INVALID_TARGETS`.
- * @returns The result.
+ * @returns `{ ok: false, error }`, plus `violation` only when one is given: the key is left out rather than set to
+ * `undefined`.
  */
 function reject(error: ErrorCode, violation?: PlacementViolation | TargetViolation): RejectedTransition {
   return violation === undefined ? { ok: false, error } : { ok: false, error, violation };
 }
 
 /**
- * The seat across the table.
- * @param seat A seat.
- * @returns The other one.
+ * Names the seat across the table, whose board and fleet the turn logic and the snapshot projection read.
+ * @param seat Either seat.
+ * @returns `P2` for `P1` and `P1` for `P2`.
  */
 export function otherSeat(seat: Seat): Seat {
   return seat === SEATS.P1 ? SEATS.P2 : SEATS.P1;

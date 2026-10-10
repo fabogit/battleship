@@ -33,7 +33,7 @@ export interface RoomManagerOptions {
 
 /** An accepted `CREATE_ROOM`. */
 export interface CreatedRoom {
-  /** Discriminant. */
+  /** Discriminant: the ack reports success. */
   readonly ok: true;
   /** The new room's id, for the ack and the share link. */
   readonly roomId: string;
@@ -45,7 +45,7 @@ export interface CreatedRoom {
 
 /** An accepted `JOIN_ROOM`. */
 export interface JoinedRoom {
-  /** Discriminant. */
+  /** Discriminant: the ack reports success. */
   readonly ok: true;
   /** The joiner's secret, for the ack only. */
   readonly playerSecret: string;
@@ -87,6 +87,7 @@ export class RoomManager {
   readonly #createSecret: () => string;
 
   /**
+   * Starts with no rooms. Production draws ids and secrets from crypto sources; tests inject seeded ones (ADR-0030).
    * @param options Randomness sources; production leaves them out.
    */
   constructor(options: RoomManagerOptions = {}) {

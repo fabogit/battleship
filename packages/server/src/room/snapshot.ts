@@ -23,7 +23,7 @@ import {
 /**
  * Builds what one seated player may see of a room. Fog-of-war: the opponent's fleet appears only as the receiver's own
  * shots (with `sunkShip` on each sinking shot) until `GAME_OVER`, which reveals it. Secrets are never included.
- * @param state The room.
+ * @param state The room, in any phase.
  * @param seat The receiver; must be seated.
  * @param now Current time in epoch ms; stored deadlines become remaining milliseconds.
  * @returns The receiver's snapshot; it shares the room's arrays, which nothing mutates.
