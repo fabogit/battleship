@@ -21,12 +21,8 @@
   @case (views.PLACEMENT) {
     <app-placement />
   }
-  @case (views.MATCH) {
-    <h1>{{ text.matchHeading }}</h1>
-    @if (snapshot()?.opponent; as opponent) {
-      <p>{{ text.opponentIs(opponent.nickname) }}</p>
-    }
-    <p>{{ text.matchNext }}</p>
+  @case (views.BATTLE) {
+    <app-battle />
   }
   @case (views.NOT_FOUND) {
     <h1>{{ text.notFoundHeading }}</h1>

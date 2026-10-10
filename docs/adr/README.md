@@ -59,5 +59,8 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0053](0053-placement-taps.md)                | Placement by taps                      | Accepted, 2026-10-08   |
 | [ADR-0054](0054-placement-draft-sync.md)          | Placement draft on the client          | Accepted, 2026-10-08   |
 | [ADR-0055](0055-isolated-client-tests.md)         | Isolated client test files             | Accepted, 2026-10-08   |
+| [ADR-0056](0056-target-draft.md)                  | Targets by taps                        | Accepted, 2026-10-10   |
+| [ADR-0057](0057-battle-layout.md)                 | Battle layout                          | Accepted, 2026-10-10   |
+| [ADR-0058](0058-game-over-boards.md)              | Game-over boards                       | Accepted, 2026-10-10   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

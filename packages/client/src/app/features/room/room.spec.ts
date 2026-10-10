@@ -12,12 +12,19 @@ import {
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FakeGameSocket, provideFakeGameSocket, waitingSnapshot } from '../../../testing/fake-game-socket';
+import {
+  FakeGameSocket,
+  battleSnapshot,
+  gameOverSnapshot,
+  provideFakeGameSocket,
+  waitingSnapshot,
+} from '../../../testing/fake-game-socket';
 import { routes } from '../../app.routes';
 import { GameStateService } from '../../core/game-state';
 import { TRANSPORT_ERRORS } from '../../core/game-socket';
 import { ROOM_ENTRY_TEXT } from '../../core/room-entry.text';
 import { SessionStore } from '../../core/session-store';
+import { BATTLE_TEXT } from '../battle/battle.text';
 import { LOBBY_TEXT } from '../lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../placement/placement.text';
 import { ROOM_VIEWS } from './room';
@@ -104,7 +111,15 @@ async function receive(snapshot: PlayerStateSnapshot): Promise<void> {
 // Written out on purpose (ADR-0043): renaming a key is a refactor, changing a value is not.
 describe('ROOM_VIEWS', () => {
   it('pins the values', () => {
-    expect(Object.values(ROOM_VIEWS)).toEqual(['join', 'entering', 'lobby', 'placement', 'match', 'not-found', 'full']);
+    expect(Object.values(ROOM_VIEWS)).toEqual([
+      'join',
+      'entering',
+      'lobby',
+      'placement',
+      'battle',
+      'not-found',
+      'full',
+    ]);
   });
 });
 
@@ -219,29 +234,16 @@ describe('Room', () => {
       expect(page().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Grace'));
     });
 
-    it('shows the match placeholder once both fleets are confirmed, until the battle view (#20)', async () => {
-      const joined = joinedSnapshot();
-      await receive({
-        ...joined,
-        me: joined.opponent ?? joined.me,
-        opponent: joined.me,
-        phase: ROOM_PHASES.IN_PROGRESS,
-        placement: null,
-        battle: {
-          myShips: [],
-          incomingShots: [],
-          outgoingShots: [],
-          currentTurn: SEATS.P1,
-          shotsAllowed: 1,
-          myDraftTargets: [],
-          turnRemainingMs: null,
-          isPaused: false,
-          afkCount: { me: 0, opponent: 0 },
-        },
-      });
+    it('shows the battle view once both fleets are confirmed, and the game-over screen after it', async () => {
+      await receive(battleSnapshot(ROOM_ID));
 
-      expect(heading()).toBe(ROOM_TEXT.matchHeading);
-      expect(page().textContent).toContain(ROOM_TEXT.opponentIs('Grace'));
+      expect(heading()).toBe(BATTLE_TEXT.myTurn);
+      expect(page().querySelector('[role="grid"][aria-label="Enemy waters"]')).not.toBeNull();
+
+      await receive(gameOverSnapshot(ROOM_ID));
+
+      expect(heading()).toBe(BATTLE_TEXT.wonHeading);
+      expect(page().textContent).toContain(BATTLE_TEXT.reasons.FLEET_DESTROYED('Grace', true));
     });
   });
 

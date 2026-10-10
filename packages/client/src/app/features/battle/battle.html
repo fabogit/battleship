@@ -1,0 +1,83 @@
+<h1>{{ heading() }}</h1>
+
+<div class="status">
+  <p aria-live="polite">{{ subheading() }}</p>
+  @if (timeLeft(); as time) {
+    <p role="timer">{{ text.timeLeft(time) }}</p>
+  }
+  @if (isOpponentAway()) {
+    <p class="pending">{{ text.opponentAway(opponentNickname()) }}</p>
+  }
+  @if (gameOver()) {
+    <p>{{ text.revealed(opponentNickname()) }}</p>
+    <p>
+      <a routerLink="/">{{ text.newMatch }}</a>
+    </p>
+  }
+</div>
+
+@if (hasBothBoards()) {
+  <div class="toggle" role="group" [attr.aria-label]="text.boardToggle">
+    <button
+      type="button"
+      aria-controls="my-fleet"
+      [attr.aria-pressed]="shownBoard() === boards.MY_FLEET"
+      (click)="show(boards.MY_FLEET)"
+    >
+      {{ text.myFleet }}
+    </button>
+    <button
+      type="button"
+      aria-controls="enemy-waters"
+      [attr.aria-pressed]="shownBoard() === boards.ENEMY_WATERS"
+      (click)="show(boards.ENEMY_WATERS)"
+    >
+      {{ text.enemyWaters }}
+    </button>
+  </div>
+}
+
+<div class="boards" [attr.data-shown]="hasBothBoards() ? shownBoard() : boards.ENEMY_WATERS">
+  @if (gameState.myFleet(); as myFleet) {
+    <section id="my-fleet" class="board" [attr.data-board]="boards.MY_FLEET" aria-labelledby="my-fleet-heading">
+      <h2 id="my-fleet-heading">{{ text.myFleet }}</h2>
+      <app-board-grid [label]="text.myFleet" [ships]="myFleet.ships" [shots]="myFleet.shots" [isInteractive]="false" />
+    </section>
+  }
+  @if (gameState.trackingBoard(); as tracking) {
+    <section
+      id="enemy-waters"
+      class="board"
+      [attr.data-board]="boards.ENEMY_WATERS"
+      aria-labelledby="enemy-waters-heading"
+    >
+      <h2 id="enemy-waters-heading">{{ text.enemyWaters }}</h2>
+      <app-board-grid
+        [label]="text.enemyWaters"
+        [ships]="tracking.ships"
+        [shots]="tracking.shots"
+        [draftTargets]="store.draftTargets()"
+        [isInteractive]="store.canTarget()"
+        (cellActivate)="store.activateCell($event)"
+      />
+      @if (!gameOver()) {
+        <div class="fire">
+          <button
+            type="button"
+            class="primary"
+            aria-describedby="fire-hint"
+            [attr.aria-disabled]="store.canFire() ? null : 'true'"
+            (click)="store.fire()"
+          >
+            {{ store.isFiring() ? text.firing : text.fire }}
+          </button>
+          <p id="fire-hint" class="hint">{{ fireHint() }}</p>
+        </div>
+      }
+    </section>
+  }
+</div>
+
+<p class="feedback" aria-live="polite">{{ feedbackMessage() }}</p>
+
+<p class="error" role="alert">{{ errorMessage() }}</p>

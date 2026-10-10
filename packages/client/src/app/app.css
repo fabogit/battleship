@@ -5,6 +5,11 @@
   padding: 1rem;
 }
 
+/* The battle view puts both boards side by side on wide screens, at up to 3rem (48px) per cell (ADR-0057). */
+:host:has(app-battle) {
+  max-width: 68rem;
+}
+
 header {
   display: grid;
   gap: 0.25rem;

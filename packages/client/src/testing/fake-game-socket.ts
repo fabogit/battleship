@@ -1,9 +1,12 @@
 import { signal, type Provider } from '@angular/core';
 import {
   DEFAULT_RULES,
+  GAME_OVER_REASONS,
   PLACEMENT_TIME_LIMIT_MS,
   ROOM_PHASES,
   SEATS,
+  type BattleSnapshot,
+  type GameOverSnapshot,
   type PlacementSnapshot,
   type PlayerStateSnapshot,
   type ServerToClientEvents,
@@ -103,6 +106,53 @@ export function placementSnapshot(roomId: string, placement: Partial<PlacementSn
       remainingMs: PLACEMENT_TIME_LIMIT_MS,
       startCountdownMs: null,
       ...placement,
+    },
+  };
+}
+
+/**
+ * A snapshot of a room in `IN_PROGRESS`, seen by its creator Ada playing against Grace: no shots yet, Ada's turn.
+ * @param roomId The room's id.
+ * @param battle Fields of the `IN_PROGRESS` part to override.
+ * @returns The snapshot.
+ */
+export function battleSnapshot(roomId: string, battle: Partial<BattleSnapshot> = {}): PlayerStateSnapshot {
+  return {
+    ...placementSnapshot(roomId),
+    phase: ROOM_PHASES.IN_PROGRESS,
+    placement: null,
+    battle: {
+      myShips: [],
+      incomingShots: [],
+      outgoingShots: [],
+      currentTurn: SEATS.P1,
+      shotsAllowed: 1,
+      myDraftTargets: [],
+      turnRemainingMs: null,
+      isPaused: false,
+      afkCount: { me: 0, opponent: 0 },
+      ...battle,
+    },
+  };
+}
+
+/**
+ * A snapshot of a room in `GAME_OVER`, seen by its creator Ada: by default she sank Grace's fleet, which is empty.
+ * @param roomId The room's id.
+ * @param gameOver Fields of the `GAME_OVER` part to override.
+ * @returns The snapshot.
+ */
+export function gameOverSnapshot(roomId: string, gameOver: Partial<GameOverSnapshot> = {}): PlayerStateSnapshot {
+  return {
+    ...placementSnapshot(roomId),
+    phase: ROOM_PHASES.GAME_OVER,
+    placement: null,
+    gameOver: {
+      winner: SEATS.P1,
+      reason: GAME_OVER_REASONS.FLEET_DESTROYED,
+      opponentShips: [],
+      rematch: { me: null, opponent: null },
+      ...gameOver,
     },
   };
 }
