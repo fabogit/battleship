@@ -54,6 +54,10 @@ interface RandomValuesSource {
  * @param seed An integer from 0 to 2^32 − 1.
  * @returns A generator whose sequence depends only on `seed`.
  * @throws `RangeError` when `seed` is not an integer in that range.
+ * @example
+ * const a = createSeededRng(7);
+ * const b = createSeededRng(7);
+ * a.nextInt(100) === b.nextInt(100); // true, on every run and platform
  */
 export function createSeededRng(seed: number): Rng {
   if (!Number.isInteger(seed) || seed < 0 || seed >= UINT32_RANGE) {

@@ -11,10 +11,15 @@ export type Coordinate = {
 
 /** The five ships of a fleet; their sizes are in `SHIP_LENGTH`. */
 export const SHIP_TYPES = {
+  /** 5 cells. */
   CARRIER: 'CARRIER',
+  /** 4 cells. */
   BATTLESHIP: 'BATTLESHIP',
+  /** 3 cells. */
   CRUISER: 'CRUISER',
+  /** 3 cells, like the cruiser. */
   SUBMARINE: 'SUBMARINE',
+  /** 2 cells. */
   DESTROYER: 'DESTROYER',
 } as const;
 
@@ -133,10 +138,15 @@ export type Seat = (typeof SEATS)[keyof typeof SEATS];
 
 /** The stages a room goes through; transitions are described in docs/server.md#room-state-machine. */
 export const ROOM_PHASES = {
+  /** One seat taken: the creator sharing the room link, or the player left behind when the other one leaves. */
   WAITING_FOR_OPPONENT: 'WAITING_FOR_OPPONENT',
+  /** Both seated, agreeing on the rules (ADR-0003); skipped with `DEFAULT_RULES` until #26. */
   RULES_NEGOTIATION: 'RULES_NEGOTIATION',
+  /** Both placing their fleets within `PLACEMENT_TIME_LIMIT_MS`, then the start countdown. */
   PLACEMENT: 'PLACEMENT',
+  /** The battle: turns, shots, AFK and disconnection forfeits. */
   IN_PROGRESS: 'IN_PROGRESS',
+  /** The result and the rematch choices, until `GAME_OVER_TTL_MS` passes without a rematch. */
   GAME_OVER: 'GAME_OVER',
 } as const;
 

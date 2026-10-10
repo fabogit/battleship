@@ -109,6 +109,10 @@ function isBoardIndex(value: unknown): value is number {
  * (docs/client.md#routes--lobby-flow).
  * @param value The untrusted value.
  * @returns Whether the value is `ROOM_ID_LENGTH` characters of `ROOM_ID_ALPHABET`.
+ * @example
+ * isRoomId('k7m2x9qa'); // true
+ * isRoomId('K7M2X9QA'); // false: uppercase letters are not in the alphabet
+ * isRoomId('k7m2x9q0'); // false: `0` is left out as easily confused with `o`
  */
 export function isRoomId(value: unknown): value is string {
   return typeof value === 'string' && ROOM_ID_PATTERN.test(value);
@@ -119,6 +123,9 @@ export function isRoomId(value: unknown): value is string {
  * client validates the nickname field with it, so the form accepts exactly what the guard does.
  * @param value The untrusted value.
  * @returns The trimmed nickname, or `null` when the value is not a string or is empty or too long once trimmed.
+ * @example
+ * parseNickname('  Ada  '); // 'Ada'
+ * parseNickname('   '); // null: empty once trimmed
  */
 export function parseNickname(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -208,7 +215,7 @@ function parseEmptyPayload(value: unknown): EmptyPayload | null {
 /**
  * Builds the guard for `UPDATE_TARGETS` (a draft may be empty) or `FIRE` (a turn fires at least one target).
  * @param minTargets Fewest targets the command accepts.
- * @returns The guard.
+ * @returns A guard that refuses fewer than `minTargets` or more than `MAX_TARGETS` targets, or any off-board cell.
  */
 function targetsParser(minTargets: number): PayloadParser<TargetsPayload> {
   return (value) => {
@@ -222,6 +229,11 @@ function targetsParser(minTargets: number): PayloadParser<TargetsPayload> {
  * One guard per command, which the server runs before any room logic; `null` means `INVALID_PAYLOAD`. Guards check
  * shape only: types, integer ranges, closed enums, string lengths and array sizes that no room state could make valid
  * (ADR-0031). The mapped type makes a command without a guard a compile error.
+ * @example
+ * PAYLOAD_PARSERS.FIRE({ targets: [{ x: 3, y: 5 }] }); // { targets: [{ x: 3, y: 5 }] }, a new object
+ * PAYLOAD_PARSERS.FIRE({ targets: [{ x: 3, y: 5 }], extra: true }); // null: extra property (ADR-0031)
+ * PAYLOAD_PARSERS.FIRE({ targets: [{ x: 3, y: 10 }] }); // null: off the board
+ * PAYLOAD_PARSERS.FIRE({ targets: [{ x: 3, y: 5 }, { x: 3, y: 5 }] }); // the same cell twice passes: INVALID_TARGETS
  */
 export const PAYLOAD_PARSERS: { readonly [E in CommandEvent]: PayloadParser<CommandPayload<E>> } = {
   CREATE_ROOM: (value) => {
