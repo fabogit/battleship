@@ -28,7 +28,9 @@ export type RoomEntryResult =
  */
 @Service()
 export class RoomEntryService {
+  /** Sends `CREATE_ROOM` and `JOIN_ROOM`, and waits for their acks. */
   private readonly socket = inject(GameSocketService);
+  /** Where an accepted command's credentials go, for the reconnection that restores the seat. */
   private readonly sessions = inject(SessionStore);
 
   /**

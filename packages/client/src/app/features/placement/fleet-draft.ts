@@ -147,9 +147,9 @@ export function isSameDraft(a: FleetDraft, b: FleetDraft): boolean {
 }
 
 /**
- * The orientation a rotation turns a ship to.
+ * The orientation a rotation turns a ship to: "Rotate" toggles between the two.
  * @param orientation The current orientation.
- * @returns The other one.
+ * @returns `VERTICAL` for `HORIZONTAL`, `HORIZONTAL` for `VERTICAL`.
  */
 export function otherOrientation(orientation: Orientation): Orientation {
   return orientation === ORIENTATIONS.HORIZONTAL ? ORIENTATIONS.VERTICAL : ORIENTATIONS.HORIZONTAL;

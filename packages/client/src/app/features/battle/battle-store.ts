@@ -57,7 +57,9 @@ export type BattleCommandError = ErrorCode | TransportError;
  */
 @Service({ autoProvided: false })
 export class BattleStore {
+  /** Sends `UPDATE_TARGETS` and `FIRE`, and delivers `STATE` and `SHOT_RESOLVED`. */
   private readonly socket = inject(GameSocketService);
+  /** The latest snapshot: the turn, the allowance and the server's draft. */
   private readonly gameState = inject(GameStateService);
 
   /** The `IN_PROGRESS` part of the latest snapshot; `null` outside battle. */
@@ -68,10 +70,12 @@ export class BattleStore {
   /** How many targets the turn fires; 1 until salvo mode lands (#32), 0 outside battle. */
   readonly shotsAllowed = computed(() => this.battle()?.shotsAllowed ?? 0);
 
+  /** Set by every tap at once, and by `STATE` while no update is in flight (ADR-0056); read through `draftTargets`. */
   private readonly draftSignal = signal<TargetDraft>(this.serverDraft(), { equal: isSameTargets });
   /** The turn's targets as the player sees them; ahead of the snapshot while updates wait for their ack. */
   readonly draftTargets = computed<TargetDraft>(() => (this.isMyTurn() ? this.draftSignal() : []));
 
+  /** True from sending `FIRE` until its ack; read through `isFiring`. */
   private readonly isFiringSignal = signal(false);
   /** Whether a `FIRE` waits for its ack. */
   readonly isFiring = this.isFiringSignal.asReadonly();
@@ -80,10 +84,12 @@ export class BattleStore {
   /** Whether "Fire" would send the turn: the draft holds exactly the allowed number of targets. */
   readonly canFire = computed(() => this.canTarget() && this.draftTargets().length === this.shotsAllowed());
 
+  /** Set by every tap and every `SHOT_RESOLVED`, for the live region; read through `feedback`. */
   private readonly feedbackSignal = signal<BattleFeedback | null>(null);
   /** The last tap's outcome or the last fired turn; `null` before the first one. */
   readonly feedback = this.feedbackSignal.asReadonly();
 
+  /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */
   private readonly errorSignal = signal<BattleCommandError | null>(null);
   /** Why the last command failed; cleared by the next one that succeeds. */
   readonly error = this.errorSignal.asReadonly();

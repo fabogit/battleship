@@ -79,7 +79,7 @@ const TURN: CountdownSource = {
   isFrozen: (snapshot) => snapshot.battle?.isPaused === true,
 };
 
-/** The placement deadline. */
+/** The placement deadline; never frozen, unlike the turn. */
 const PLACEMENT: CountdownSource = {
   remainingMs: (snapshot) => snapshot.placement?.remainingMs ?? null,
   isFrozen: () => false,

@@ -10,9 +10,9 @@ import { PLACEMENT_TEXT, placementErrorMessage, placementFeedbackMessage } from 
 
 /** One ship of the dock, as the template renders it. */
 interface DockEntry {
-  /** Which ship. */
+  /** The ship a tap on the entry selects. */
   readonly type: ShipType;
-  /** Its name. */
+  /** Its name in `PLACEMENT_TEXT.shipNames`, shown on the entry. */
   readonly name: string;
   /** One entry per cell, to draw its size. */
   readonly cells: readonly number[];
@@ -40,6 +40,7 @@ interface DockEntry {
 export class Placement {
   /** The draft, the selection and the commands. */
   protected readonly store = inject(PlacementStore);
+  /** The snapshot's opponent and countdowns, which are not part of the draft. */
   private readonly gameState = inject(GameStateService);
 
   /** The words of the view. */

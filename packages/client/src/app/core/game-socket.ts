@@ -68,6 +68,7 @@ export type CommandResult<E extends CommandEvent> = AckOf<E> | TransportFailure;
  */
 @Service()
 export class GameSocketService {
+  /** Written by `connect()` and the socket's lifecycle listeners only; read through `status`. */
   private readonly statusSignal = signal<ConnectionStatus>(CONNECTION_STATUSES.DISCONNECTED);
   /** `connecting` from `connect()` until the handshake succeeds, and while Socket.io retries after a drop. */
   readonly status = this.statusSignal.asReadonly();

@@ -27,7 +27,7 @@ export const ROOM_VIEWS = {
   BATTLE: 'battle',
   /** A malformed link, or `ROOM_NOT_FOUND`. */
   NOT_FOUND: 'not-found',
-  /** `ROOM_FULL`. */
+  /** `ROOM_FULL`: both seats were taken when the player tried to join. */
   FULL: 'full',
 } as const;
 
@@ -49,9 +49,13 @@ export class Room {
   /** The id from the address, bound by the router; untrusted until `isRoomId` accepts it. */
   readonly roomId = input.required<string>();
 
+  /** Read for its status only: the join form waits for the connection. */
   private readonly socket = inject(GameSocketService);
+  /** The latest snapshot, which decides the view once it arrives. */
   private readonly gameState = inject(GameStateService);
+  /** A stored seat for this room means the player is already in: no join form. */
   private readonly sessions = inject(SessionStore);
+  /** Sends `JOIN_ROOM` for the join form. */
   private readonly roomEntry = inject(RoomEntryService);
 
   /** The words of the page. */

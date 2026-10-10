@@ -15,7 +15,9 @@ import { SERVER_STATUS_TEXT } from './server-status.text';
   styleUrl: './server-status.css',
 })
 export class ServerStatus {
+  /** The wake-up poll; the template shows its `status`. */
   protected readonly wake = inject(ServerWakeService);
+  /** Opened once the server is awake; the template shows its `status`. */
   protected readonly socket = inject(GameSocketService);
 
   /** The wake-up states, for the template's `@switch`. */
