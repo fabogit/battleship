@@ -7,7 +7,7 @@ battleship/
 ├── package.json                   # Root scripts, "packageManager": "pnpm@<pinned>", "engines" (Node range)
 ├── pnpm-workspace.yaml            # packages, allowBuilds (D26), catalogs (default + angular), engineStrict
 ├── tsconfig.base.json             # Strict compiler options
-├── eslint.config.js               # Flat config for every package (typescript-eslint strictTypeChecked)
+├── eslint.config.js               # Flat config for every package: typescript-eslint strictTypeChecked, JSDoc (D59)
 ├── .prettierrc                    # Prettier options; Angular parser for templates, JSON keys sorted (D44)
 ├── .prettierignore                # Files written by tools: lockfiles, postman/, .postman/
 ├── .husky/                        # pre-commit hook: lint-staged, prettier --write on the staged files (D44)
@@ -90,7 +90,7 @@ A new consumer of core (or a new workspace package consumed the same way) needs 
 
 ## Code conventions
 
-Decisions: [ADR-0043](adr/0043-named-constants.md), [ADR-0044](adr/0044-code-formatter.md).
+Decisions: [ADR-0043](adr/0043-named-constants.md), [ADR-0044](adr/0044-code-formatter.md), [ADR-0059](adr/0059-jsdoc-enforced-by-lint.md).
 
 - **Formatting:** Prettier owns layout in every TypeScript, template, CSS, JSON, YAML and Markdown file (`.prettierrc`: `printWidth: 120`, `singleQuote: true`, `trailingComma: "all"`); ESLint checks correctness only. The pre-commit hook formats staged files and CI fails on any file `pnpm format:check` flags. JSON keys are sorted at every level, with `$schema`, `extends`, `name` and `label` first; arrays and `package.json` files keep their order. A comment in a JSON file sits above the key it describes, since it moves with it. Markdown keeps its prose lines and its code blocks as written; files written by tools are listed in `.prettierignore`.
 
@@ -115,6 +115,14 @@ Decisions: [ADR-0043](adr/0043-named-constants.md), [ADR-0044](adr/0044-code-for
 - **Pinned values:** one test per object writes its values out. Renaming a key is a refactor; changing a value changes the protocol (and `PROTOCOL_VERSION`), the logs or the styles.
 - **Left as literals:** the `ok` discriminant of acks and results; object keys and property names (`boards.P1`); third-party values (Pino levels, Socket.io and DOM event names, OS signals, keyboard keys); log messages and UI text; comments and the pinning tests.
 - **New values:** a new set, or a new value of an existing one, follows the same pattern. A new protocol value also goes into its pinning test and into [Protocol](protocol.md).
+
+- **Documentation comments:** every declaration in `src/` and `scripts/` of the three packages has a JSDoc block, exported or not: functions, classes, constructors, methods, accessors, class fields (injected services and private signals too), module-level constants, interfaces and type aliases with their members, and each value of a closed string set. `pnpm lint` fails on a missing block (`eslint-plugin-jsdoc`); spec, test and config files are left out.
+
+  - The block says what the signature does not: purpose, units (ms, cells), ranges and invariants, side effects (timers, emits, signal writes), when it throws or rejects, and the doc section (`docs/<file>.md#<anchor>`) or ADR behind it.
+  - `@param`, `@returns` and `@throws` have descriptions and no types: TypeScript has them. A destructured parameter is described as a whole; a getter needs no `@returns`.
+  - A description that only repeats the name (`@param roomId The room's id.`) fails `jsdoc/informative-docs`; one that only restates the type is caught in review. A self-explanatory declaration says why it exists or which invariant it keeps.
+  - `@example` on the public `core` API where it helps: placement, engine, validation guards.
+  - `CLIENT_EVENTS` and `SERVER_EVENTS` are documented as a whole: each event is documented in its event map.
 
 ## Local tooling
 
