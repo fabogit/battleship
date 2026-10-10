@@ -8,6 +8,7 @@ import { provideRouter, withComponentInputBinding } from '@angular/router';
 
 import { routes } from './app.routes';
 
+/** The root providers, passed to `bootstrapApplication` in `main.ts`; services are provided where they are declared. */
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),

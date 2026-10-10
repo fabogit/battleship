@@ -12,9 +12,9 @@ import { BATTLE_TEXT, battleErrorMessage, battleFeedbackMessage } from './battle
 
 /** The boards of the battle view; on a narrow screen one of them is shown at a time (ADR-0057). */
 export const BATTLE_BOARDS = {
-  /** The player's own board. */
+  /** The player's own board: their fleet under the opponent's shots. */
   MY_FLEET: 'my-fleet',
-  /** The tracking board. */
+  /** The tracking board: the player's shots at the opponent's fleet, and the turn's targets. */
   ENEMY_WATERS: 'enemy-waters',
 } as const;
 

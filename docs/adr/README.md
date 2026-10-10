@@ -62,5 +62,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0056](0056-target-draft.md)                  | Targets by taps                        | Accepted, 2026-10-10   |
 | [ADR-0057](0057-battle-layout.md)                 | Battle layout                          | Accepted, 2026-10-10   |
 | [ADR-0058](0058-game-over-boards.md)              | Game-over boards                       | Accepted, 2026-10-10   |
+| [ADR-0059](0059-jsdoc-enforced-by-lint.md)        | JSDoc on every declaration             | Accepted, 2026-10-10   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

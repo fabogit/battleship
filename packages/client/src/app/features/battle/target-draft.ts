@@ -24,7 +24,7 @@ export type TargetChange =
   | {
       /** Discriminant: the tap changed nothing. */
       readonly ok: false;
-      /** Why. */
+      /** Why: a cell shot in an earlier turn, or a full salvo draft. */
       readonly reason: TargetRefusal;
     };
 

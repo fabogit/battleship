@@ -18,6 +18,7 @@ export type Ack<T> = (response: T) => void;
 
 /** Body of `GET /health` (docs/deployment.md#backend-render); the client polls it to wake the server (docs/client.md#cold-start-handling). */
 export interface HealthResponse {
+  /** Always `ok`: an answer at all means the process is up; there is no degraded state to report. */
   readonly status: 'ok';
   /** Seconds since the server process started. */
   readonly uptime: number;
@@ -25,8 +26,11 @@ export interface HealthResponse {
 
 /** Reply to `ECHO`, the production smoke check (ADR-0048). */
 export interface EchoResponse {
+  /** Always true: `ECHO` has no guard, so it cannot be refused. */
   readonly ok: true;
+  /** The payload as received, whatever it was; the smoke check compares it with what it sent. */
   readonly payload: unknown;
+  /** The server's `PROTOCOL_VERSION`, so the smoke check also shows which contract the deploy speaks. */
   readonly protocolVersion: number;
 }
 
@@ -36,20 +40,39 @@ export interface EchoResponse {
  * message.
  */
 export const ERROR_CODES = {
+  /** Handshake `protocolVersion` differs from `PROTOCOL_VERSION`, or is missing (ADR-0017). */
   PROTOCOL_MISMATCH: 'PROTOCOL_MISMATCH',
+  /** A payload failed its guard in `validation.ts` (docs/protocol.md#payload-validation). */
   INVALID_PAYLOAD: 'INVALID_PAYLOAD',
+  /** More than `RATE_LIMIT_EVENTS_PER_SECOND` events from one socket (#24). */
   RATE_LIMITED: 'RATE_LIMITED',
+  /** `CREATE_ROOM` while `MAX_ROOMS` rooms are open. */
   SERVER_FULL: 'SERVER_FULL',
+  /** `JOIN_ROOM` for a room that does not exist, or was lost in a server restart. */
   ROOM_NOT_FOUND: 'ROOM_NOT_FOUND',
+  /** `JOIN_ROOM` for a room with both seats taken. */
   ROOM_FULL: 'ROOM_FULL',
+  /** Handshake `session` malformed, unknown or expired. */
   SESSION_INVALID: 'SESSION_INVALID',
+  /** A command outside the phases listed for it in `ClientToServerEvents`. */
   WRONG_PHASE: 'WRONG_PHASE',
+  /** `UPDATE_TARGETS` or `FIRE` during the opponent's turn. */
   NOT_YOUR_TURN: 'NOT_YOUR_TURN',
+  /**
+   * A command the sender may not send now: `SET_PAUSED` while the opponent is connected, a seat command from a socket
+   * without a seat, joining the room the socket already sits in, or a command whose room logic has not landed yet
+   * (ADR-0046).
+   */
   NOT_ALLOWED: 'NOT_ALLOWED',
+  /** `UPDATE_RULES` with rules that fail `validateRules` (salvo and extra turn both on, ADR-0010). */
   INVALID_RULES: 'INVALID_RULES',
+  /** `CONFIRM_RULES` for a version other than the current one (ADR-0004). */
   STALE_RULES: 'STALE_RULES',
+  /** `UPDATE_PLACEMENT` or `CONFIRM_PLACEMENT` with a layout that fails `validateDraft` or `validateFleet`. */
   INVALID_PLACEMENT: 'INVALID_PLACEMENT',
+  /** `UPDATE_PLACEMENT` while the sender's fleet is confirmed; `UNLOCK_PLACEMENT` first. */
   PLACEMENT_LOCKED: 'PLACEMENT_LOCKED',
+  /** Targets that break `validateTargets` for this turn: count, bounds, repeats or cells already shot. */
   INVALID_TARGETS: 'INVALID_TARGETS',
 } as const;
 
@@ -309,7 +332,7 @@ export interface PlayerStateSnapshot {
   readonly roomId: string;
   /** Which of `placement`, `battle` and `gameOver` is set follows from it. */
   readonly phase: RoomPhase;
-  /** The receiver. */
+  /** The player this snapshot was projected for (ADR-0038). */
   readonly me: PlayerView;
   /** `null` while the other seat is empty. */
   readonly opponent: PlayerView | null;

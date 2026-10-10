@@ -68,9 +68,9 @@ export function provideFakeGameSocket(fake: FakeGameSocket): Provider {
 
 /**
  * A snapshot of a room waiting for its second player, seen by its creator.
- * @param roomId The room's id.
+ * @param roomId Any well-formed id; specs use the one their route or store expects.
  * @param nickname The creator's nickname.
- * @returns The snapshot.
+ * @returns A new snapshot on every call, from the creator's side (`me` is `P1`).
  */
 export function waitingSnapshot(roomId: string, nickname = 'Ada'): PlayerStateSnapshot {
   return {
@@ -90,9 +90,9 @@ export function waitingSnapshot(roomId: string, nickname = 'Ada'): PlayerStateSn
 /**
  * A snapshot of a room in `PLACEMENT`, seen by its creator Ada playing against Grace; both fleets start empty and
  * unconfirmed.
- * @param roomId The room's id.
+ * @param roomId Any well-formed id; specs use the one their route or store expects.
  * @param placement Fields of the `PLACEMENT` part to override.
- * @returns The snapshot.
+ * @returns A new snapshot on every call, from the creator's side (`me` is `P1`).
  */
 export function placementSnapshot(roomId: string, placement: Partial<PlacementSnapshot> = {}): PlayerStateSnapshot {
   return {
@@ -112,9 +112,9 @@ export function placementSnapshot(roomId: string, placement: Partial<PlacementSn
 
 /**
  * A snapshot of a room in `IN_PROGRESS`, seen by its creator Ada playing against Grace: no shots yet, Ada's turn.
- * @param roomId The room's id.
+ * @param roomId Any well-formed id; specs use the one their route or store expects.
  * @param battle Fields of the `IN_PROGRESS` part to override.
- * @returns The snapshot.
+ * @returns A new snapshot on every call, from the creator's side (`me` is `P1`).
  */
 export function battleSnapshot(roomId: string, battle: Partial<BattleSnapshot> = {}): PlayerStateSnapshot {
   return {
@@ -138,9 +138,9 @@ export function battleSnapshot(roomId: string, battle: Partial<BattleSnapshot> =
 
 /**
  * A snapshot of a room in `GAME_OVER`, seen by its creator Ada: by default she sank Grace's fleet, which is empty.
- * @param roomId The room's id.
+ * @param roomId Any well-formed id; specs use the one their route or store expects.
  * @param gameOver Fields of the `GAME_OVER` part to override.
- * @returns The snapshot.
+ * @returns A new snapshot on every call, from the creator's side (`me` is `P1`).
  */
 export function gameOverSnapshot(roomId: string, gameOver: Partial<GameOverSnapshot> = {}): PlayerStateSnapshot {
   return {

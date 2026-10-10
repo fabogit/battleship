@@ -4,8 +4,8 @@ export interface RoomText {
   readonly joinHeading: string;
   /**
    * Under the join heading.
-   * @param roomId The room's id.
-   * @returns The sentence.
+   * @param roomId The id from the address, shown so the player can tell which room invited them.
+   * @returns The invitation, ending with what to do.
    */
   readonly joinIntro: (roomId: string) => string;
   /** The join button. */

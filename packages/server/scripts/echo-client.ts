@@ -13,8 +13,10 @@ import {
 } from '@battleship/core';
 import { io, type Socket } from 'socket.io-client';
 
+/** How long the connection, and then the ack, may each take before the check fails. */
 const TIMEOUT_MS = 10_000;
 
+/** The command line: `--origin` sets the `Origin` header, to check the origin policy; `--transport` the transport. */
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
@@ -23,9 +25,12 @@ const { values, positionals } = parseArgs({
   },
 });
 
+/** The server to check; the local default port when none is given. */
 const url = positionals[0] ?? 'http://localhost:3000';
+/** Only `polling` or `websocket`; anything else falls back to `websocket`, the default. */
 const transport = values.transport === 'polling' ? 'polling' : 'websocket';
 
+/** One attempt, no reconnection: the script reports the first failure. */
 const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(url, {
   // The handshake of a client without a room, so the server's protocol check (#22) lets the smoke test in.
   auth: { protocolVersion: PROTOCOL_VERSION } satisfies HandshakeAuth,

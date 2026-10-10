@@ -4,7 +4,9 @@ import { LOG_FORMATS, loadConfig } from './config.js';
 import { createServer } from './server.js';
 import { handleShutdownSignals } from './shutdown.js';
 
+/** Read once, before anything listens: a missing or malformed variable throws here and the deploy fails at startup. */
 const config = loadConfig(process.env);
+/** The one server instance; closed by the signal handler (ADR-0027). */
 const app = createServer({
   allowedOrigins: config.allowedOrigins,
   logger: {

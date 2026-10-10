@@ -21,7 +21,7 @@ export class SessionStore {
 
   /**
    * Looks up the credentials of a room; tracked when read inside a `computed` or a template.
-   * @param roomId The room's id.
+   * @param roomId Any id, such as the one in the address.
    * @returns The stored credentials, or `null` when this tab holds no seat in that room.
    */
   get(roomId: string): SessionCredentials | null {

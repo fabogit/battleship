@@ -18,8 +18,11 @@ import { HOME_TEXT } from './home.text';
   styleUrl: './home.css',
 })
 export class Home {
+  /** Read for its status only: the form waits for the connection. */
   private readonly socket = inject(GameSocketService);
+  /** Sends `CREATE_ROOM` and stores the new seat's credentials. */
   private readonly roomEntry = inject(RoomEntryService);
+  /** Opens the new room's page. */
   private readonly router = inject(Router);
 
   /** The words of the screen. */

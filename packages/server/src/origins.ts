@@ -6,15 +6,25 @@
  * (`<hash>.battleship.pages.dev`, `<branch>.battleship.pages.dev`) is accepted without redeploying the server.
  */
 
+/** How every wildcard entry starts: `https` only, and the `*` takes the whole first label. */
 const WILDCARD_PREFIX = 'https://*.';
 /** One DNS label as browsers serialize it: lowercase letters, digits and inner hyphens. */
 const LABEL = '[a-z0-9](?:[a-z0-9-]*[a-z0-9])?';
+/** What a wildcard's `*` matches in an `Origin`: exactly one DNS label. */
 const SINGLE_LABEL = new RegExp(`^${LABEL}$`);
+/** A wildcard's suffix: two labels or more, so `https://*.dev` is refused. */
 const HOSTNAME = new RegExp(`^${LABEL}(?:\\.${LABEL})+$`);
 /** Shared hosting domains: a wildcard directly under them would admit every other tenant's site. */
 const SHARED_SUFFIXES = new Set(['pages.dev', 'workers.dev', 'onrender.com']);
 
-/** Validates and normalizes one `ALLOWED_ORIGINS` entry. Throws on anything else, so a bad deploy fails at startup. */
+/**
+ * Validates and normalizes one `ALLOWED_ORIGINS` entry, so a bad deploy fails at startup.
+ * @param entry One trimmed, non-empty entry of the variable.
+ * @returns The entry's URL origin (`https://example.com/` → `https://example.com`), or the wildcard lowercased and
+ * without a trailing slash.
+ * @throws When the entry is not a URL with an origin, or is a wildcard other than `https://*.<hostname>`, or a wildcard
+ * directly under a shared hosting domain such as `pages.dev`.
+ */
 export function parseOriginEntry(entry: string): string {
   if (entry.includes('*')) {
     const suffix = entry.startsWith(WILDCARD_PREFIX)
@@ -42,8 +52,11 @@ export function parseOriginEntry(entry: string): string {
 export type OriginMatcher = (origin: string | undefined) => boolean;
 
 /**
- * Builds the predicate shared by the HTTP hook, `@fastify/cors` and the Socket.io handshake.
- * A request without an `Origin` header is not a browser cross-origin request, so CORS does not apply to it.
+ * Builds the predicate shared by the HTTP hook, `@fastify/cors` and the Socket.io handshake. A request without an
+ * `Origin` header is not a browser cross-origin request, so CORS does not apply to it.
+ * @param entries The entries as `parseOriginEntry` returns them.
+ * @returns A matcher that admits an absent `Origin`, an exact entry, or `https://<one label>.<suffix>` for a wildcard
+ * entry.
  */
 export function createOriginMatcher(entries: readonly string[]): OriginMatcher {
   const exact = new Set(entries.filter((entry) => !entry.startsWith(WILDCARD_PREFIX)));

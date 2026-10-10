@@ -14,6 +14,7 @@ const LOCAL_HOSTS: readonly string[] = ['localhost', '127.0.0.1', '[::1]'];
 
 /** A server URL that can go into the bundle. */
 interface ValidServerUrl {
+  /** Discriminant: the build may go on. */
   ok: true;
   /** The URL as set, trimmed. */
   url: string;
@@ -21,6 +22,7 @@ interface ValidServerUrl {
 
 /** Why the server URL cannot go into the bundle. */
 interface InvalidServerUrl {
+  /** Discriminant: the script stops before `ng` runs. */
   ok: false;
   /** Message for the log, saying how to fix it. */
   error: string;
@@ -30,7 +32,6 @@ interface InvalidServerUrl {
  * Checks the `SERVER_URL` value: set, an absolute URL, and `https://` unless it points to this machine. A deployed
  * site is served over HTTPS, where a plain `ws://` connection is blocked as mixed content; `http://localhost` is what
  * `ng serve` and local builds talk to.
- *
  * @param value The raw `SERVER_URL` value, `undefined` when unset.
  * @returns The trimmed URL, or the reason it is rejected.
  */
@@ -58,12 +59,14 @@ function parseServerUrl(value: string | undefined): ValidServerUrl | InvalidServ
   return { ok: true, url };
 }
 
+/** `build` or `serve`, then whatever follows it, passed to `ng` unchanged (`--configuration`, `--port`, …). */
 const [command, ...ngOptions] = process.argv.slice(2);
 if (command === undefined || !NG_COMMANDS.includes(command)) {
   console.error(`Usage: scripts/ng.ts <${NG_COMMANDS.join('|')}> [ng options]`);
   process.exit(1);
 }
 
+/** Checked before `ng` starts, so a missing or plain-`http` URL never reaches a bundle (ADR-0052). */
 const serverUrl = parseServerUrl(process.env['SERVER_URL']);
 if (!serverUrl.ok) {
   console.error(`Stopped. ${serverUrl.error}`);
@@ -71,6 +74,7 @@ if (!serverUrl.ok) {
 }
 
 console.log(`ng ${command} against SERVER_URL=${serverUrl.url}`);
+/** `ng` runs in the foreground with this terminal; its exit code becomes the script's, 1 when it could not start. */
 const ng = spawnSync('ng', [command, '--define', `${DEFINE_NAME}=${JSON.stringify(serverUrl.url)}`, ...ngOptions], {
   stdio: 'inherit',
 });

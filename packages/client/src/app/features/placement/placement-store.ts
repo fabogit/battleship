@@ -94,7 +94,7 @@ export type PlacementCommandError = ErrorCode | TransportError;
 
 /** The ship the next tap on the board places or moves. */
 export interface SelectedShip {
-  /** Which ship. */
+  /** The ship picked in the dock or on the board. */
   readonly type: ShipType;
   /** Its position on the board; `null` while it is still in the dock. */
   readonly placement: ShipPlacement | null;
@@ -109,7 +109,9 @@ export interface SelectedShip {
  */
 @Service({ autoProvided: false })
 export class PlacementStore {
+  /** Sends the placement commands and delivers `STATE`. */
   private readonly socket = inject(GameSocketService);
+  /** The latest snapshot: the rules, the server's draft and both locks. */
   private readonly gameState = inject(GameStateService);
   /** Draws the fleets of "Randomize" (ADR-0007, ADR-0030). */
   private readonly rng = createCryptoRng();
@@ -120,6 +122,7 @@ export class PlacementStore {
   /** The room's rules, which decide whether ships may touch. */
   readonly rules = computed(() => this.gameState.snapshot()?.rules ?? DEFAULT_RULES);
 
+  /** Set by every local change at once, and by `STATE` while no update is in flight (ADR-0054); read through `draft`. */
   private readonly draftSignal = signal<FleetDraft>(this.serverDraft(), { equal: isSameDraft });
   /** The layout the player sees; ahead of the snapshot while updates wait for their ack. */
   readonly draft = this.draftSignal.asReadonly();
@@ -131,6 +134,7 @@ export class PlacementStore {
   /** Whether the opponent's fleet is locked. */
   readonly isOpponentConfirmed = computed(() => this.placement()?.hasConfirmed.opponent ?? false);
 
+  /** True from sending `CONFIRM_PLACEMENT` or `UNLOCK_PLACEMENT` until its ack; read through `isLockPending`. */
   private readonly isLockPendingSignal = signal(false);
   /** Whether a `CONFIRM_PLACEMENT` or `UNLOCK_PLACEMENT` waits for its ack. */
   readonly isLockPending = this.isLockPendingSignal.asReadonly();
@@ -145,6 +149,7 @@ export class PlacementStore {
   /** Whether "Confirm" would be accepted. */
   readonly canConfirm = computed(() => this.isEditable() && this.fleetViolation() === null);
 
+  /** The ship picked in the dock or on the board; "Randomize" and "Confirm" clear it. Read through `selected`. */
   private readonly selectedTypeSignal = signal<ShipType | null>(null);
   /** The direction a ship from the dock is placed in; "Rotate" turns it before the ship is placed. */
   private readonly dockOrientation = signal<Orientation>(ORIENTATIONS.HORIZONTAL);
@@ -163,14 +168,17 @@ export class PlacementStore {
     return placement ? toPlacedShip(placement).coordinates : [];
   });
 
+  /** Set by a refused tap, emptied by every other action; read through `invalidPreview`. */
   private readonly previewSignal = signal<readonly Coordinate[]>([]);
   /** The cells of the last refused position; cleared by the next action. */
   readonly invalidPreview = this.previewSignal.asReadonly();
 
+  /** Set by every action, for the live region; read through `feedback`. */
   private readonly feedbackSignal = signal<PlacementFeedback | null>(null);
   /** What the last action did; `null` before the first one. */
   readonly feedback = this.feedbackSignal.asReadonly();
 
+  /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */
   private readonly errorSignal = signal<PlacementCommandError | null>(null);
   /** Why the last command failed; cleared by the next one that succeeds. */
   readonly error = this.errorSignal.asReadonly();

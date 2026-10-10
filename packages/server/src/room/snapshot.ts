@@ -23,7 +23,7 @@ import {
 /**
  * Builds what one seated player may see of a room. Fog-of-war: the opponent's fleet appears only as the receiver's own
  * shots (with `sunkShip` on each sinking shot) until `GAME_OVER`, which reveals it. Secrets are never included.
- * @param state The room.
+ * @param state The room, in any phase.
  * @param seat The receiver; must be seated.
  * @param now Current time in epoch ms; stored deadlines become remaining milliseconds.
  * @returns The receiver's snapshot; it shares the room's arrays, which nothing mutates.
@@ -54,8 +54,8 @@ export function projectSnapshot(state: RoomState, seat: Seat, now: number): Play
 
 /**
  * Shows a seated player without their secret.
- * @param seat The player's seat.
- * @param player The player.
+ * @param seat Where the player sits: `RoomPlayer` does not store it, `players` is keyed by it.
+ * @param player The server's record of the player, secret included.
  * @returns The public view. Every seated player counts as connected until disconnections are tracked (#23).
  */
 function toPlayerView(seat: Seat, player: RoomPlayer): PlayerView {

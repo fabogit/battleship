@@ -61,7 +61,7 @@ export function fitOnBoard(placement: ShipPlacement): ShipPlacement {
 
 /**
  * Finds the ship lying on a cell.
- * @param draft The draft.
+ * @param draft The ships placed so far, in any order.
  * @param coordinate A cell on the board.
  * @returns The type of the ship on that cell, or `null` for water.
  */
@@ -74,7 +74,7 @@ export function shipAt(draft: FleetDraft, coordinate: Coordinate): ShipType | nu
 
 /**
  * Finds one ship of a draft.
- * @param draft The draft.
+ * @param draft The ships placed so far, in any order.
  * @param type The ship to look for.
  * @returns Its placement, or `undefined` while it is still in the dock.
  */
@@ -147,9 +147,9 @@ export function isSameDraft(a: FleetDraft, b: FleetDraft): boolean {
 }
 
 /**
- * The orientation a rotation turns a ship to.
+ * The orientation a rotation turns a ship to: "Rotate" toggles between the two.
  * @param orientation The current orientation.
- * @returns The other one.
+ * @returns `VERTICAL` for `HORIZONTAL`, `HORIZONTAL` for `VERTICAL`.
  */
 export function otherOrientation(orientation: Orientation): Orientation {
   return orientation === ORIENTATIONS.HORIZONTAL ? ORIENTATIONS.VERTICAL : ORIENTATIONS.HORIZONTAL;
