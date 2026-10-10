@@ -26,7 +26,7 @@ export type ShareOutcome = (typeof SHARE_OUTCOMES)[keyof typeof SHARE_OUTCOMES];
   styleUrl: './lobby.css',
 })
 export class Lobby {
-  /** The room's id. */
+  /** Passed by the room page; the share link is built from it. */
   readonly roomId = input.required<string>();
   /** The player's own nickname, as the server stored it. */
   readonly nickname = input.required<string>();

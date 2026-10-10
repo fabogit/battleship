@@ -102,7 +102,7 @@ export class RoomManager {
 
   /**
    * Looks up a room.
-   * @param roomId The room's id.
+   * @param roomId An id from a payload or a socket binding; any string is safe to look up.
    * @returns The room's current state, or `undefined` when no open room has that id.
    */
   get(roomId: string): RoomState | undefined {
