@@ -157,14 +157,35 @@ describe('BattleStore', () => {
       expect(store.draftTargets()).toEqual([C3]);
     });
 
-    it("puts back the server's draft after a failed update", async () => {
-      socket.emitWithAck.mockResolvedValueOnce({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+    it.each([TRANSPORT_ERRORS.NOT_CONNECTED, TRANSPORT_ERRORS.NO_ACK])(
+      "puts back the server's draft and drops the feedback after a failed update (%s)",
+      async (error) => {
+        socket.emitWithAck.mockResolvedValueOnce({ ok: false, error });
 
+        store.activateCell(B7);
+        await settle();
+
+        expect(store.draftTargets()).toEqual([]);
+        expect(store.feedback()).toBeNull();
+        expect(store.error()).toBe(error);
+      },
+    );
+
+    it('keeps the feedback while a later update is in flight', async () => {
+      const answerFirst = holdNextReply();
+      const answerSecond = holdNextReply();
       store.activateCell(B7);
-      await settle();
+      store.activateCell(C3);
 
+      answerFirst({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      await settle();
+      expect(store.draftTargets()).toEqual([C3]);
+      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.TARGETED, coordinate: C3 });
+
+      answerSecond({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      await settle();
       expect(store.draftTargets()).toEqual([]);
-      expect(store.error()).toBe(TRANSPORT_ERRORS.NO_ACK);
+      expect(store.feedback()).toBeNull();
     });
   });
 

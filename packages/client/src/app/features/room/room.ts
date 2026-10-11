@@ -19,6 +19,8 @@ export const ROOM_VIEWS = {
   JOIN: 'join',
   /** Seated, waiting for the room's first `STATE`. */
   ENTERING: 'entering',
+  /** Seated once, but the tab has entered another room since, so this one sends it nothing more. */
+  LEFT: 'left',
   /** `WAITING_FOR_OPPONENT`, and `RULES_NEGOTIATION` until its rules part lands (#27): the waiting screen. */
   LOBBY: 'lobby',
   /** `PLACEMENT`: the fleet placement view. */
@@ -77,11 +79,17 @@ export class Room {
     return snapshot?.roomId === this.roomId() ? snapshot : null;
   });
 
-  /** What the page shows: the snapshot decides once it arrives, then the stored session, then the join attempt. */
+  /**
+   * What the page shows: a room the tab has left stays left; otherwise the snapshot decides once it arrives, then the
+   * stored session, then the join attempt.
+   */
   protected readonly view = computed<RoomView>(() => {
     const roomId = this.roomId();
     if (!isRoomId(roomId)) {
       return ROOM_VIEWS.NOT_FOUND;
+    }
+    if (this.sessions.hasLeft(roomId)) {
+      return ROOM_VIEWS.LEFT;
     }
     const snapshot = this.snapshot();
     if (snapshot !== null) {

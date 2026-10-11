@@ -193,8 +193,8 @@ export const BATTLE_TEXT: BattleText = {
     [ERROR_CODES.INVALID_TARGETS]: 'The server refused this target. Pick another cell.',
     [ERROR_CODES.WRONG_PHASE]: 'The match is over.',
     [ERROR_CODES.RATE_LIMITED]: 'Too many taps at once. Wait a moment and try again.',
-    [TRANSPORT_ERRORS.NOT_CONNECTED]: 'Not connected to the server. Try again once it is back.',
-    [TRANSPORT_ERRORS.NO_ACK]: 'The server did not answer. The board shows what it last confirmed.',
+    [TRANSPORT_ERRORS.NOT_CONNECTED]: 'Not connected to the server. Your last move was not saved.',
+    [TRANSPORT_ERRORS.NO_ACK]: 'The server did not answer. Your last move may not be saved.',
   },
   unexpected: 'Something went wrong. Try again.',
 };

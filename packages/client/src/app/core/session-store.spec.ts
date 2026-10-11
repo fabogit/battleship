@@ -28,6 +28,18 @@ describe('SessionStore', () => {
     expect(store.get('zz23cd45')).toEqual({ roomId: 'zz23cd45', playerSecret: FIRST_SECRET });
   });
 
+  it('tells a room left for another one from the room entered last', () => {
+    expect(store.hasLeft('ab23cd45')).toBe(false);
+
+    store.save({ roomId: 'ab23cd45', playerSecret: FIRST_SECRET });
+    expect(store.hasLeft('ab23cd45')).toBe(false);
+
+    store.save({ roomId: 'zz23cd45', playerSecret: SECOND_SECRET });
+    expect(store.hasLeft('ab23cd45')).toBe(true);
+    expect(store.hasLeft('zz23cd45')).toBe(false);
+    expect(store.hasLeft('cd23ef45')).toBe(false);
+  });
+
   it('notifies reactive readers', () => {
     const hasSeat = computed(() => store.get('ab23cd45') !== null);
     expect(hasSeat()).toBe(false);

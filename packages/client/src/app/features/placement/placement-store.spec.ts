@@ -363,18 +363,35 @@ describe('PlacementStore', () => {
       expect(store.draft()).toEqual([DESTROYER]);
     });
 
-    it("puts back the server's draft and reports a failed update", async () => {
+    it("puts back the server's draft, drops the feedback and reports a failed update", async () => {
       socket.emitWithAck.mockResolvedValueOnce({ ok: false, error: TRANSPORT_ERRORS.NOT_CONNECTED });
       store.selectShip(SHIP_TYPES.CARRIER);
       store.activateCell({ x: 0, y: 0 });
       await settle();
 
       expect(store.draft()).toEqual([]);
+      expect(store.feedback()).toBeNull();
       expect(store.error()).toBe(TRANSPORT_ERRORS.NOT_CONNECTED);
 
       store.activateCell({ x: 0, y: 0 });
       await settle();
       expect(store.error()).toBeNull();
+    });
+
+    it('keeps the feedback of a random fleet while a later update is in flight', async () => {
+      const answerFirst = holdNextReply();
+      const answerSecond = holdNextReply();
+      store.randomize();
+      store.randomize();
+
+      answerFirst({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      await settle();
+      expect(store.feedback()).toEqual({ kind: PLACEMENT_FEEDBACK.RANDOMIZED });
+
+      answerSecond({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      await settle();
+      expect(store.draft()).toEqual([]);
+      expect(store.feedback()).toBeNull();
     });
   });
 });
