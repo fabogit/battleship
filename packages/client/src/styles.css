@@ -11,8 +11,13 @@
   --color-focus: light-dark(#0b57d0, #a8c7fa);
 }
 
+/*
+ * The colour the browser paints behind the page anyway, set explicitly: with a transparent body, contrast checkers such
+ * as axe assume white and report false failures in dark mode.
+ */
 body {
   margin: 0;
+  background: Canvas;
 }
 
 h1 {
