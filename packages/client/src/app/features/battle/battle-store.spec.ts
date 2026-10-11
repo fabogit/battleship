@@ -11,7 +11,13 @@ import {
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { FakeGameSocket, battleSnapshot, provideFakeGameSocket } from '../../../testing/fake-game-socket';
+import {
+  FakeGameSocket,
+  battleSnapshot,
+  fromSeat,
+  otherSeat,
+  provideFakeGameSocket,
+} from '../../../testing/fake-game-socket';
 import { TRANSPORT_ERRORS, type CommandResult } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { BATTLE_FEEDBACK, BattleStore } from './battle-store';
@@ -213,13 +219,14 @@ describe('BattleStore', () => {
       expect(store.draftTargets()).toEqual([B7]);
     });
 
-    it('announces every fired turn, by either player', () => {
+    it.each(Object.values(SEATS))('announces every fired turn, by either player, as %s', (seat) => {
       const results = [MISS_ON_J10];
+      socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: seat })));
 
-      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P1, results });
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results });
       expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.FIRED, isMine: true, results });
 
-      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P2, results });
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results });
       expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.FIRED, isMine: false, results });
     });
 

@@ -22,6 +22,7 @@ import {
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { fromSeat, otherSeat } from '../../testing/fake-game-socket';
 import { GameSocketService } from './game-socket';
 import { COUNTDOWN_TICK_MS, GameStateService } from './game-state';
 
@@ -44,6 +45,8 @@ const OUTGOING: readonly ShotResult[] = [
   { coordinate: { x: 5, y: 6 }, outcome: SHOT_OUTCOMES.SUNK, sunkShip: SUNK_DESTROYER },
 ];
 const INCOMING: readonly ShotResult[] = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }];
+/** Both seats, for the views that compare a seat with the receiver's: the creator's side alone hides a hardcoded `P1`. */
+const RECEIVER_SEATS = Object.values(SEATS);
 
 function waiting(): PlayerStateSnapshot {
   return {
@@ -205,11 +208,11 @@ describe('GameStateService', () => {
       });
     });
 
-    it('tells whose turn it is', () => {
-      receive(battle({ currentTurn: SEATS.P1 }));
+    it.each(RECEIVER_SEATS)('tells whose turn it is, as %s', (seat) => {
+      receive(fromSeat(seat, battle({ currentTurn: seat })));
       expect(state.isMyTurn()).toBe(true);
 
-      receive(battle({ currentTurn: SEATS.P2, myDraftTargets: [] }));
+      receive(fromSeat(seat, battle({ currentTurn: otherSeat(seat), myDraftTargets: [] })));
       expect(state.isMyTurn()).toBe(false);
     });
 
@@ -234,23 +237,23 @@ describe('GameStateService', () => {
       expect(state.trackingBoard()).toEqual({ ships: [SUNK_DESTROYER], shots: [], draftTargets: [] });
     });
 
-    it('keeps both boards for game over, with the shot that ended the match', () => {
+    it.each(RECEIVER_SEATS)('keeps both boards for game over, with the shot that ended the match, as %s', (seat) => {
       const finalShot: ShotResult = { coordinate: { x: 4, y: 4 }, outcome: SHOT_OUTCOMES.MISS };
-      receive(battle());
-      resolve({ shooter: SEATS.P2, results: [finalShot] });
+      receive(fromSeat(seat, battle({ currentTurn: otherSeat(seat) })));
+      resolve({ shooter: otherSeat(seat), results: [finalShot] });
 
-      receive(gameOver({ winner: SEATS.P2 }));
+      receive(fromSeat(seat, gameOver({ winner: otherSeat(seat) })));
 
       expect(state.myFleet()).toEqual({ ships: MY_SHIPS, shots: [...INCOMING, finalShot] });
       expect(state.trackingBoard()).toEqual({ ships: [SUNK_DESTROYER], shots: OUTGOING, draftTargets: [] });
     });
 
-    it("adds the receiver's own final shot to the revealed fleet", () => {
+    it.each(RECEIVER_SEATS)("adds the receiver's own final shot to the revealed fleet, as %s", (seat) => {
       const finalShot: ShotResult = { coordinate: { x: 5, y: 7 }, outcome: SHOT_OUTCOMES.MISS };
-      receive(battle());
-      resolve({ shooter: SEATS.P1, results: [finalShot] });
+      receive(fromSeat(seat, battle({ currentTurn: seat })));
+      resolve({ shooter: seat, results: [finalShot] });
 
-      receive(gameOver());
+      receive(fromSeat(seat, gameOver({ winner: seat })));
 
       expect(state.trackingBoard()?.shots).toEqual([...OUTGOING, finalShot]);
       expect(state.myFleet()?.shots).toEqual(INCOMING);
@@ -281,14 +284,14 @@ describe('GameStateService', () => {
       expect(state.trackingBoard()?.shots).toEqual([]);
     });
 
-    it('tells whether the receiver won', () => {
-      receive(gameOver({ winner: SEATS.P1 }));
+    it.each(RECEIVER_SEATS)('tells whether the receiver won, as %s', (seat) => {
+      receive(fromSeat(seat, gameOver({ winner: seat })));
       expect(state.hasWon()).toBe(true);
 
-      receive(gameOver({ winner: SEATS.P2, reason: GAME_OVER_REASONS.SURRENDER }));
+      receive(fromSeat(seat, gameOver({ winner: otherSeat(seat), reason: GAME_OVER_REASONS.SURRENDER })));
       expect(state.hasWon()).toBe(false);
 
-      receive(gameOver({ winner: null, reason: GAME_OVER_REASONS.ABANDONED }));
+      receive(fromSeat(seat, gameOver({ winner: null, reason: GAME_OVER_REASONS.ABANDONED })));
       expect(state.hasWon()).toBe(false);
     });
 
