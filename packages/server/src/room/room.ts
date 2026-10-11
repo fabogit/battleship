@@ -115,8 +115,8 @@ export interface GameOverRoom extends RoomBase {
  */
 export type RoomState = WaitingRoom | PlacementRoom | BattleRoom | GameOverRoom;
 
-/** Commands a seated player sends, handled by `applyCommand`. */
-type SeatCommandEvent =
+/** Commands a seated player sends, handled by `applyCommand`; `RoomManager.dispatch` runs them for the socket handlers. */
+export type SeatCommandEvent =
   | typeof CLIENT_EVENTS.UPDATE_PLACEMENT
   | typeof CLIENT_EVENTS.CONFIRM_PLACEMENT
   | typeof CLIENT_EVENTS.UNLOCK_PLACEMENT

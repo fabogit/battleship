@@ -29,6 +29,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { FastifyInstance } from 'fastify';
 
+import { COMMAND_EVENTS } from '../src/plugins/room-handlers.js';
 import { generateRoomId, RoomManager } from '../src/room/room-manager.js';
 import { createServer } from '../src/server.js';
 
@@ -44,11 +45,6 @@ const NOW = 1_700_000_000_000;
 const ACK_TIMEOUT_MS = 2_000;
 /** Stands for a command's ack among the events of an inbox; lower case, so no server event can take it. */
 const ACK_MARKER = 'ack';
-
-/** Every command but `ECHO`, which has no guard. */
-const COMMAND_EVENTS = Object.values(CLIENT_EVENTS).filter(
-  (event): event is CommandEvent => event !== CLIENT_EVENTS.ECHO,
-);
 
 /** Commands whose room logic lands later; refused with `NOT_ALLOWED` after their guard (ADR-0046). */
 const NOT_YET_SUPPORTED: readonly { [E in CommandEvent]: readonly [E, CommandPayload<E>] }[CommandEvent][] = [
