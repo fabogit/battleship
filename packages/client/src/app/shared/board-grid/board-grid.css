@@ -84,7 +84,10 @@ button:focus-visible {
   outline-offset: 0.0625rem;
 }
 
-/* States: each one has its own shape, so colour is never the only cue. */
+/*
+ * States: a miss is a dot, a hit a cross, a sunk cell a cross in a frame, and a ship a solid fill much darker (light
+ * mode) or lighter (dark mode) than the water, so colour is never the only cue.
+ */
 button[data-state='ship'] {
   background-color: var(--board-ship);
 }
@@ -109,6 +112,7 @@ button[data-state='sunk'] {
   --board-mark: var(--board-sunk);
 
   background-color: var(--board-sunk-fill);
+  box-shadow: inset 0 0 0 0.125rem var(--board-sunk);
 }
 
 /* Overlays, later ones drawn over earlier ones: an invalid preview shows over the selected ship. */
