@@ -42,6 +42,8 @@ const P2_FLEET_SEED = 2;
 /** The fixed clock every test runs at. */
 const NOW = 1_700_000_000_000;
 const ACK_TIMEOUT_MS = 2_000;
+/** Stands for a command's ack among the events of an inbox; lower case, so no server event can take it. */
+const ACK_MARKER = 'ack';
 
 /** Every command but `ECHO`, which has no guard. */
 const COMMAND_EVENTS = Object.values(CLIENT_EVENTS).filter(
@@ -85,7 +87,7 @@ interface Received {
 
 /**
  * Every server event one client receives, in order, so a test reads them one by one and an unexpected or missing event
- * fails the next read.
+ * fails the next read. Acks of commands sent with `sendOnTimeline` join the same timeline as `ACK_MARKER` entries.
  */
 class Inbox {
   readonly #messages: Received[] = [];
@@ -93,14 +95,31 @@ class Inbox {
 
   constructor(socket: ClientSocket) {
     socket.onAny((event: string, payload: unknown) => {
-      const waiting = this.#waiting;
-      this.#waiting = undefined;
-      if (waiting === undefined) {
-        this.#messages.push({ event, payload });
-      } else {
-        waiting({ event, payload });
-      }
+      this.#deliver({ event, payload });
     });
+  }
+
+  /**
+   * Puts a command's ack on the timeline, called from the emit callback so it lands between the events that arrived
+   * before and after it.
+   * @param response The ack's reply, read back with `ack()`.
+   */
+  recordAck(response: unknown): void {
+    this.#deliver({ event: ACK_MARKER, payload: response });
+  }
+
+  /**
+   * Hands a message to the read waiting for it, or queues it.
+   * @param message An event or an ack, in arrival order.
+   */
+  #deliver(message: Received): void {
+    const waiting = this.#waiting;
+    this.#waiting = undefined;
+    if (waiting === undefined) {
+      this.#messages.push(message);
+    } else {
+      waiting(message);
+    }
   }
 
   /** The next event, waiting for it when none is queued. */
@@ -125,6 +144,13 @@ class Inbox {
     const message = await this.next();
     expect(message.event).toBe(SERVER_EVENTS.SHOT_RESOLVED);
     return message.payload as ShotResolvedPayload;
+  }
+
+  /** The next entry, which must be the ack of a command sent with `sendOnTimeline`; returns its reply. */
+  async ack(): Promise<unknown> {
+    const message = await this.next();
+    expect(message.event).toBe(ACK_MARKER);
+    return message.payload;
   }
 
   /** Reads `count` snapshots and returns the last one. */
@@ -164,6 +190,38 @@ async function sendRaw(from: Player, event: string, payload: unknown): Promise<u
   // The typed socket cannot narrow an event name held in a variable; `send` keeps the contract.
   const response: unknown = await (from.socket as Socket).timeout(ACK_TIMEOUT_MS).emitWithAck(event, payload);
   return response;
+}
+
+/**
+ * Sends a command and records its ack in the sender's inbox, where it arrived among the events, so a test can read the
+ * order of ack and events (ADR-0047). Read the reply with `inbox.ack()`.
+ */
+async function sendOnTimeline<E extends CommandEvent>(
+  from: Player,
+  event: E,
+  payload: CommandPayload<E>,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    // The callback runs as the ack packet is read, in order with the events `onAny` sees; `emitWithAck` would resolve a
+    // microtask later.
+    (from.socket as Socket).timeout(ACK_TIMEOUT_MS).emit(event, payload, (error: Error | null, response: unknown) => {
+      if (error !== null) {
+        reject(error);
+        return;
+      }
+      from.inbox.recordAck(response);
+      resolve();
+    });
+  });
+}
+
+/**
+ * Proves that nothing is left in a player's inbox. `Inbox` never checks for leftover events, so this creates a room
+ * whose `STATE` must be the very next event; a stray event read first fails the check.
+ */
+async function expectNothingPending(target: Player): Promise<void> {
+  const { roomId } = (await send(target, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Probe' })) as { roomId: string };
+  expect((await target.inbox.state()).roomId).toBe(roomId);
 }
 
 /** A random fleet, deterministic for its seed. */
@@ -422,6 +480,33 @@ describe('command acks', () => {
     }
   });
 
+  it('arrive before the STATE of a created room', async () => {
+    await start();
+    const alice = await player();
+    await sendOnTimeline(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    expect(await alice.inbox.ack()).toMatchObject({ ok: true });
+    expect((await alice.inbox.state()).phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
+  });
+
+  it('arrive before the STATE of a joined room', async () => {
+    await start();
+    const [alice, bob] = await Promise.all([player(), player()]);
+    const { roomId } = (await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
+    await alice.inbox.state();
+    await sendOnTimeline(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
+    expect(await bob.inbox.ack()).toMatchObject({ ok: true });
+    expect((await bob.inbox.state()).phase).toBe(ROOM_PHASES.PLACEMENT);
+  });
+
+  it("arrive before the shooter's SHOT_RESOLVED and STATE", async () => {
+    await start();
+    const { p1 } = await startedMatch();
+    await sendOnTimeline(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] });
+    expect(await p1.inbox.ack()).toEqual({ ok: true });
+    expect((await p1.inbox.shot()).shooter).toBe(SEATS.P1);
+    expect((await p1.inbox.state()).battle?.currentTurn).toBe(SEATS.P2);
+  });
+
   it('ignore a command sent without an ack', async () => {
     await start();
     const alice = await player();
@@ -447,5 +532,37 @@ describe('seat binding', () => {
     expect(await send(p1, CLIENT_EVENTS.CONFIRM_PLACEMENT, {})).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
     const third = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
     expect((await p1.inbox.state()).roomId).toBe(third.roomId);
+  });
+});
+
+describe('room isolation', () => {
+  it('keeps a shot from a player in another room', async () => {
+    await start();
+    const { p1, p2 } = await startedMatch();
+    const bystander = await player();
+    await send(bystander, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Carol' });
+    await bystander.inbox.state();
+
+    await send(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] });
+    for (const { inbox } of [p1, p2]) {
+      expect((await inbox.shot()).shooter).toBe(SEATS.P1);
+      await inbox.state();
+    }
+
+    await expectNothingPending(bystander);
+  });
+
+  it('keeps a shot from a player who left the room for a new one', async () => {
+    await start();
+    const { p1, p2 } = await startedMatch();
+    const { roomId } = (await send(p2, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Bob' })) as { roomId: string };
+    expect((await p2.inbox.state()).roomId).toBe(roomId);
+
+    // P2's seat stays taken until #23, so P1 still fires in the first room.
+    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
+    expect((await p1.inbox.shot()).shooter).toBe(SEATS.P1);
+    await p1.inbox.state();
+
+    await expectNothingPending(p2);
   });
 });

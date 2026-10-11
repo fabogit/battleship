@@ -2,6 +2,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
   CLIENT_EVENTS,
+  ERROR_CODES,
   GAME_OVER_REASONS,
   ORIENTATIONS,
   SEATS,
@@ -11,15 +12,20 @@ import {
   toPlacedShip,
   type BattleSnapshot,
   type GameOverSnapshot,
+  type PlayerStateSnapshot,
+  type Seat,
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   FakeGameSocket,
   battleSnapshot,
+  fromSeat,
   gameOverSnapshot,
+  otherSeat,
   provideFakeGameSocket,
 } from '../../../testing/fake-game-socket';
+import { TRANSPORT_ERRORS } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { CELL_STATES } from '../../shared/board-grid/board-cells';
 import { BATTLE_BOARDS, Battle, SHOT_HOLD_MS } from './battle';
@@ -63,6 +69,16 @@ async function receive(battle: Partial<BattleSnapshot> = {}): Promise<void> {
 async function receiveGameOver(gameOver: Partial<GameOverSnapshot> = {}): Promise<void> {
   socket.fire(SERVER_EVENTS.STATE, gameOverSnapshot(ROOM_ID, { opponentShips: [THEIR_CARRIER], ...gameOver }));
   await fixture.whenStable();
+}
+
+/**
+ * A battle snapshot with Ada's destroyer, seen from either seat.
+ * @param seat Ada's seat.
+ * @param battle Fields of the `IN_PROGRESS` part to override; turns and shooters name seats, so pick them for `seat`.
+ * @returns The snapshot, not yet delivered.
+ */
+function battleFrom(seat: Seat, battle: Partial<BattleSnapshot> = {}): PlayerStateSnapshot {
+  return fromSeat(seat, battleSnapshot(ROOM_ID, { myShips: [MY_DESTROYER], ...battle }));
 }
 
 /**
@@ -187,6 +203,24 @@ describe('Battle', () => {
       expect(socket.emitWithAck).toHaveBeenLastCalledWith(CLIENT_EVENTS.FIRE, { targets: [{ x: 6, y: 1 }] });
     });
 
+    it.each([
+      [ERROR_CODES.NOT_YOUR_TURN, BATTLE_TEXT.errors.NOT_YOUR_TURN],
+      [TRANSPORT_ERRORS.NO_ACK, BATTLE_TEXT.errors.NO_ACK],
+      // The view has no message of its own for this one.
+      [ERROR_CODES.INVALID_PAYLOAD, BATTLE_TEXT.unexpected],
+    ])('explains a FIRE that fails with %s', async (error, message) => {
+      await tap(enemyCell('B7'));
+      expect(text('[role="alert"]')).toBe('');
+      socket.emitWithAck.mockResolvedValueOnce({ ok: false, error });
+
+      await tap(button(BATTLE_TEXT.fire));
+
+      await vi.waitFor(async () => {
+        await fixture.whenStable();
+        expect(text('[role="alert"]')).toBe(message);
+      });
+    });
+
     it('says why a cell already shot cannot be a target', async () => {
       await receive({ outgoingShots: [{ coordinate: { x: 6, y: 1 }, outcome: SHOT_OUTCOMES.MISS }] });
 
@@ -235,26 +269,27 @@ describe('Battle', () => {
       expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
     });
 
-    it('shows where a shot landed for a moment before the next turn takes over', () => {
-      // Rendered with detectChanges: whenStable waits on the scheduler's timers, which fake timers hold.
-      vi.useFakeTimers();
-      const results = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }];
-      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P2, results });
-      socket.fire(
-        SERVER_EVENTS.STATE,
-        battleSnapshot(ROOM_ID, { myShips: [MY_DESTROYER], currentTurn: SEATS.P1, incomingShots: results }),
-      );
-      fixture.detectChanges();
+    it.each(Object.values(SEATS))(
+      'shows where a shot landed for a moment before the next turn takes over, as %s',
+      (seat) => {
+        // Rendered with detectChanges: whenStable waits on the scheduler's timers, which fake timers hold.
+        vi.useFakeTimers();
+        const results = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }];
+        socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: otherSeat(seat) }));
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results });
+        socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: seat, incomingShots: results }));
+        fixture.detectChanges();
 
-      expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
-      expect(text('h1')).toBe(BATTLE_TEXT.myTurn);
-      expect(text('.feedback')).toBe(BATTLE_TEXT.opponentShot('A1', SHOT_OUTCOMES.HIT, null, 'Grace'));
+        expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
+        expect(text('h1')).toBe(BATTLE_TEXT.myTurn);
+        expect(text('.feedback')).toBe(BATTLE_TEXT.opponentShot('A1', SHOT_OUTCOMES.HIT, null, 'Grace'));
 
-      vi.advanceTimersByTime(SHOT_HOLD_MS);
-      fixture.detectChanges();
+        vi.advanceTimersByTime(SHOT_HOLD_MS);
+        fixture.detectChanges();
 
-      expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
-    });
+        expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
+      },
+    );
 
     it('says when the opponent is disconnected', async () => {
       const snapshot = battleSnapshot(ROOM_ID, { currentTurn: SEATS.P2 });
@@ -308,6 +343,37 @@ describe('Battle', () => {
       expect(actions).toEqual([BATTLE_TEXT.myFleet, BATTLE_TEXT.enemyWaters]);
       expect(view().querySelector('a')?.textContent).toBe(BATTLE_TEXT.newMatch);
       expect(view().querySelector('a')?.getAttribute('href')).toBe('/');
+    });
+
+    it('names the joiner as the winner, with each board on its own side', async () => {
+      const finalShot = { coordinate: { x: 0, y: 4 }, outcome: SHOT_OUTCOMES.HIT };
+      socket.fire(
+        SERVER_EVENTS.STATE,
+        battleFrom(SEATS.P2, {
+          currentTurn: SEATS.P2,
+          incomingShots: [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }],
+          outgoingShots: [{ coordinate: { x: 9, y: 9 }, outcome: SHOT_OUTCOMES.MISS }],
+        }),
+      );
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P2, results: [finalShot] });
+
+      socket.fire(
+        SERVER_EVENTS.STATE,
+        fromSeat(SEATS.P2, gameOverSnapshot(ROOM_ID, { winner: SEATS.P2, opponentShips: [THEIR_CARRIER] })),
+      );
+      await fixture.whenStable();
+
+      expect(text('h1')).toBe(BATTLE_TEXT.wonHeading);
+      expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.reasons.FLEET_DESTROYED('Grace', true));
+      expect(text('.feedback')).toBe(BATTLE_TEXT.myShot('E1', SHOT_OUTCOMES.HIT, null, 'Grace'));
+      expect(enemyCell('E1').getAttribute('aria-label')).toBe('E1, hit');
+      expect(enemyCell('J10').getAttribute('aria-label')).toBe('J10, miss');
+      const myCells = Array.from(board(BATTLE_TEXT.myFleet)?.querySelectorAll('button') ?? []).map((cell) =>
+        cell.getAttribute('aria-label'),
+      );
+      expect(myCells).toContain('A1, hit');
+      // The final shot went to Grace's board, not to Ada's own.
+      expect(myCells).toContain('E1');
     });
 
     it('tells the loser and a match without a winner apart', async () => {

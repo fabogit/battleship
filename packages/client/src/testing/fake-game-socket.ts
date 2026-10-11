@@ -9,6 +9,7 @@ import {
   type GameOverSnapshot,
   type PlacementSnapshot,
   type PlayerStateSnapshot,
+  type Seat,
   type ServerToClientEvents,
 } from '@battleship/core';
 import { vi } from 'vitest';
@@ -154,5 +155,30 @@ export function gameOverSnapshot(roomId: string, gameOver: Partial<GameOverSnaps
       rematch: { me: null, opponent: null },
       ...gameOver,
     },
+  };
+}
+
+/**
+ * The seat facing the given one in a room.
+ * @param seat Either seat.
+ * @returns The other one.
+ */
+export function otherSeat(seat: Seat): Seat {
+  return seat === SEATS.P1 ? SEATS.P2 : SEATS.P1;
+}
+
+/**
+ * Seats the receiver of a snapshot: `me` takes `seat` and the opponent the other one, so a spec can play from the
+ * joiner's side as well as the creator's. Only the seats move: the rest of a snapshot is already the receiver's side
+ * (ADR-0038), while turns, winners and shooters name seats, which the spec picks for the seat under test.
+ * @param seat The receiver's seat; `P2` for the joiner.
+ * @param snapshot A snapshot from the fixtures above, seen from `P1`.
+ * @returns A new snapshot, seen from `seat`.
+ */
+export function fromSeat(seat: Seat, snapshot: PlayerStateSnapshot): PlayerStateSnapshot {
+  return {
+    ...snapshot,
+    me: { ...snapshot.me, seat },
+    opponent: snapshot.opponent === null ? null : { ...snapshot.opponent, seat: otherSeat(seat) },
   };
 }
