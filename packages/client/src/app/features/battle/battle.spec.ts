@@ -2,6 +2,7 @@ import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
   CLIENT_EVENTS,
+  ERROR_CODES,
   GAME_OVER_REASONS,
   ORIENTATIONS,
   SEATS,
@@ -24,6 +25,7 @@ import {
   otherSeat,
   provideFakeGameSocket,
 } from '../../../testing/fake-game-socket';
+import { TRANSPORT_ERRORS } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { CELL_STATES } from '../../shared/board-grid/board-cells';
 import { BATTLE_BOARDS, Battle, SHOT_HOLD_MS } from './battle';
@@ -199,6 +201,24 @@ describe('Battle', () => {
       await tap(fire);
 
       expect(socket.emitWithAck).toHaveBeenLastCalledWith(CLIENT_EVENTS.FIRE, { targets: [{ x: 6, y: 1 }] });
+    });
+
+    it.each([
+      [ERROR_CODES.NOT_YOUR_TURN, BATTLE_TEXT.errors.NOT_YOUR_TURN],
+      [TRANSPORT_ERRORS.NO_ACK, BATTLE_TEXT.errors.NO_ACK],
+      // The view has no message of its own for this one.
+      [ERROR_CODES.INVALID_PAYLOAD, BATTLE_TEXT.unexpected],
+    ])('explains a FIRE that fails with %s', async (error, message) => {
+      await tap(enemyCell('B7'));
+      expect(text('[role="alert"]')).toBe('');
+      socket.emitWithAck.mockResolvedValueOnce({ ok: false, error });
+
+      await tap(button(BATTLE_TEXT.fire));
+
+      await vi.waitFor(async () => {
+        await fixture.whenStable();
+        expect(text('[role="alert"]')).toBe(message);
+      });
     });
 
     it('says why a cell already shot cannot be a target', async () => {
