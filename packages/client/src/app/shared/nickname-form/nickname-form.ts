@@ -43,16 +43,21 @@ export class NicknameForm {
   private readonly model = signal<NicknameModel>({ nickname: '' });
 
   /**
-   * The form: `maxLength` puts `maxlength` on the input, `parseNickname` refuses an empty or blank nickname. A submit
-   * marks the field touched, so its error shows from then on.
+   * The form: `maxLength` puts `maxlength` on the input, `parseNickname` refuses an empty or blank nickname or one with
+   * a refused character (ADR-0060), each with its own message. `maxlength` keeps the value within the length, so a
+   * non-empty refusal can only be a character. A submit marks the field touched, so its error shows from then on.
    */
   protected readonly nicknameForm = form(
     this.model,
     (path) => {
       maxLength(path.nickname, NICKNAME_MAX_LENGTH);
-      validate(path.nickname, ({ value }) =>
-        parseNickname(value()) === null ? { kind: 'nickname', message: this.text.invalid } : undefined,
-      );
+      validate(path.nickname, ({ value }) => {
+        if (parseNickname(value()) !== null) {
+          return undefined;
+        }
+        const message = value().trim() === '' ? this.text.empty : this.text.unsupportedCharacters;
+        return { kind: 'nickname', message };
+      });
     },
     {
       submission: {

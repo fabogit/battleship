@@ -12,7 +12,7 @@
   <p id="nickname-hint" class="hint">{{ text.hint(maxLength) }}</p>
   <p id="nickname-error" class="error" aria-live="polite">
     @if (nicknameForm.nickname().touched() && nicknameForm.nickname().invalid()) {
-      {{ text.invalid }}
+      {{ nicknameForm.nickname().errors()[0]?.message }}
     }
   </p>
 

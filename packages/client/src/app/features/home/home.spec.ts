@@ -82,8 +82,30 @@ describe('Home', () => {
     await submit('   ');
 
     expect(socket.emitWithAck).not.toHaveBeenCalled();
-    expect(page().querySelector('#nickname-error')?.textContent.trim()).toBe(NICKNAME_FORM_TEXT.invalid);
+    expect(page().querySelector('#nickname-error')?.textContent.trim()).toBe(NICKNAME_FORM_TEXT.empty);
     expect(page().querySelector('input')?.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  // ADR-0060: one invisible, one bidi override, one blank-looking, one control character.
+  it.each([
+    ['a zero-width space', '​'],
+    ['a right-to-left override', '‮evil'],
+    ['a Hangul filler', 'ㅤ'],
+    ['a NUL', 'a\u0000b'],
+  ])('refuses a nickname with %s and says why, without sending anything', async (_label, nickname) => {
+    await submit(nickname);
+
+    expect(socket.emitWithAck).not.toHaveBeenCalled();
+    expect(page().querySelector('#nickname-error')?.textContent.trim()).toBe(NICKNAME_FORM_TEXT.unsupportedCharacters);
+    expect(page().querySelector('input')?.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('creates a room for a nickname in another script with an emoji', async () => {
+    socket.emitWithAck.mockResolvedValue({ ok: true, roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+
+    await submit('ليلى 👩‍💻');
+
+    expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'ليلى 👩‍💻' });
   });
 
   it('keeps the button focusable but inactive until the socket is connected', async () => {
