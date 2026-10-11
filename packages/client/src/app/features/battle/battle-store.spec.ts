@@ -6,18 +6,13 @@ import {
   SERVER_EVENTS,
   SHOT_OUTCOMES,
   TARGET_VIOLATIONS,
+  otherSeat,
   type BattleSnapshot,
   type ShotResult,
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import {
-  FakeGameSocket,
-  battleSnapshot,
-  fromSeat,
-  otherSeat,
-  provideFakeGameSocket,
-} from '../../../testing/fake-game-socket';
+import { FakeGameSocket, battleSnapshot, fromSeat, provideFakeGameSocket } from '../../../testing/fake-game-socket';
 import { TRANSPORT_ERRORS, type CommandResult } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { BATTLE_FEEDBACK, BattleStore } from './battle-store';

@@ -9,6 +9,7 @@ import {
   SERVER_EVENTS,
   SHIP_TYPES,
   SHOT_OUTCOMES,
+  otherSeat,
   toPlacedShip,
   type BattleSnapshot,
   type GameOverSnapshot,
@@ -22,7 +23,6 @@ import {
   battleSnapshot,
   fromSeat,
   gameOverSnapshot,
-  otherSeat,
   provideFakeGameSocket,
 } from '../../../testing/fake-game-socket';
 import { TRANSPORT_ERRORS } from '../../core/game-socket';

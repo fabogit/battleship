@@ -11,6 +11,7 @@ import {
   SHIP_TYPES,
   SHOT_OUTCOMES,
   START_COUNTDOWN_MS,
+  otherSeat,
   toPlacedShip,
   type BattleSnapshot,
   type GameOverSnapshot,
@@ -22,7 +23,7 @@ import {
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fromSeat, otherSeat } from '../../testing/fake-game-socket';
+import { fromSeat } from '../../testing/fake-game-socket';
 import { GameSocketService } from './game-socket';
 import { COUNTDOWN_TICK_MS, GameStateService } from './game-state';
 

@@ -5,6 +5,7 @@ import {
   DEFAULT_RULES,
   ERROR_CODES,
   GAME_OVER_REASONS,
+  otherSeat,
   PLACEMENT_TIME_LIMIT_MS,
   resolveTurn,
   ROOM_PHASES,
@@ -415,13 +416,4 @@ function accept(state: RoomState, effects: readonly RoomEffect[] = []): Accepted
  */
 function reject(error: ErrorCode, violation?: PlacementViolation | TargetViolation): RejectedTransition {
   return violation === undefined ? { ok: false, error } : { ok: false, error, violation };
-}
-
-/**
- * Names the seat across the table, whose board and fleet the turn logic and the snapshot projection read.
- * @param seat Either seat.
- * @returns `P2` for `P1` and `P1` for `P2`.
- */
-export function otherSeat(seat: Seat): Seat {
-  return seat === SEATS.P1 ? SEATS.P2 : SEATS.P1;
 }

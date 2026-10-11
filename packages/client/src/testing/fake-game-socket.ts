@@ -5,6 +5,7 @@ import {
   PLACEMENT_TIME_LIMIT_MS,
   ROOM_PHASES,
   SEATS,
+  otherSeat,
   type BattleSnapshot,
   type GameOverSnapshot,
   type PlacementSnapshot,
@@ -156,15 +157,6 @@ export function gameOverSnapshot(roomId: string, gameOver: Partial<GameOverSnaps
       ...gameOver,
     },
   };
-}
-
-/**
- * The seat facing the given one in a room.
- * @param seat Either seat.
- * @returns The other one.
- */
-export function otherSeat(seat: Seat): Seat {
-  return seat === SEATS.P1 ? SEATS.P2 : SEATS.P1;
 }
 
 /**

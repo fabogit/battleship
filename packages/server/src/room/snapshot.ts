@@ -1,6 +1,7 @@
 // Per-player projection of a room into the `STATE` snapshot (docs/protocol.md#snapshot, ADR-0038).
 
 import {
+  otherSeat,
   ROOM_PHASES,
   shotsAllowed,
   type BattleSnapshot,
@@ -11,14 +12,7 @@ import {
   type Seat,
 } from '@battleship/core';
 
-import {
-  otherSeat,
-  type BattleRoom,
-  type GameOverRoom,
-  type PlacementRoom,
-  type RoomPlayer,
-  type RoomState,
-} from './room.js';
+import { type BattleRoom, type GameOverRoom, type PlacementRoom, type RoomPlayer, type RoomState } from './room.js';
 
 /**
  * Builds what one seated player may see of a room. Fog-of-war: the opponent's fleet appears only as the receiver's own
