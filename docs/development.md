@@ -64,7 +64,7 @@ battleship/
             ├── app/
             │   ├── app.routes.ts  # `/` home, `/r/:roomId` room (D49)
             │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService, I18nService,
-            │   │                  # ServerWakeService
+            │   │                  # ServerWakeService, createSyncedDraft (the draft sync of placement and battle)
             │   ├── features/      # home (nickname, create), room (join + one view per phase), lobby (waiting + rules),
             │   │                  # placement, battle, game-over
             │   └── shared/        # Server status, nickname form, board grid, timer, dice, modal, language switch

@@ -3,6 +3,7 @@ import { CLIENT_EVENTS, SERVER_EVENTS, type Coordinate, type ErrorCode, type Sho
 
 import { GameSocketService, type TransportError } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
+import { createSyncedDraft } from '../../core/synced-draft';
 import { isSameTargets, toggleTarget, type TargetDraft, type TargetRefusal } from './target-draft';
 
 /** What the last battle action or fired turn was, announced to the player (ADR-0043). */
@@ -70,20 +71,6 @@ export class BattleStore {
   /** How many targets the turn fires; 1 until salvo mode lands (#32), 0 outside battle. */
   readonly shotsAllowed = computed(() => this.battle()?.shotsAllowed ?? 0);
 
-  /** Set by every tap at once, and by `STATE` while no update is in flight (ADR-0056); read through `draftTargets`. */
-  private readonly draftSignal = signal<TargetDraft>(this.serverDraft(), { equal: isSameTargets });
-  /** The turn's targets as the player sees them; ahead of the snapshot while updates wait for their ack. */
-  readonly draftTargets = computed<TargetDraft>(() => (this.isMyTurn() ? this.draftSignal() : []));
-
-  /** True from sending `FIRE` until its ack; read through `isFiring`. */
-  private readonly isFiringSignal = signal(false);
-  /** Whether a `FIRE` waits for its ack. */
-  readonly isFiring = this.isFiringSignal.asReadonly();
-  /** Whether a tap on "Enemy waters" changes the draft: the player's turn, with no shot on its way. */
-  readonly canTarget = computed(() => this.isMyTurn() && !this.isFiring());
-  /** Whether "Fire" would send the turn: the draft holds exactly the allowed number of targets. */
-  readonly canFire = computed(() => this.canTarget() && this.draftTargets().length === this.shotsAllowed());
-
   /** Set by every tap and every `SHOT_RESOLVED`, for the live region; read through `feedback`. */
   private readonly feedbackSignal = signal<BattleFeedback | null>(null);
   /** The last tap's outcome or the last fired turn; `null` before the first one and after a failed update. */
@@ -94,27 +81,37 @@ export class BattleStore {
   /** Why the last command failed; cleared by the next one that succeeds. */
   readonly error = this.errorSignal.asReadonly();
 
-  /** `UPDATE_TARGETS` sent and not yet answered; while there is one, `STATE` does not replace the draft. */
-  private updatesInFlight = 0;
+  /**
+   * The draft, set by every tap at once and by `STATE` while no `UPDATE_TARGETS` is in flight (ADR-0054, ADR-0056);
+   * read through `draftTargets`.
+   */
+  private readonly sync = createSyncedDraft<TargetDraft, BattleFeedback>({
+    read: (snapshot) => snapshot.battle?.myDraftTargets ?? null,
+    empty: [],
+    equal: isSameTargets,
+    send: (targets) => this.socket.emitWithAck(CLIENT_EVENTS.UPDATE_TARGETS, { targets }),
+    feedback: this.feedbackSignal,
+    error: this.errorSignal,
+  });
+  /** The turn's targets as the player sees them; ahead of the snapshot while updates wait for their ack. */
+  readonly draftTargets = computed<TargetDraft>(() => (this.isMyTurn() ? this.sync.draft() : []));
 
-  /** Follows `STATE` while no update is in flight, and announces every fired turn; stops with the view. */
+  /** True from sending `FIRE` until its ack; read through `isFiring`. */
+  private readonly isFiringSignal = signal(false);
+  /** Whether a `FIRE` waits for its ack. */
+  readonly isFiring = this.isFiringSignal.asReadonly();
+  /** Whether a tap on "Enemy waters" changes the draft: the player's turn, with no shot on its way. */
+  readonly canTarget = computed(() => this.isMyTurn() && !this.isFiring());
+  /** Whether "Fire" would send the turn: the draft holds exactly the allowed number of targets. */
+  readonly canFire = computed(() => this.canTarget() && this.draftTargets().length === this.shotsAllowed());
+
+  /** Announces every fired turn; stops with the view. */
   constructor() {
-    const stopListening = [
-      this.socket.on(SERVER_EVENTS.STATE, (snapshot) => {
-        if (this.updatesInFlight === 0 && snapshot.battle !== null) {
-          this.draftSignal.set(snapshot.battle.myDraftTargets);
-        }
-      }),
-      this.socket.on(SERVER_EVENTS.SHOT_RESOLVED, ({ shooter, results }) => {
-        const isMine = shooter === this.gameState.snapshot()?.me.seat;
-        this.feedbackSignal.set({ kind: BATTLE_FEEDBACK.FIRED, isMine, results });
-      }),
-    ];
-    inject(DestroyRef).onDestroy(() => {
-      for (const stop of stopListening) {
-        stop();
-      }
+    const stopListening = this.socket.on(SERVER_EVENTS.SHOT_RESOLVED, ({ shooter, results }) => {
+      const isMine = shooter === this.gameState.snapshot()?.me.seat;
+      this.feedbackSignal.set({ kind: BATTLE_FEEDBACK.FIRED, isMine, results });
     });
+    inject(DestroyRef).onDestroy(stopListening);
   }
 
   /**
@@ -138,8 +135,7 @@ export class BattleStore {
       return;
     }
     const kind = change.isTargeted ? BATTLE_FEEDBACK.TARGETED : BATTLE_FEEDBACK.UNTARGETED;
-    this.feedbackSignal.set({ kind, coordinate });
-    this.update(change.draft);
+    this.sync.update(change.draft, { kind, coordinate });
   }
 
   /** Fires the draft with `FIRE`; does nothing until it holds the allowed number of targets. */
@@ -151,36 +147,5 @@ export class BattleStore {
     const result = await this.socket.emitWithAck(CLIENT_EVENTS.FIRE, { targets: this.draftTargets() });
     this.isFiringSignal.set(false);
     this.errorSignal.set(result.ok ? null : result.error);
-  }
-
-  /**
-   * Shows a new draft at once and sends it whole with `UPDATE_TARGETS`. A failed update puts back the server's draft,
-   * once no other update is in flight (ADR-0054), and clears the feedback, which described the change just dropped; the
-   * error says it was not saved.
-   * @param draft The new draft, valid for this turn.
-   */
-  private update(draft: TargetDraft): void {
-    this.draftSignal.set(draft);
-    this.updatesInFlight++;
-    void this.socket.emitWithAck(CLIENT_EVENTS.UPDATE_TARGETS, { targets: draft }).then((result) => {
-      this.updatesInFlight--;
-      if (result.ok) {
-        this.errorSignal.set(null);
-        return;
-      }
-      this.errorSignal.set(result.error);
-      if (this.updatesInFlight === 0) {
-        this.draftSignal.set(this.serverDraft());
-        this.feedbackSignal.set(null);
-      }
-    });
-  }
-
-  /**
-   * Reads the draft the server holds.
-   * @returns The draft targets of the latest snapshot; empty outside the player's turn.
-   */
-  private serverDraft(): TargetDraft {
-    return this.battle()?.myDraftTargets ?? [];
   }
 }

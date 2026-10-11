@@ -1,9 +1,8 @@
-import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
+import { Service, computed, inject, signal } from '@angular/core';
 import {
   CLIENT_EVENTS,
   DEFAULT_RULES,
   ORIENTATIONS,
-  SERVER_EVENTS,
   createCryptoRng,
   generateRandomFleet,
   toPlacedShip,
@@ -18,6 +17,7 @@ import {
 
 import { GameSocketService, type TransportError } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
+import { createSyncedDraft } from '../../core/synced-draft';
 import {
   findShip,
   isSameDraft,
@@ -122,10 +122,30 @@ export class PlacementStore {
   /** The room's rules, which decide whether ships may touch. */
   readonly rules = computed(() => this.gameState.snapshot()?.rules ?? DEFAULT_RULES);
 
-  /** Set by every local change at once, and by `STATE` while no update is in flight (ADR-0054); read through `draft`. */
-  private readonly draftSignal = signal<FleetDraft>(this.serverDraft(), { equal: isSameDraft });
+  /** Set by every action, for the live region; read through `feedback`. */
+  private readonly feedbackSignal = signal<PlacementFeedback | null>(null);
+  /** What the last action did; `null` before the first one and after a failed update. */
+  readonly feedback = this.feedbackSignal.asReadonly();
+
+  /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */
+  private readonly errorSignal = signal<PlacementCommandError | null>(null);
+  /** Why the last command failed; cleared by the next one that succeeds. */
+  readonly error = this.errorSignal.asReadonly();
+
+  /**
+   * The draft, set by every local change at once and by `STATE` while no `UPDATE_PLACEMENT` is in flight (ADR-0054);
+   * read through `draft`.
+   */
+  private readonly sync = createSyncedDraft<FleetDraft, PlacementFeedback>({
+    read: (snapshot) => snapshot.placement?.myShips.map(toShipPlacement) ?? null,
+    empty: [],
+    equal: isSameDraft,
+    send: (ships) => this.socket.emitWithAck(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships }),
+    feedback: this.feedbackSignal,
+    error: this.errorSignal,
+  });
   /** The layout the player sees; ahead of the snapshot while updates wait for their ack. */
-  readonly draft = this.draftSignal.asReadonly();
+  readonly draft = this.sync.draft;
   /** The draft with the cells of each ship, for the board. */
   readonly ships = computed(() => this.draft().map(toPlacedShip));
 
@@ -172,29 +192,6 @@ export class PlacementStore {
   private readonly previewSignal = signal<readonly Coordinate[]>([]);
   /** The cells of the last refused position; cleared by the next action. */
   readonly invalidPreview = this.previewSignal.asReadonly();
-
-  /** Set by every action, for the live region; read through `feedback`. */
-  private readonly feedbackSignal = signal<PlacementFeedback | null>(null);
-  /** What the last action did; `null` before the first one and after a failed update. */
-  readonly feedback = this.feedbackSignal.asReadonly();
-
-  /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */
-  private readonly errorSignal = signal<PlacementCommandError | null>(null);
-  /** Why the last command failed; cleared by the next one that succeeds. */
-  readonly error = this.errorSignal.asReadonly();
-
-  /** `UPDATE_PLACEMENT`s sent and not yet answered; while there is one, `STATE` does not replace the draft. */
-  private updatesInFlight = 0;
-
-  /** Follows `STATE` while no update is in flight; stops with the view. */
-  constructor() {
-    const stopListening = this.socket.on(SERVER_EVENTS.STATE, (snapshot) => {
-      if (this.updatesInFlight === 0 && snapshot.placement !== null) {
-        this.draftSignal.set(snapshot.placement.myShips.map(toShipPlacement));
-      }
-    });
-    inject(DestroyRef).onDestroy(stopListening);
-  }
 
   /**
    * Selects a ship from the dock, or clears the selection when it is the selected one already.
@@ -265,8 +262,10 @@ export class PlacementStore {
     }
     this.previewSignal.set([]);
     this.dockOrientation.set(selected.orientation);
-    this.feedbackSignal.set({ kind: PLACEMENT_FEEDBACK.REMOVED, ship: selected.type });
-    this.update(removeShip(this.draft(), selected.type));
+    this.sync.update(removeShip(this.draft(), selected.type), {
+      kind: PLACEMENT_FEEDBACK.REMOVED,
+      ship: selected.type,
+    });
   }
 
   /** Replaces the whole draft with a random valid fleet from core's `generateRandomFleet` (ADR-0007). */
@@ -276,8 +275,9 @@ export class PlacementStore {
     }
     this.previewSignal.set([]);
     this.selectedTypeSignal.set(null);
-    this.feedbackSignal.set({ kind: PLACEMENT_FEEDBACK.RANDOMIZED });
-    this.update(generateRandomFleet(this.rules(), this.rng).map(toShipPlacement));
+    this.sync.update(generateRandomFleet(this.rules(), this.rng).map(toShipPlacement), {
+      kind: PLACEMENT_FEEDBACK.RANDOMIZED,
+    });
   }
 
   /** Locks a complete valid fleet with `CONFIRM_PLACEMENT`; does nothing before the fleet is complete. */
@@ -331,33 +331,7 @@ export class PlacementStore {
       return;
     }
     const placement = findShip(change.draft, type);
-    if (placement !== undefined) {
-      this.feedbackSignal.set({ kind, placement });
-    }
-    this.update(change.draft);
-  }
-
-  /**
-   * Shows a new draft at once and sends it whole with `UPDATE_PLACEMENT` (ADR-0005). A failed update puts back the
-   * server's draft, once no other update is in flight (ADR-0054), and clears the feedback, which described the change
-   * just dropped; the error says it was not saved.
-   * @param draft The new draft, valid.
-   */
-  private update(draft: FleetDraft): void {
-    this.draftSignal.set(draft);
-    this.updatesInFlight++;
-    void this.socket.emitWithAck(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: draft }).then((result) => {
-      this.updatesInFlight--;
-      if (result.ok) {
-        this.errorSignal.set(null);
-        return;
-      }
-      this.errorSignal.set(result.error);
-      if (this.updatesInFlight === 0) {
-        this.draftSignal.set(this.serverDraft());
-        this.feedbackSignal.set(null);
-      }
-    });
+    this.sync.update(change.draft, placement === undefined ? undefined : { kind, placement });
   }
 
   /**
@@ -371,13 +345,5 @@ export class PlacementStore {
     const result = await this.socket.emitWithAck(event, {});
     this.isLockPendingSignal.set(false);
     this.errorSignal.set(result.ok ? null : result.error);
-  }
-
-  /**
-   * Reads the draft the server holds.
-   * @returns The ships of the latest snapshot, without their coordinates; empty outside placement.
-   */
-  private serverDraft(): FleetDraft {
-    return this.placement()?.myShips.map(toShipPlacement) ?? [];
   }
 }
