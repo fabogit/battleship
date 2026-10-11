@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   FakeGameSocket,
+  RECEIVER_SEATS,
   battleSnapshot,
   fromSeat,
   gameOverSnapshot,
@@ -269,27 +270,24 @@ describe('Battle', () => {
       expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
     });
 
-    it.each(Object.values(SEATS))(
-      'shows where a shot landed for a moment before the next turn takes over, as %s',
-      (seat) => {
-        // Rendered with detectChanges: whenStable waits on the scheduler's timers, which fake timers hold.
-        vi.useFakeTimers();
-        const results = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }];
-        socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: otherSeat(seat) }));
-        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results });
-        socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: seat, incomingShots: results }));
-        fixture.detectChanges();
+    it.each(RECEIVER_SEATS)('shows where a shot landed for a moment before the next turn takes over, as %s', (seat) => {
+      // Rendered with detectChanges: whenStable waits on the scheduler's timers, which fake timers hold.
+      vi.useFakeTimers();
+      const results = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }];
+      socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: otherSeat(seat) }));
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results });
+      socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: seat, incomingShots: results }));
+      fixture.detectChanges();
 
-        expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
-        expect(text('h1')).toBe(BATTLE_TEXT.myTurn);
-        expect(text('.feedback')).toBe(BATTLE_TEXT.opponentShot('A1', SHOT_OUTCOMES.HIT, null, 'Grace'));
+      expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
+      expect(text('h1')).toBe(BATTLE_TEXT.myTurn);
+      expect(text('.feedback')).toBe(BATTLE_TEXT.opponentShot('A1', SHOT_OUTCOMES.HIT, null, 'Grace'));
 
-        vi.advanceTimersByTime(SHOT_HOLD_MS);
-        fixture.detectChanges();
+      vi.advanceTimersByTime(SHOT_HOLD_MS);
+      fixture.detectChanges();
 
-        expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
-      },
-    );
+      expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
+    });
 
     it('says when the opponent is disconnected', async () => {
       const snapshot = battleSnapshot(ROOM_ID, { currentTurn: SEATS.P2 });
