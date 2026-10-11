@@ -175,7 +175,7 @@ export class PlacementStore {
 
   /** Set by every action, for the live region; read through `feedback`. */
   private readonly feedbackSignal = signal<PlacementFeedback | null>(null);
-  /** What the last action did; `null` before the first one. */
+  /** What the last action did; `null` before the first one and after a failed update. */
   readonly feedback = this.feedbackSignal.asReadonly();
 
   /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */
@@ -339,7 +339,8 @@ export class PlacementStore {
 
   /**
    * Shows a new draft at once and sends it whole with `UPDATE_PLACEMENT` (ADR-0005). A failed update puts back the
-   * server's draft, once no other update is in flight (ADR-0054).
+   * server's draft, once no other update is in flight (ADR-0054), and clears the feedback, which described the change
+   * just dropped; the error says it was not saved.
    * @param draft The new draft, valid.
    */
   private update(draft: FleetDraft): void {
@@ -354,6 +355,7 @@ export class PlacementStore {
       this.errorSignal.set(result.error);
       if (this.updatesInFlight === 0) {
         this.draftSignal.set(this.serverDraft());
+        this.feedbackSignal.set(null);
       }
     });
   }

@@ -86,7 +86,7 @@ export class BattleStore {
 
   /** Set by every tap and every `SHOT_RESOLVED`, for the live region; read through `feedback`. */
   private readonly feedbackSignal = signal<BattleFeedback | null>(null);
-  /** The last tap's outcome or the last fired turn; `null` before the first one. */
+  /** The last tap's outcome or the last fired turn; `null` before the first one and after a failed update. */
   readonly feedback = this.feedbackSignal.asReadonly();
 
   /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */
@@ -155,7 +155,8 @@ export class BattleStore {
 
   /**
    * Shows a new draft at once and sends it whole with `UPDATE_TARGETS`. A failed update puts back the server's draft,
-   * once no other update is in flight (ADR-0054).
+   * once no other update is in flight (ADR-0054), and clears the feedback, which described the change just dropped; the
+   * error says it was not saved.
    * @param draft The new draft, valid for this turn.
    */
   private update(draft: TargetDraft): void {
@@ -170,6 +171,7 @@ export class BattleStore {
       this.errorSignal.set(result.error);
       if (this.updatesInFlight === 0) {
         this.draftSignal.set(this.serverDraft());
+        this.feedbackSignal.set(null);
       }
     });
   }
