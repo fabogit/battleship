@@ -183,6 +183,67 @@ describe('isRoomId and parseNickname', () => {
   });
 });
 
+// The character policy of ADR-0060, written as escapes so every invisible character shows in the source.
+describe('parseNickname characters', () => {
+  it.each([
+    ['a zero-width space', '​'],
+    ['three zero-width spaces', '​​​'],
+    ['a word joiner', '⁠'],
+    ['a right-to-left override', '‮evil'],
+    ['NUL and BEL', 'a\u0000b\u0007'],
+    ['a line feed', 'line1\nline2'],
+    ['an inner tab', 'Ada\tLovelace'],
+    ['a line separator', 'Ada Lovelace'],
+    ['a paragraph separator', 'Ada Lovelace'],
+    ['a soft hyphen', '­'],
+    ['a soft hyphen between letters', 'Ad­a'],
+    ['a braille blank', '⠀'],
+    ['a Hangul filler', 'ㅤ'],
+    ['a Hangul choseong filler', 'ᅟ'],
+    ['a Hangul jungseong filler', 'ᅠ'],
+    ['a halfwidth Hangul filler', 'ﾠ'],
+    ['a musical null notehead', '\u{1D159}'],
+    ['a lone surrogate', '\uD800'],
+    ['a lone surrogate after a letter', 'a\uDC00'],
+    ['a byte order mark', '﻿'],
+    ['a byte order mark between letters', 'Ad﻿a'],
+    ['a zero-width joiner between letters', 'Ad‍a'],
+    ['a zero-width non-joiner between letters', 'Ad‌a'],
+    ['a blank-looking character before a name', 'ㅤAda'],
+    ['blank-looking characters after a name', 'Ada⠀⠀'],
+    ['a combining mark alone', '́'],
+    ['a variation selector alone', '️'],
+  ])('refuses %s', (_label, nickname) => {
+    expect(parseNickname(nickname)).toBeNull();
+    expect(parse(CLIENT_EVENTS.CREATE_ROOM, { nickname })).toBeNull();
+  });
+
+  it.each([
+    ['accented letters', 'Zoë Éloïse'],
+    ['a combining accent', 'José'],
+    ['CJK', '山田太郎'],
+    ['Hangul', '김민준'],
+    ['an emoji', 'Ada 🚢'],
+    ['an emoji with VS16', '❤️ Ada'],
+    ['a keycap', '1️⃣ Ada'],
+    ['a flag', '🇮🇹 Ada'],
+    ['a zero-width joiner sequence', 'Ada 👩‍💻'],
+    ['a joiner sequence after VS16', '🏳️‍🌈'],
+    ['a joiner sequence after a skin tone', '👨🏽‍💻'],
+    ['Arabic', 'ليلى'],
+    ['Hebrew', 'נועה'],
+    ['inner spaces', 'Ada  Lovelace'],
+    ['an ideographic space inside', '山田　太郎'],
+    ['punctuation only', '?!'],
+  ])('accepts %s', (_label, nickname) => {
+    expect(parseNickname(nickname)).toBe(nickname);
+  });
+
+  it('trims a byte order mark at either end, as whitespace', () => {
+    expect(parseNickname('﻿Ada﻿')).toBe('Ada');
+  });
+});
+
 describe('UPDATE_RULES', () => {
   it('accepts every turn time limit and timeout action', () => {
     for (const turnTimeLimitSeconds of [15, 30, 60, 120]) {
