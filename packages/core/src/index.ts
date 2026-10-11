@@ -15,6 +15,7 @@ export {
   SESSION_STORE_TTL_MS,
   START_COUNTDOWN_MS,
 } from './constants.js';
+export { CELL_COUNT, toCellIndex, toCoordinate } from './grid.js';
 export { otherSeat, randomTargets, resolveTurn, shotsAllowed, TARGET_VIOLATIONS, validateTargets } from './engine.js';
 export type {
   Battle,

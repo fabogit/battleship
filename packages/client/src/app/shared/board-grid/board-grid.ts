@@ -1,7 +1,15 @@
 import { Component, computed, input, output, signal, viewChildren, type ElementRef } from '@angular/core';
-import { BOARD_SIZE, type Coordinate, type PlacedShip, type ShotResult } from '@battleship/core';
+import {
+  BOARD_SIZE,
+  CELL_COUNT,
+  toCellIndex,
+  toCoordinate,
+  type Coordinate,
+  type PlacedShip,
+  type ShotResult,
+} from '@battleship/core';
 
-import { CELL_COUNT, toBoardCells, toCellIndex, toCoordinate, type BoardCell } from './board-cells';
+import { toBoardCells, type BoardCell } from './board-cells';
 import { BOARD_GRID_TEXT, type BoardGridText } from './board-grid.text';
 import { COLUMN_NUMBERS, ROW_LETTERS, formatCoordinate } from './coordinates';
 

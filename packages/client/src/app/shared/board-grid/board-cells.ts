@@ -1,14 +1,13 @@
 import {
-  BOARD_SIZE,
+  CELL_COUNT,
   SHOT_OUTCOMES,
+  toCellIndex,
+  toCoordinate,
   type Coordinate,
   type PlacedShip,
   type ShotOutcome,
   type ShotResult,
 } from '@battleship/core';
-
-/** Number of cells on a board. */
-export const CELL_COUNT = BOARD_SIZE * BOARD_SIZE;
 
 /**
  * What can be known about a cell, also rendered as its `data-state` attribute for the styles (ADR-0043). Draft targets,
@@ -58,24 +57,6 @@ export interface BoardCell {
   readonly isInvalidPreview: boolean;
   /** Whether the cell belongs to the ship selected during placement. */
   readonly isSelected: boolean;
-}
-
-/**
- * Maps a cell to its position in the grid, row by row.
- * @param coordinate A cell on the board.
- * @returns `y × BOARD_SIZE + x`.
- */
-export function toCellIndex({ x, y }: Coordinate): number {
-  return y * BOARD_SIZE + x;
-}
-
-/**
- * Maps a grid position back to its cell.
- * @param index A position from 0 to `CELL_COUNT − 1`.
- * @returns The cell at that position.
- */
-export function toCoordinate(index: number): Coordinate {
-  return { x: index % BOARD_SIZE, y: Math.floor(index / BOARD_SIZE) };
 }
 
 /**

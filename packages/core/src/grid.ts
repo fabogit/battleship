@@ -1,4 +1,5 @@
-// Board geometry shared by placement and the shot engine; internal to core, not exported from the package.
+// Board geometry shared by placement, the shot engine and the client's board grid. `CELL_COUNT`, `toCellIndex` and
+// `toCoordinate` are exported from the package, so the row-major cell order is defined once; `isOnBoard` stays internal.
 
 import { BOARD_SIZE } from './constants.js';
 import type { Coordinate } from './types.js';
@@ -23,4 +24,13 @@ export function isOnBoard({ x, y }: Coordinate): boolean {
  */
 export function toCellIndex({ x, y }: Coordinate): number {
   return y * BOARD_SIZE + x;
+}
+
+/**
+ * Maps an index in a per-cell grid back to its cell: the inverse of `toCellIndex`.
+ * @param index A position from 0 to `CELL_COUNT − 1`.
+ * @returns The cell at that position.
+ */
+export function toCoordinate(index: number): Coordinate {
+  return { x: index % BOARD_SIZE, y: Math.floor(index / BOARD_SIZE) };
 }

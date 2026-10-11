@@ -26,6 +26,7 @@ battleship/
     │   ├── src/
     │   │   ├── constants.ts       # Board size, timings, limits, PROTOCOL_VERSION
     │   │   ├── types.ts           # Domain entities and their named value sets (SEATS, ROOM_PHASES, …)
+    │   │   ├── grid.ts            # Board geometry: CELL_COUNT, row-major cell index ↔ coordinate
     │   │   ├── rules.ts           # Defaults, rules validation
     │   │   ├── placement.ts       # Layout validation, random generation, completion
     │   │   ├── engine.ts          # Shot resolution, shot count, victory check
