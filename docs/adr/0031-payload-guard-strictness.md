@@ -29,4 +29,5 @@ The guards of [ADR-0016](0016-payload-validation.md) parse rather than narrow: e
 - Spec: [Protocol: Payload validation](../protocol.md#payload-validation) · [Server: Hardening](../server.md#hardening)
 - Refines: [ADR-0016](0016-payload-validation.md)
 - Related: [ADR-0032](0032-fleet-placement.md) (placement validation, `INVALID_PLACEMENT`)
+- Refined by [ADR-0060](0060-nickname-characters.md): the nickname guard also checks its characters.
 - Issues: [#13](https://github.com/fabogit/battleship/issues/13)
