@@ -88,9 +88,9 @@ describe('Home', () => {
 
   // ADR-0060: one invisible, one bidi override, one blank-looking, one control character.
   it.each([
-    ['a zero-width space', '​'],
-    ['a right-to-left override', '‮evil'],
-    ['a Hangul filler', 'ㅤ'],
+    ['a zero-width space', '\u200B'],
+    ['a right-to-left override', '\u202Eevil'],
+    ['a Hangul filler', '\u3164'],
     ['a NUL', 'a\u0000b'],
   ])('refuses a nickname with %s and says why, without sending anything', async (_label, nickname) => {
     await submit(nickname);
@@ -103,9 +103,11 @@ describe('Home', () => {
   it('creates a room for a nickname in another script with an emoji', async () => {
     socket.emitWithAck.mockResolvedValue({ ok: true, roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
 
-    await submit('ليلى 👩‍💻');
+    await submit('ليلى 👩\u200D💻');
 
-    expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'ليلى 👩‍💻' });
+    expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.CREATE_ROOM, {
+      nickname: 'ليلى 👩\u200D💻',
+    });
   });
 
   it('keeps the button focusable but inactive until the socket is connected', async () => {

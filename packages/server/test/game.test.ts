@@ -409,17 +409,17 @@ describe('payload guards', () => {
 
   // The characters of the M1 review (#52 F3) that the server used to relay byte for byte (ADR-0060).
   it.each([
-    ['a zero-width space', '​'],
-    ['three zero-width spaces', '​​​'],
-    ['a word joiner', '⁠'],
-    ['a right-to-left override', '‮evil'],
+    ['a zero-width space', '\u200B'],
+    ['three zero-width spaces', '\u200B\u200B\u200B'],
+    ['a word joiner', '\u2060'],
+    ['a right-to-left override', '\u202Eevil'],
     ['NUL and BEL', 'a\u0000b\u0007'],
     ['a line feed', 'line1\nline2'],
-    ['a soft hyphen', '­'],
-    ['a braille blank', '⠀'],
-    ['a Hangul filler', 'ㅤ'],
+    ['a soft hyphen', '\u00AD'],
+    ['a braille blank', '\u2800'],
+    ['a Hangul filler', '\u3164'],
     ['a lone surrogate', '\uD800'],
-    ['a byte order mark', '﻿'],
+    ['a byte order mark', '\uFEFF'],
   ])('refuse a nickname with %s on CREATE_ROOM and JOIN_ROOM', async (_label, nickname) => {
     await start();
     const [alice, bob] = await Promise.all([player(), player()]);

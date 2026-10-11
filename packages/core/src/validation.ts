@@ -37,13 +37,14 @@ const PLAYER_SECRET_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a
  * without being whitespace, which `trim()` therefore keeps: the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0, the
  * braille blank U+2800 and the musical null notehead U+1D159.
  */
-const REFUSED_NICKNAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}ᅟᅠ⠀ㅤﾠ\u{1D159}]/u;
+const REFUSED_NICKNAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}\u115F\u1160\u2800\u3164\uFFA0\u{1D159}]/u;
 
 /**
- * A zero-width joiner inside an emoji sequence (👩‍💻, 🏳️‍🌈, 👨🏽‍💻): between two pictographs, the first optionally
- * followed by VS16 or a skin tone. The one format character a nickname keeps (ADR-0060).
+ * A zero-width joiner (U+200D) inside an emoji sequence (`'👩\u200D💻'`, `'🏳️\u200D🌈'`, `'👨🏽\u200D💻'`): between two
+ * pictographs, the first optionally followed by VS16 or a skin tone. The one format character a nickname keeps
+ * (ADR-0060).
  */
-const EMOJI_JOINER = /(?<=\p{Extended_Pictographic}[\u{FE0F}\p{Emoji_Modifier}]?)‍(?=\p{Extended_Pictographic})/gu;
+const EMOJI_JOINER = /(?<=\p{Extended_Pictographic}[\u{FE0F}\p{Emoji_Modifier}]?)\u200D(?=\p{Extended_Pictographic})/gu;
 
 /**
  * A character that shows on its own: a letter, number, punctuation mark or symbol. A nickname needs at least one, so a
@@ -150,8 +151,8 @@ export function isRoomId(value: unknown): value is string {
  * @example
  * parseNickname('  Ada Lovelace  '); // 'Ada Lovelace'
  * parseNickname('   '); // null: empty once trimmed
- * parseNickname('‮evil'); // null: a bidi override
- * parseNickname('ㅤ'); // null: a Hangul filler renders blank
+ * parseNickname('\u202Eevil'); // null: a bidi override
+ * parseNickname('\u3164'); // null: a Hangul filler renders blank
  */
 export function parseNickname(value: unknown): string | null {
   if (typeof value !== 'string') {
