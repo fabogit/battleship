@@ -410,6 +410,41 @@ describe('payload guards', () => {
       error: ERROR_CODES.INVALID_PAYLOAD,
     });
   });
+
+  // The characters of the M1 review (#52 F3) that the server used to relay byte for byte (ADR-0060).
+  it.each([
+    ['a zero-width space', '​'],
+    ['three zero-width spaces', '​​​'],
+    ['a word joiner', '⁠'],
+    ['a right-to-left override', '‮evil'],
+    ['NUL and BEL', 'a\u0000b\u0007'],
+    ['a line feed', 'line1\nline2'],
+    ['a soft hyphen', '­'],
+    ['a braille blank', '⠀'],
+    ['a Hangul filler', 'ㅤ'],
+    ['a lone surrogate', '\uD800'],
+    ['a byte order mark', '﻿'],
+  ])('refuse a nickname with %s on CREATE_ROOM and JOIN_ROOM', async (_label, nickname) => {
+    await start();
+    const [alice, bob] = await Promise.all([player(), player()]);
+    expect(await sendRaw(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname })).toEqual({
+      ok: false,
+      error: ERROR_CODES.INVALID_PAYLOAD,
+    });
+    expect(rooms.size).toBe(0);
+
+    const created = (await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
+    expect(await sendRaw(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId: created.roomId, nickname })).toEqual({
+      ok: false,
+      error: ERROR_CODES.INVALID_PAYLOAD,
+    });
+    // The refused join left the seat free: Alice's first snapshot has no opponent, and a valid join still takes it.
+    expect((await alice.inbox.state()).opponent).toBeNull();
+    expect(await send(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId: created.roomId, nickname: 'Bob' })).toMatchObject({
+      ok: true,
+    });
+    expect((await alice.inbox.state()).opponent?.nickname).toBe('Bob');
+  });
 });
 
 describe('command acks', () => {

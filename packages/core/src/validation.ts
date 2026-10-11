@@ -31,6 +31,27 @@ const ROOM_ID_PATTERN = new RegExp(`^[${ROOM_ID_ALPHABET}]{${String(ROOM_ID_LENG
 const PLAYER_SECRET_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /**
+ * Characters a nickname may not hold anywhere, even between visible ones (ADR-0060): controls (`Cc`: NUL, BEL, tab,
+ * line feed…), format characters (`Cf`: zero-width spaces and joiners, bidi overrides, the soft hyphen, the BOM), lone
+ * surrogates (`Cs`), the line and paragraph separators (`Zl`, `Zp`), and the characters that render as blank space
+ * without being whitespace, which `trim()` therefore keeps: the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0, the
+ * braille blank U+2800 and the musical null notehead U+1D159.
+ */
+const REFUSED_NICKNAME_CHARACTER = /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}ᅟᅠ⠀ㅤﾠ\u{1D159}]/u;
+
+/**
+ * A zero-width joiner inside an emoji sequence (👩‍💻, 🏳️‍🌈, 👨🏽‍💻): between two pictographs, the first optionally
+ * followed by VS16 or a skin tone. The one format character a nickname keeps (ADR-0060).
+ */
+const EMOJI_JOINER = /(?<=\p{Extended_Pictographic}[\u{FE0F}\p{Emoji_Modifier}]?)‍(?=\p{Extended_Pictographic})/gu;
+
+/**
+ * A character that shows on its own: a letter, number, punctuation mark or symbol. A nickname needs at least one, so a
+ * name of combining marks or variation selectors alone is refused (ADR-0060).
+ */
+const VISIBLE_CHARACTER = /[\p{L}\p{N}\p{P}\p{S}]/u;
+
+/**
  * Checks that a value is a plain object (as `JSON.parse` builds them) with exactly the given own properties. Missing
  * and extra properties are both refused (ADR-0031).
  * @param value The untrusted value.
@@ -119,20 +140,29 @@ export function isRoomId(value: unknown): value is string {
 }
 
 /**
- * Trims a nickname and checks its length (NICKNAME_MAX_LENGTH counts UTF-16 code units, like HTML `maxlength`). The
- * client validates the nickname field with it, so the form accepts exactly what the guard does.
+ * Trims a nickname, checks its length (NICKNAME_MAX_LENGTH counts UTF-16 code units, like HTML `maxlength`) and its
+ * characters (ADR-0060): no control, format, surrogate, line or paragraph separator, or blank-looking character
+ * anywhere, except a joiner inside an emoji sequence, and at least one letter, number, punctuation mark or symbol. Inner
+ * spaces are kept. The client validates the nickname field with it, so the form accepts exactly what the guard does.
  * @param value The untrusted value.
- * @returns The trimmed nickname, or `null` when the value is not a string or is empty or too long once trimmed.
+ * @returns The trimmed nickname, or `null` when the value is not a string, is empty or too long once trimmed, or holds
+ *   a refused character.
  * @example
- * parseNickname('  Ada  '); // 'Ada'
+ * parseNickname('  Ada Lovelace  '); // 'Ada Lovelace'
  * parseNickname('   '); // null: empty once trimmed
+ * parseNickname('‮evil'); // null: a bidi override
+ * parseNickname('ㅤ'); // null: a Hangul filler renders blank
  */
 export function parseNickname(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
   }
   const nickname = value.trim();
-  return nickname.length > 0 && nickname.length <= NICKNAME_MAX_LENGTH ? nickname : null;
+  if (nickname.length === 0 || nickname.length > NICKNAME_MAX_LENGTH) {
+    return null;
+  }
+  const hasRefusedCharacter = REFUSED_NICKNAME_CHARACTER.test(nickname.replace(EMOJI_JOINER, ''));
+  return !hasRefusedCharacter && VISIBLE_CHARACTER.test(nickname) ? nickname : null;
 }
 
 /**
