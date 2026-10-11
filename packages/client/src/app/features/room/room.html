@@ -13,6 +13,13 @@
   @case (views.ENTERING) {
     <p class="pending" aria-live="polite">{{ text.entering }}</p>
   }
+  @case (views.LEFT) {
+    <h1>{{ text.leftHeading }}</h1>
+    <p>{{ text.leftReason }}</p>
+    <p>
+      <a routerLink="/">{{ text.createOwn }}</a>
+    </p>
+  }
   @case (views.LOBBY) {
     @if (snapshot(); as snapshot) {
       <app-lobby [roomId]="snapshot.roomId" [nickname]="snapshot.me.nickname" />

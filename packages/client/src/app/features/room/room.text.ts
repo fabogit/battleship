@@ -14,6 +14,10 @@ export interface RoomText {
   readonly joining: string;
   /** While the room's first snapshot is on its way. */
   readonly entering: string;
+  /** The heading of the view for a room the tab has left. */
+  readonly leftHeading: string;
+  /** Why a room the tab has left cannot be played here. */
+  readonly leftReason: string;
   /** The heading of the not-found view. */
   readonly notFoundHeading: string;
   /** Why a room may not be found. */
@@ -36,6 +40,8 @@ export const ROOM_TEXT: RoomText = {
   join: 'Join room',
   joining: 'Joining room…',
   entering: 'Entering the room…',
+  leftHeading: 'You left this room',
+  leftReason: 'You have entered another room since, so this page no longer follows this one.',
   notFoundHeading: 'Room not found',
   notFoundReason:
     'The link may be mistyped, or the room has closed: rooms do not survive a server restart and expire when left empty.',

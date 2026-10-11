@@ -1,5 +1,6 @@
+import { Location } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, withComponentInputBinding } from '@angular/router';
+import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
   CLIENT_EVENTS,
@@ -31,6 +32,7 @@ import { ROOM_VIEWS } from './room';
 import { ROOM_TEXT } from './room.text';
 
 const ROOM_ID = 'ab23cd45';
+const NEXT_ROOM_ID = 'zz23cd45';
 // Generated, as the server does: a literal UUID named like a secret trips secret scanners.
 const PLAYER_SECRET = crypto.randomUUID();
 
@@ -100,6 +102,39 @@ async function join(nickname: string): Promise<void> {
 }
 
 /**
+ * Creates a room from the home screen, as the player does, and waits for its page.
+ * @param roomId The id the server gives the new room.
+ */
+async function createRoom(roomId: string): Promise<void> {
+  socket.emitWithAck.mockResolvedValueOnce({ ok: true, roomId, playerSecret: crypto.randomUUID() });
+  const input = page().querySelector('input');
+  if (input === null) {
+    throw new Error('No nickname field');
+  }
+  input.value = 'Ada';
+  input.dispatchEvent(new Event('input'));
+  page().querySelector<HTMLButtonElement>('button[type="submit"]')?.click();
+  await vi.waitFor(() => {
+    expect(TestBed.inject(Router).url).toBe(`/r/${roomId}`);
+  });
+  await harness.fixture.whenStable();
+}
+
+/**
+ * Moves through the tab's history, as the browser's Back and Forward buttons do, and waits for the router to follow.
+ * @param direction `back` or `forward`.
+ */
+async function goThroughHistory(direction: 'back' | 'forward'): Promise<void> {
+  const router = TestBed.inject(Router);
+  const from = router.url;
+  TestBed.inject(Location)[direction]();
+  await vi.waitFor(() => {
+    expect(router.url).not.toBe(from);
+  });
+  await harness.fixture.whenStable();
+}
+
+/**
  * Delivers a snapshot and lets the page render it.
  * @param snapshot The `STATE` payload.
  */
@@ -114,6 +149,7 @@ describe('ROOM_VIEWS', () => {
     expect(Object.values(ROOM_VIEWS)).toEqual([
       'join',
       'entering',
+      'left',
       'lobby',
       'placement',
       'battle',
@@ -244,6 +280,62 @@ describe('Room', () => {
 
       expect(heading()).toBe(BATTLE_TEXT.wonHeading);
       expect(page().textContent).toContain(BATTLE_TEXT.reasons.FLEET_DESTROYED('Grace', true));
+    });
+  });
+
+  describe('after entering another room from this tab', () => {
+    beforeEach(async () => {
+      // As the app's bootstrap does; without it the router does not follow Back and Forward.
+      TestBed.inject(Router).initialNavigation();
+      await harness.navigateByUrl('/');
+      await createRoom(ROOM_ID);
+    });
+
+    /** Creates the next room from home, then goes Back twice: past home, to the first room. */
+    async function createNextRoomAndGoBack(): Promise<void> {
+      await createRoom(NEXT_ROOM_ID);
+      await receive(waitingSnapshot(NEXT_ROOM_ID));
+      await goThroughHistory('back');
+      await goThroughHistory('back');
+      expect(TestBed.inject(Router).url).toBe(`/r/${ROOM_ID}`);
+    }
+
+    it('says the first room was left, with a way home, after the header link and Back', async () => {
+      await receive(waitingSnapshot(ROOM_ID));
+      // The header's app-name link, which the harness does not render.
+      await harness.navigateByUrl('/');
+
+      await createNextRoomAndGoBack();
+
+      expect(heading()).toBe(ROOM_TEXT.leftHeading);
+      expect(page().textContent).not.toContain(ROOM_TEXT.entering);
+      expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
+    });
+
+    it('says the first room was left after "New match" at game over and Back', async () => {
+      await receive(battleSnapshot(ROOM_ID));
+      await receive(gameOverSnapshot(ROOM_ID));
+      const newMatch = [...page().querySelectorAll('a')].find((link) => link.textContent === BATTLE_TEXT.newMatch);
+      newMatch?.click();
+      await vi.waitFor(() => {
+        expect(TestBed.inject(Router).url).toBe('/');
+      });
+
+      await createNextRoomAndGoBack();
+
+      expect(heading()).toBe(ROOM_TEXT.leftHeading);
+      expect(page().querySelector('[role="grid"]')).toBeNull();
+    });
+
+    it('still shows the room entered last', async () => {
+      await harness.navigateByUrl('/');
+      await createNextRoomAndGoBack();
+
+      await goThroughHistory('forward');
+      await goThroughHistory('forward');
+
+      expect(TestBed.inject(Router).url).toBe(`/r/${NEXT_ROOM_ID}`);
+      expect(heading()).toBe(LOBBY_TEXT.heading);
     });
   });
 
