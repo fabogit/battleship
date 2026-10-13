@@ -36,24 +36,24 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 - Until rules negotiation lands (#26), `JOIN_ROOM` moves the room straight to `PLACEMENT`.
 - `JOIN_ROOM` outside `WAITING_FOR_OPPONENT` finds both seats taken, so it is `ROOM_FULL`, never `WRONG_PHASE` ([Server: Room creation & joining](server.md#room-creation--joining)).
 
-| Event               | Payload                      | Ack data                       | Phase                                                  |
-| ------------------- | ---------------------------- | ------------------------------ | ------------------------------------------------------ |
-| `CREATE_ROOM`       | `{ nickname }`               | `{ roomId, playerSecret }`     | —                                                      |
-| `JOIN_ROOM`         | `{ roomId, nickname }`       | `{ playerSecret }`             | `WAITING_FOR_OPPONENT`                                 |
-| `UPDATE_RULES`      | `{ rules: GameRules }`       | `{ rulesVersion }`             | `RULES_NEGOTIATION`                                    |
-| `CONFIRM_RULES`     | `{ rulesVersion }`           | —                              | `RULES_NEGOTIATION`                                    |
-| `UPDATE_PLACEMENT`  | `{ ships: ShipPlacement[] }` | —                              | `PLACEMENT`                                            |
-| `CONFIRM_PLACEMENT` | `{}`                         | —                              | `PLACEMENT`                                            |
-| `UNLOCK_PLACEMENT`  | `{}`                         | —                              | `PLACEMENT`                                            |
-| `UPDATE_TARGETS`    | `{ targets: Coordinate[] }`  | —                              | `IN_PROGRESS`, own turn                                |
-| `FIRE`              | `{ targets: Coordinate[] }`  | —                              | `IN_PROGRESS`, own turn                                |
-| `SET_PAUSED`        | `{ isPaused: boolean }`      | —                              | `IN_PROGRESS`, opponent disconnected                   |
-| `SURRENDER`         | `{}`                         | —                              | `IN_PROGRESS`                                          |
-| `REMATCH_CHOICE`    | `{ choice: RematchChoice }`  | —                              | `GAME_OVER`                                            |
-| `LEAVE_ROOM`        | `{}`                         | —                              | any                                                    |
-| `ECHO`              | any                          | `{ payload, protocolVersion }` | any; the smoke check (ADR-0048), no guard, never fails |
+| Event               | Payload                      | Ack data                       | Phase                                                                     |
+| ------------------- | ---------------------------- | ------------------------------ | ------------------------------------------------------------------------- |
+| `CREATE_ROOM`       | `{ nickname }`               | `{ roomId, playerSecret }`     | —                                                                         |
+| `JOIN_ROOM`         | `{ roomId, nickname }`       | `{ playerSecret }`             | `WAITING_FOR_OPPONENT`                                                    |
+| `UPDATE_RULES`      | `{ rules: GameRules }`       | `{ rulesVersion }`             | `RULES_NEGOTIATION`                                                       |
+| `CONFIRM_RULES`     | `{ rulesVersion }`           | —                              | `RULES_NEGOTIATION`                                                       |
+| `UPDATE_PLACEMENT`  | `{ ships: ShipPlacement[] }` | —                              | `PLACEMENT`                                                               |
+| `CONFIRM_PLACEMENT` | `{}`                         | —                              | `PLACEMENT`                                                               |
+| `UNLOCK_PLACEMENT`  | `{}`                         | —                              | `PLACEMENT`                                                               |
+| `UPDATE_TARGETS`    | `{ targets: Coordinate[] }`  | —                              | `IN_PROGRESS`, own turn                                                   |
+| `FIRE`              | `{ targets: Coordinate[] }`  | —                              | `IN_PROGRESS`, own turn                                                   |
+| `SET_PAUSED`        | `{ isPaused: boolean }`      | —                              | `IN_PROGRESS`, opponent disconnected                                      |
+| `SURRENDER`         | `{}`                         | —                              | `IN_PROGRESS`                                                             |
+| `REMATCH_CHOICE`    | `{ choice: RematchChoice }`  | —                              | `GAME_OVER`                                                               |
+| `LEAVE_ROOM`        | `{}`                         | —                              | any                                                                       |
+| `ECHO`              | any                          | `{ payload, protocolVersion }` | any; the smoke check (ADR-0048), no guard; only the rate limit refuses it |
 
-`ECHO` is permanent ([ADR-0048](adr/0048-echo-smoke-check.md)): after every deploy, `pnpm --filter @battleship/server echo <url>` connects with the handshake `auth`, sends it and expects its ack, so the check covers the origin policy, the transport, the handshake and one event round trip without opening a room (a `CREATE_ROOM` would use up one of the `MAX_ROOMS` until #24 removes rooms). It is not a command: the client never sends it, and `emitWithAck` refuses it at compile time. The Postman collection keeps its `ECHO` requests ([Local tooling](development.md#local-tooling)).
+`ECHO` is permanent ([ADR-0048](adr/0048-echo-smoke-check.md)): after every deploy, `pnpm --filter @battleship/server echo <url>` connects with the handshake `auth`, sends it and expects its ack, so the check covers the origin policy, the transport, the handshake and one event round trip without opening a room (a `CREATE_ROOM` would leave a room open until its TTL runs out). It is not a command: the client never sends it, and `emitWithAck` refuses it at compile time. The Postman collection keeps its `ECHO` requests ([Local tooling](development.md#local-tooling)).
 
 ## Payload validation
 
@@ -70,7 +70,7 @@ Every command payload passes its guard in `PAYLOAD_PARSERS` before reaching room
 - **Enums** (`orientation`, `timeoutAction`, `choice`): exact, case-sensitive members only.
 - **Empty payloads** (`CONFIRM_PLACEMENT`, `UNLOCK_PLACEMENT`, `SURRENDER`, `LEAVE_ROOM`): exactly `{}`.
 
-Lengths are checked before elements, so an oversized array is refused without being walked; Socket.io's `maxHttpBufferSize` bounds the raw message ([Hardening](server.md#hardening)).
+Lengths are checked before elements, so an oversized array is refused without being walked; Socket.io's `maxHttpBufferSize` bounds the raw message at 16 KiB: a larger one closes the connection before any guard runs ([Hardening](server.md#hardening)).
 
 ## Server → client
 
@@ -152,7 +152,7 @@ Timers are sent as **remaining milliseconds** (not absolute timestamps) to avoid
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PROTOCOL_MISMATCH` | Handshake `protocolVersion` differs from `PROTOCOL_VERSION` or is missing                                                                                                                                                                                                                   |
 | `INVALID_PAYLOAD`   | A payload failed its guard ([Payload validation](#payload-validation))                                                                                                                                                                                                                      |
-| `RATE_LIMITED`      | More than `RATE_LIMIT_EVENTS_PER_SECOND` events from one socket                                                                                                                                                                                                                             |
+| `RATE_LIMITED`      | More than `RATE_LIMIT_EVENTS_PER_SECOND` events from one socket in any one second; the event is dropped before its guard, `ECHO` included, and the socket stays connected                                                                                                                   |
 | `SERVER_FULL`       | `CREATE_ROOM` with `MAX_ROOMS` rooms open                                                                                                                                                                                                                                                   |
 | `ROOM_NOT_FOUND`    | `JOIN_ROOM` for a room that does not exist (or was lost in a restart)                                                                                                                                                                                                                       |
 | `ROOM_FULL`         | `JOIN_ROOM` for a room with both seats taken                                                                                                                                                                                                                                                |

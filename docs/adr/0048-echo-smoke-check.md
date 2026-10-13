@@ -14,12 +14,13 @@ date: 2026-10-08
 
 ## Consequences
 
-- One event in `ClientToServerEvents` is not part of the game. It has no guard and never fails; its payload is bounded by `maxHttpBufferSize`, and the rate limit (#24) counts it like any other event.
+- One event in `ClientToServerEvents` is not part of the game. It has no guard; its payload is bounded by `maxHttpBufferSize`, and the rate limit counts it like any other event, so its ack can be `{ ok: false, error: 'RATE_LIMITED' }` ([ADR-0066](0066-rate-limit-and-message-size.md)).
 - A future server change that requires a session for every event must leave `ECHO` open to a socket without a room.
 
 ## Links
 
 - Added on 2026-10-08 when the Phase 0 page was retired ([#17](https://github.com/fabogit/battleship/issues/17)).
+- Amended on 2026-10-13 for server hardening ([#24](https://github.com/fabogit/battleship/issues/24)): `ECHO` can be rate limited.
 - Spec: [Protocol: Client → server](../protocol.md#client--server) · [Development: Monorepo topology](../development.md#monorepo-topology)
 - Related: [ADR-0028](0028-local-tooling.md) (the Postman collection), [ADR-0035](0035-command-acks.md) (commands and their acks)
 - Issues: [#17](https://github.com/fabogit/battleship/issues/17), [#51](https://github.com/fabogit/battleship/issues/51) (F16)
