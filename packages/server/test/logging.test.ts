@@ -1,9 +1,11 @@
 import {
   CLIENT_EVENTS,
+  EMPTY_ROOM_TTL_MS,
   ERROR_CODES,
   ORIENTATIONS,
   PLACEMENT_VIOLATIONS,
   PROTOCOL_VERSION,
+  RATE_LIMIT_EVENTS_PER_SECOND,
   SEATS,
   SERVER_EVENTS,
   SHIP_TYPES,
@@ -16,10 +18,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
 import type { LogLevel } from '../src/config.js';
-import { createServer } from '../src/server.js';
+import { createServer, type ServerOptions } from '../src/server.js';
+import { FakeClock } from './fake-clock.js';
 
 const ALLOWED = 'https://battleship.example';
 const FOREIGN = 'https://evil.example';
+/** A client address as Render's proxy would append it, and one a client could write itself. */
+const CLIENT_ADDRESS = '203.0.113.9';
+const SPOOFED_ADDRESS = '198.51.100.1';
 
 type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -41,9 +47,13 @@ afterEach(async () => {
 });
 
 /** Starts a server whose Pino output is collected in memory. */
-async function start(level: LogLevel): Promise<{ baseUrl: string; lines: LogLine[] }> {
+async function start(
+  level: LogLevel,
+  options: Pick<ServerOptions, 'clock' | 'trustProxyHops'> = {},
+): Promise<{ baseUrl: string; lines: LogLine[] }> {
   const lines: LogLine[] = [];
   app = createServer({
+    ...options,
     allowedOrigins: [ALLOWED],
     logger: {
       level,
@@ -58,11 +68,16 @@ async function start(level: LogLevel): Promise<{ baseUrl: string; lines: LogLine
   return { baseUrl, lines };
 }
 
-function client(baseUrl: string, origin = ALLOWED, auth: object = { protocolVersion: PROTOCOL_VERSION }): ClientSocket {
+function client(
+  baseUrl: string,
+  origin = ALLOWED,
+  auth: object = { protocolVersion: PROTOCOL_VERSION },
+  headers: Record<string, string> = {},
+): ClientSocket {
   const socket: ClientSocket = connect(baseUrl, {
     transports: ['polling', 'websocket'],
     reconnection: false,
-    extraHeaders: { origin },
+    extraHeaders: { ...headers, origin },
     auth,
   });
   clients.push(socket);
@@ -141,6 +156,67 @@ describe('socket logs', () => {
     expect(messages(lines)).not.toContain('Socket event received');
   });
 
+  it('name the TCP peer and ignore X-Forwarded-For by default', async () => {
+    const { baseUrl, lines } = await start('info');
+    const socket = client(baseUrl, ALLOWED, undefined, { 'x-forwarded-for': CLIENT_ADDRESS });
+    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
+
+    expect(lines).toEqual(
+      expect.arrayContaining([expect.objectContaining({ msg: 'Socket connected', address: '127.0.0.1' })]),
+    );
+  });
+
+  it('name the address the trusted proxy appended, on sockets and HTTP requests alike', async () => {
+    const { baseUrl, lines } = await start('info', { trustProxyHops: 1 });
+    const forwardedFor = `${SPOOFED_ADDRESS}, ${CLIENT_ADDRESS}`;
+    const socket = client(baseUrl, ALLOWED, undefined, { 'x-forwarded-for': forwardedFor });
+    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
+    // Any route but /health, which is not logged at info; a 404 is logged like any request.
+    await fetch(`${baseUrl}/missing`, { headers: { 'x-forwarded-for': forwardedFor } });
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Socket connected', address: CLIENT_ADDRESS }),
+        expect.objectContaining({
+          msg: 'incoming request',
+          req: expect.objectContaining({ remoteAddress: CLIENT_ADDRESS }) as unknown,
+        }),
+      ]),
+    );
+    expect(JSON.stringify(lines)).not.toContain(SPOOFED_ADDRESS);
+  });
+
+  it('show the whole forwarded chain at debug, for calibrating TRUST_PROXY_HOPS', async () => {
+    const { baseUrl, lines } = await start('debug', { trustProxyHops: 1 });
+    const forwardedFor = `${SPOOFED_ADDRESS}, ${CLIENT_ADDRESS}`;
+    const socket = client(baseUrl, ALLOWED, undefined, { 'x-forwarded-for': forwardedFor });
+    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
+
+    expect(lines).toEqual(
+      expect.arrayContaining([expect.objectContaining({ msg: 'Socket address chain', forwardedFor })]),
+    );
+  });
+
+  it('report a rate-limited socket once per run of refused events', async () => {
+    const clock = new FakeClock(1_700_000_000_000);
+    const { baseUrl, lines } = await start('info', { clock });
+    const socket = client(baseUrl);
+    const flood = async (): Promise<void> => {
+      for (let index = 0; index < RATE_LIMIT_EVENTS_PER_SECOND + 3; index++) {
+        await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, index);
+      }
+    };
+    await flood();
+    clock.advance(1_000);
+    await flood();
+
+    const reports = lines.filter((line) => line.msg === 'Socket rate limited');
+    expect(reports).toEqual([
+      expect.objectContaining({ socketId: socket.id, event: CLIENT_EVENTS.ECHO }),
+      expect.objectContaining({ socketId: socket.id, event: CLIENT_EVENTS.ECHO }),
+    ]);
+  });
+
   it('report a handshake refused by the origin policy', async () => {
     const { baseUrl, lines } = await start('info');
     const socket = client(baseUrl, FOREIGN);
@@ -169,6 +245,25 @@ describe('room logs', () => {
           event: CLIENT_EVENTS.UPDATE_PLACEMENT,
           error: ERROR_CODES.WRONG_PHASE,
         }),
+      ]),
+    );
+  });
+
+  it('record an expired room at info, with the timer that ran out', async () => {
+    const clock = new FakeClock(1_700_000_000_000);
+    const { baseUrl, lines } = await start('info', { clock });
+    const socket = client(baseUrl);
+    const created: unknown = await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const { roomId } = created as { roomId: string };
+    socket.disconnect();
+    await vi.waitFor(() => {
+      expect(messages(lines)).toContain('Socket disconnected');
+    });
+    clock.advance(EMPTY_ROOM_TTL_MS);
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Room expired', roomId, reason: 'EMPTY_ROOM', roomCount: 0 }),
       ]),
     );
   });

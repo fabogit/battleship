@@ -27,16 +27,25 @@ export interface ServerConfig {
   readonly logFormat: LogFormat;
   /** Lowest Pino level that is written (docs/server.md#logging). */
   readonly logLevel: LogLevel;
+  /**
+   * Proxies in front of the server that append to `X-Forwarded-For`, 0–`MAX_TRUST_PROXY_HOPS`: the logged client
+   * address is read that many hops from the right (ADR-0067). `0` logs the TCP peer and ignores the header.
+   */
+  readonly trustProxyHops: number;
 }
 
 /** Port used when `PORT` is unset, as in local runs. */
 const DEFAULT_PORT = 3000;
 
+/** Upper bound of `TRUST_PROXY_HOPS`: a larger value is a typo, not a deployment. */
+const MAX_TRUST_PROXY_HOPS = 5;
+
 /** Accepted `LOG_LEVEL` values, from the least to the most verbose, plus `silent`. */
 const LOG_LEVELS: readonly LogLevel[] = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'];
 
 /**
- * Reads `PORT`, `ALLOWED_ORIGINS` (comma-separated), `LOG_FORMAT` and `LOG_LEVEL`, so a bad deploy fails at startup.
+ * Reads `PORT`, `ALLOWED_ORIGINS` (comma-separated), `LOG_FORMAT`, `LOG_LEVEL` and `TRUST_PROXY_HOPS`, so a bad deploy
+ * fails at startup.
  * @param env The process environment, or a plain object in tests.
  * @returns The validated settings, with defaults for the optional variables.
  * @throws When `ALLOWED_ORIGINS` is missing or any variable is malformed; the message names the variable.
@@ -47,6 +56,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): ServerConfig {
     allowedOrigins: parseOrigins(env['ALLOWED_ORIGINS']),
     logFormat: parseLogFormat(env['LOG_FORMAT']),
     logLevel: parseLogLevel(env['LOG_LEVEL']),
+    trustProxyHops: parseTrustProxyHops(env['TRUST_PROXY_HOPS']),
   };
 }
 
@@ -124,4 +134,21 @@ function parseLogLevel(value: string | undefined): LogLevel {
     throw new Error(`Invalid LOG_LEVEL: "${value}" (expected one of ${LOG_LEVELS.join(', ')})`);
   }
   return level;
+}
+
+/**
+ * Parses `TRUST_PROXY_HOPS`.
+ * @param value The raw variable.
+ * @returns The hop count, or `0` (no proxy trusted) when unset or blank.
+ * @throws When it is not a decimal integer between 0 and `MAX_TRUST_PROXY_HOPS`.
+ */
+function parseTrustProxyHops(value: string | undefined): number {
+  if (value === undefined || value.trim() === '') {
+    return 0;
+  }
+  const hops = Number(value);
+  if (!/^\d+$/.test(value) || hops > MAX_TRUST_PROXY_HOPS) {
+    throw new Error(`Invalid TRUST_PROXY_HOPS: "${value}" (expected 0 to ${String(MAX_TRUST_PROXY_HOPS)})`);
+  }
+  return hops;
 }

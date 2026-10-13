@@ -6,10 +6,18 @@ import { SERVER_EVENTS, type ClientToServerEvents, type Seat, type ServerToClien
 import fp from 'fastify-plugin';
 import { Server, type DefaultEventsMap, type Socket } from 'socket.io';
 
+import { clientAddress } from '../client-address.js';
 import { corsOrigin, type OriginMatcher } from '../origins.js';
 
 /** Upper bound for flushing `SERVER_SHUTDOWN`; Render sends SIGKILL 30 s after SIGTERM. */
 const SHUTDOWN_GRACE_MS = 3_000;
+
+/**
+ * Largest inbound message in bytes (Socket.io `maxHttpBufferSize`, docs/server.md#hardening): 16 KiB, about forty
+ * times the largest valid command, a full `UPDATE_PLACEMENT`. A larger message closes the connection before any guard
+ * parses it.
+ */
+export const MAX_MESSAGE_BYTES = 16 * 1024;
 
 /**
  * The seat a socket plays, set by an accepted `CREATE_ROOM` or `JOIN_ROOM` (ADR-0045), or at the handshake by a valid
@@ -49,20 +57,24 @@ declare module 'fastify' {
 export interface SocketIoOptions {
   /** The matcher built from `ALLOWED_ORIGINS` (ADR-0021, ADR-0024); the `origin-policy` plugin gets the same one. */
   readonly isOriginAllowed: OriginMatcher;
+  /** Proxies trusted to append to `X-Forwarded-For`, as Fastify's `trustProxy` gets them (ADR-0067). */
+  readonly trustProxyHops: number;
 }
 
 /**
  * Creates the Socket.io server on the instance's HTTP server and decorates the instance with it as `app.io`. Handshakes
- * from foreign origins are refused; connections, disconnections and, at `debug`, every event are logged
+ * from foreign origins are refused and messages above `MAX_MESSAGE_BYTES` close the connection; connections, with the
+ * client address behind the trusted proxies, disconnections and, at `debug`, every event are logged
  * (docs/server.md#logging). `app.close()` sends `SERVER_SHUTDOWN` to every socket and waits for it to flush before
- * closing Socket.io. The handshake checks, event handlers and, later, rate limiting (#24) are separate plugins that
- * declare `dependencies: ['socket-io']`.
+ * closing Socket.io. The handshake checks, the rate limit and the event handlers are separate plugins that declare
+ * `dependencies: ['socket-io']`.
  */
 export default fp<SocketIoOptions>(
   (app, options, done) => {
-    const { isOriginAllowed } = options;
+    const { isOriginAllowed, trustProxyHops } = options;
 
     const io: GameServer = new Server(app.server, {
+      maxHttpBufferSize: MAX_MESSAGE_BYTES,
       cors: {
         origin: (origin, callback) => {
           callback(null, corsOrigin(isOriginAllowed, origin));
@@ -81,8 +93,13 @@ export default fp<SocketIoOptions>(
 
     io.on('connection', (socket) => {
       const log = app.log.child({ socketId: socket.id });
-      const { headers, address } = socket.handshake;
+      const { headers } = socket.handshake;
+      const forwardedFor = headers['x-forwarded-for'];
+      const address = clientAddress(socket.handshake.address, forwardedFor, trustProxyHops);
       log.info({ transport: socket.conn.transport.name, origin: headers.origin, address }, 'Socket connected');
+      // The whole chain, for calibrating TRUST_PROXY_HOPS (docs/deployment.md#backend-render); its left part is
+      // whatever the client sent.
+      log.debug({ forwardedFor, peerAddress: socket.handshake.address }, 'Socket address chain');
       socket.conn.once('upgrade', () => {
         log.debug({ transport: socket.conn.transport.name }, 'Socket transport upgraded');
       });

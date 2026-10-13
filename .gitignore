@@ -8,6 +8,8 @@ node_modules/
 dist/
 .angular/
 coverage/
+# Vitest reporter output (`--reporter=json` writes .vitest/json/output.json)
+.vitest/
 *.tsbuildinfo
 
 # Environment & logs

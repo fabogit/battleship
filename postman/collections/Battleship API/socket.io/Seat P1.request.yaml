@@ -16,7 +16,9 @@ description: |-
   `{ "ok": false, "error": "<ErrorCode>" }` and nothing else. `CREATE_ROOM — invalid payload` shows `INVALID_PAYLOAD`.
   The URL carries `protocolVersion` as a query parameter: Postman cannot send the handshake `auth` (ADR-0062).
   It cannot send a `session` either, so a reconnected Postman socket has no seat: reconnect means starting a new room.
-  The server answers `SERVER_FULL` after 50 rooms until it restarts (rooms are never removed before #24).
+  The server answers `SERVER_FULL` while 50 rooms are open; a room nobody sits in closes after 5 minutes, a finished
+  one 2 minutes after game over. More than 20 messages in one second from one connection are refused with `RATE_LIMITED`.
+  `packages/server/test/postman.test.ts` replays every saved message in this order inside `pnpm test`.
 url: '{{baseUrl}}?protocolVersion={{protocolVersion}}'
 events:
   - name: STATE

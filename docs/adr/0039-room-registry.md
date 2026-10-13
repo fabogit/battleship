@@ -17,12 +17,13 @@ date: 2026-10-07
 
 ## Consequences
 
-- Rooms are never removed yet: TTL sweeps arrive with #24. Until then a server holds at most `MAX_ROOMS` rooms over its lifetime and answers `SERVER_FULL` after that; Render's idle spin-down restarts it with an empty registry ([Spin-down](../deployment.md#hosting-facts-render-free)).
+- Rooms are removed by their TTLs since #24: the socket handlers call `RoomManager.remove` when one runs out, and the registry itself keeps no timers ([ADR-0065](0065-clock-and-room-timers.md)). `MAX_ROOMS` caps the rooms open at once. Before #24 rooms were never removed, so a server answered `SERVER_FULL` after `MAX_ROOMS` rooms over its lifetime, until a restart.
 - `ROOM_NOT_FOUND` comes from the registry, `ROOM_FULL` from `applyCommand`.
 
 ## Links
 
 - Added on 2026-10-07 for the room logic ([#14](https://github.com/fabogit/battleship/issues/14)).
+- Amended on 2026-10-13 for server hardening ([#24](https://github.com/fabogit/battleship/issues/24)): rooms are removed by their TTLs ([ADR-0065](0065-clock-and-room-timers.md)).
 - Spec: [Server: Sessions & reconnection](../server.md#sessions--reconnection) · [Server: Hardening](../server.md#hardening) · [Domain: Constants](../domain.md#constants)
 - Related: [ADR-0030](0030-random-number-generation.md) (random number generation) · [ADR-0037](0037-room-transition-shape.md) (room transition shape)
 - Issues: [#14](https://github.com/fabogit/battleship/issues/14) · [#24](https://github.com/fabogit/battleship/issues/24) (TTL sweeps)
