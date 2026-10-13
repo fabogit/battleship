@@ -26,6 +26,7 @@ battleship/
     │   ├── src/
     │   │   ├── constants.ts       # Board size, timings, limits, PROTOCOL_VERSION
     │   │   ├── types.ts           # Domain entities and their named value sets (SEATS, ROOM_PHASES, …)
+    │   │   ├── grid.ts            # Board geometry: CELL_COUNT, row-major cell index ↔ coordinate
     │   │   ├── rules.ts           # Defaults, rules validation
     │   │   ├── placement.ts       # Layout validation, random generation, completion
     │   │   ├── engine.ts          # Shot resolution, shot count, victory check
@@ -63,7 +64,7 @@ battleship/
             ├── app/
             │   ├── app.routes.ts  # `/` home, `/r/:roomId` room (D49)
             │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService, I18nService,
-            │   │                  # ServerWakeService
+            │   │                  # ServerWakeService, createSyncedDraft (the draft sync of placement and battle)
             │   ├── features/      # home (nickname, create), room (join + one view per phase), lobby (waiting + rules),
             │   │                  # placement, battle, game-over
             │   └── shared/        # Server status, nickname form, board grid, timer, dice, modal, language switch

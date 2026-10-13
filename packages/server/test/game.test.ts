@@ -29,6 +29,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { FastifyInstance } from 'fastify';
 
+import { COMMAND_EVENTS } from '../src/plugins/room-handlers.js';
 import { generateRoomId, RoomManager } from '../src/room/room-manager.js';
 import { createServer } from '../src/server.js';
 
@@ -44,11 +45,6 @@ const NOW = 1_700_000_000_000;
 const ACK_TIMEOUT_MS = 2_000;
 /** Stands for a command's ack among the events of an inbox; lower case, so no server event can take it. */
 const ACK_MARKER = 'ack';
-
-/** Every command but `ECHO`, which has no guard. */
-const COMMAND_EVENTS = Object.values(CLIENT_EVENTS).filter(
-  (event): event is CommandEvent => event !== CLIENT_EVENTS.ECHO,
-);
 
 /** Commands whose room logic lands later; refused with `NOT_ALLOWED` after their guard (ADR-0046). */
 const NOT_YET_SUPPORTED: readonly { [E in CommandEvent]: readonly [E, CommandPayload<E>] }[CommandEvent][] = [
@@ -413,17 +409,17 @@ describe('payload guards', () => {
 
   // The characters of the M1 review (#52 F3) that the server used to relay byte for byte (ADR-0060).
   it.each([
-    ['a zero-width space', '​'],
-    ['three zero-width spaces', '​​​'],
-    ['a word joiner', '⁠'],
-    ['a right-to-left override', '‮evil'],
+    ['a zero-width space', '\u200B'],
+    ['three zero-width spaces', '\u200B\u200B\u200B'],
+    ['a word joiner', '\u2060'],
+    ['a right-to-left override', '\u202Eevil'],
     ['NUL and BEL', 'a\u0000b\u0007'],
     ['a line feed', 'line1\nline2'],
-    ['a soft hyphen', '­'],
-    ['a braille blank', '⠀'],
-    ['a Hangul filler', 'ㅤ'],
+    ['a soft hyphen', '\u00AD'],
+    ['a braille blank', '\u2800'],
+    ['a Hangul filler', '\u3164'],
     ['a lone surrogate', '\uD800'],
-    ['a byte order mark', '﻿'],
+    ['a byte order mark', '\uFEFF'],
   ])('refuse a nickname with %s on CREATE_ROOM and JOIN_ROOM', async (_label, nickname) => {
     await start();
     const [alice, bob] = await Promise.all([player(), player()]);

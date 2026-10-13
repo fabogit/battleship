@@ -3,6 +3,7 @@ import {
   createSeededRng,
   DEFAULT_RULES,
   GAME_OVER_REASONS,
+  otherSeat,
   PLACEMENT_TIME_LIMIT_MS,
   randomTargets,
   ROOM_PHASES,
@@ -13,7 +14,7 @@ import {
 } from '@battleship/core';
 import { describe, expect, it } from 'vitest';
 
-import { otherSeat, type RoomState } from '../../src/room/room.js';
+import type { RoomState } from '../../src/room/room.js';
 import { projectSnapshot } from '../../src/room/snapshot.js';
 import {
   apply,

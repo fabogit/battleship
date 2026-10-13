@@ -19,7 +19,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import type { Socket } from 'socket.io';
 
 import type { RoomManager } from '../room/room-manager.js';
-import type { RejectedTransition, RoomState, SeatCommand } from '../room/room.js';
+import type { RejectedTransition, RoomState, SeatCommand, SeatCommandEvent } from '../room/room.js';
 import { projectSnapshot } from '../room/snapshot.js';
 import type { GameServer, GameSocket } from './socket-io.js';
 
@@ -41,11 +41,11 @@ type Reply<E extends CommandEvent> = (response: CommandAck<E> | AckFailure) => v
  */
 type CommandHandler<E extends CommandEvent> = (payload: CommandPayload<E>, reply: Reply<E>) => void;
 
-/** The commands a seated player sends, which `RoomManager.dispatch` runs. */
-type SeatCommandEvent = SeatCommand['type'];
-
-/** Every command the plugin listens to: all client→server events but `ECHO`, which has its own plugin. */
-const COMMAND_EVENTS: readonly CommandEvent[] = Object.values(CLIENT_EVENTS).filter(
+/**
+ * Every command the plugin listens to: all client→server events but `ECHO`, which has its own plugin and no guard.
+ * Exported for the tests, which send each one malformed.
+ */
+export const COMMAND_EVENTS: readonly CommandEvent[] = Object.values(CLIENT_EVENTS).filter(
   (event): event is CommandEvent => event !== CLIENT_EVENTS.ECHO,
 );
 

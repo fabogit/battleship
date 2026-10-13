@@ -1,6 +1,4 @@
-import { TARGET_VIOLATIONS, validateTargets, type Coordinate, type ShotResult } from '@battleship/core';
-
-import { toCellIndex } from '../../shared/board-grid/board-cells';
+import { TARGET_VIOLATIONS, toCellIndex, validateTargets, type Coordinate, type ShotResult } from '@battleship/core';
 
 /** The targets of the current turn as `UPDATE_TARGETS` and `FIRE` send them, in the order they were picked. */
 export type TargetDraft = readonly Coordinate[];

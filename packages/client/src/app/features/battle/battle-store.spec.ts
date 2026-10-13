@@ -6,6 +6,7 @@ import {
   SERVER_EVENTS,
   SHOT_OUTCOMES,
   TARGET_VIOLATIONS,
+  otherSeat,
   type BattleSnapshot,
   type ShotResult,
 } from '@battleship/core';
@@ -13,9 +14,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   FakeGameSocket,
+  RECEIVER_SEATS,
   battleSnapshot,
   fromSeat,
-  otherSeat,
   provideFakeGameSocket,
 } from '../../../testing/fake-game-socket';
 import { TRANSPORT_ERRORS, type CommandResult } from '../../core/game-socket';
@@ -240,7 +241,7 @@ describe('BattleStore', () => {
       expect(store.draftTargets()).toEqual([B7]);
     });
 
-    it.each(Object.values(SEATS))('announces every fired turn, by either player, as %s', (seat) => {
+    it.each(RECEIVER_SEATS)('announces every fired turn, by either player, as %s', (seat) => {
       const results = [MISS_ON_J10];
       socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: seat })));
 

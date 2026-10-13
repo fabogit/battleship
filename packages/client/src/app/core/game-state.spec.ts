@@ -11,6 +11,7 @@ import {
   SHIP_TYPES,
   SHOT_OUTCOMES,
   START_COUNTDOWN_MS,
+  otherSeat,
   toPlacedShip,
   type BattleSnapshot,
   type GameOverSnapshot,
@@ -22,7 +23,7 @@ import {
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fromSeat, otherSeat } from '../../testing/fake-game-socket';
+import { RECEIVER_SEATS, fromSeat } from '../../testing/fake-game-socket';
 import { GameSocketService } from './game-socket';
 import { COUNTDOWN_TICK_MS, GameStateService } from './game-state';
 
@@ -45,8 +46,6 @@ const OUTGOING: readonly ShotResult[] = [
   { coordinate: { x: 5, y: 6 }, outcome: SHOT_OUTCOMES.SUNK, sunkShip: SUNK_DESTROYER },
 ];
 const INCOMING: readonly ShotResult[] = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }];
-/** Both seats, for the views that compare a seat with the receiver's: the creator's side alone hides a hardcoded `P1`. */
-const RECEIVER_SEATS = Object.values(SEATS);
 
 function waiting(): PlayerStateSnapshot {
   return {

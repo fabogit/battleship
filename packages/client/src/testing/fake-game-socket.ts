@@ -5,6 +5,7 @@ import {
   PLACEMENT_TIME_LIMIT_MS,
   ROOM_PHASES,
   SEATS,
+  otherSeat,
   type BattleSnapshot,
   type GameOverSnapshot,
   type PlacementSnapshot,
@@ -158,14 +159,8 @@ export function gameOverSnapshot(roomId: string, gameOver: Partial<GameOverSnaps
   };
 }
 
-/**
- * The seat facing the given one in a room.
- * @param seat Either seat.
- * @returns The other one.
- */
-export function otherSeat(seat: Seat): Seat {
-  return seat === SEATS.P1 ? SEATS.P2 : SEATS.P1;
-}
+/** Both seats, for the specs that compare a seat with the receiver's: the creator's side alone hides a hardcoded `P1`. */
+export const RECEIVER_SEATS = Object.values(SEATS);
 
 /**
  * Seats the receiver of a snapshot: `me` takes `seat` and the opponent the other one, so a spec can play from the

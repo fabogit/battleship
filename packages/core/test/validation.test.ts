@@ -120,7 +120,7 @@ describe('CREATE_ROOM', () => {
 
   it.each([
     ['empty', ''],
-    ['whitespace only', ' \t\n '],
+    ['whitespace only', ' \t\n\u00A0'],
     ['one unit too long', 'n'.repeat(NICKNAME_MAX_LENGTH + 1)],
     ['a megabyte long', 'n'.repeat(1_000_000)],
   ])('refuses a nickname that is %s', (_label, nickname) => {
@@ -186,33 +186,33 @@ describe('isRoomId and parseNickname', () => {
 // The character policy of ADR-0060, written as escapes so every invisible character shows in the source.
 describe('parseNickname characters', () => {
   it.each([
-    ['a zero-width space', '​'],
-    ['three zero-width spaces', '​​​'],
-    ['a word joiner', '⁠'],
-    ['a right-to-left override', '‮evil'],
+    ['a zero-width space', '\u200B'],
+    ['three zero-width spaces', '\u200B\u200B\u200B'],
+    ['a word joiner', '\u2060'],
+    ['a right-to-left override', '\u202Eevil'],
     ['NUL and BEL', 'a\u0000b\u0007'],
     ['a line feed', 'line1\nline2'],
     ['an inner tab', 'Ada\tLovelace'],
-    ['a line separator', 'Ada Lovelace'],
-    ['a paragraph separator', 'Ada Lovelace'],
-    ['a soft hyphen', '­'],
-    ['a soft hyphen between letters', 'Ad­a'],
-    ['a braille blank', '⠀'],
-    ['a Hangul filler', 'ㅤ'],
-    ['a Hangul choseong filler', 'ᅟ'],
-    ['a Hangul jungseong filler', 'ᅠ'],
-    ['a halfwidth Hangul filler', 'ﾠ'],
+    ['a line separator', 'Ada\u2028Lovelace'],
+    ['a paragraph separator', 'Ada\u2029Lovelace'],
+    ['a soft hyphen', '\u00AD'],
+    ['a soft hyphen between letters', 'Ad\u00ADa'],
+    ['a braille blank', '\u2800'],
+    ['a Hangul filler', '\u3164'],
+    ['a Hangul choseong filler', '\u115F'],
+    ['a Hangul jungseong filler', '\u1160'],
+    ['a halfwidth Hangul filler', '\uFFA0'],
     ['a musical null notehead', '\u{1D159}'],
     ['a lone surrogate', '\uD800'],
     ['a lone surrogate after a letter', 'a\uDC00'],
-    ['a byte order mark', '﻿'],
-    ['a byte order mark between letters', 'Ad﻿a'],
-    ['a zero-width joiner between letters', 'Ad‍a'],
-    ['a zero-width non-joiner between letters', 'Ad‌a'],
-    ['a blank-looking character before a name', 'ㅤAda'],
-    ['blank-looking characters after a name', 'Ada⠀⠀'],
-    ['a combining mark alone', '́'],
-    ['a variation selector alone', '️'],
+    ['a byte order mark', '\uFEFF'],
+    ['a byte order mark between letters', 'Ad\uFEFFa'],
+    ['a zero-width joiner between letters', 'Ad\u200Da'],
+    ['a zero-width non-joiner between letters', 'Ad\u200Ca'],
+    ['a blank-looking character before a name', '\u3164Ada'],
+    ['blank-looking characters after a name', 'Ada\u2800\u2800'],
+    ['a combining mark alone', '\u0301'],
+    ['a variation selector alone', '\uFE0F'],
   ])('refuses %s', (_label, nickname) => {
     expect(parseNickname(nickname)).toBeNull();
     expect(parse(CLIENT_EVENTS.CREATE_ROOM, { nickname })).toBeNull();
@@ -220,27 +220,27 @@ describe('parseNickname characters', () => {
 
   it.each([
     ['accented letters', 'Zoë Éloïse'],
-    ['a combining accent', 'José'],
+    ['a combining accent', 'Jose\u0301'],
     ['CJK', '山田太郎'],
     ['Hangul', '김민준'],
     ['an emoji', 'Ada 🚢'],
     ['an emoji with VS16', '❤️ Ada'],
     ['a keycap', '1️⃣ Ada'],
     ['a flag', '🇮🇹 Ada'],
-    ['a zero-width joiner sequence', 'Ada 👩‍💻'],
-    ['a joiner sequence after VS16', '🏳️‍🌈'],
-    ['a joiner sequence after a skin tone', '👨🏽‍💻'],
+    ['a zero-width joiner sequence', 'Ada 👩\u200D💻'],
+    ['a joiner sequence after VS16', '🏳️\u200D🌈'],
+    ['a joiner sequence after a skin tone', '👨🏽\u200D💻'],
     ['Arabic', 'ليلى'],
     ['Hebrew', 'נועה'],
     ['inner spaces', 'Ada  Lovelace'],
-    ['an ideographic space inside', '山田　太郎'],
+    ['an ideographic space inside', '山田\u3000太郎'],
     ['punctuation only', '?!'],
   ])('accepts %s', (_label, nickname) => {
     expect(parseNickname(nickname)).toBe(nickname);
   });
 
   it('trims a byte order mark at either end, as whitespace', () => {
-    expect(parseNickname('﻿Ada﻿')).toBe('Ada');
+    expect(parseNickname('\uFEFFAda\uFEFF')).toBe('Ada');
   });
 });
 
