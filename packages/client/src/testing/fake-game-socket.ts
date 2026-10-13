@@ -29,6 +29,8 @@ export class FakeGameSocket {
   readonly status = signal<ConnectionStatus>(CONNECTION_STATUSES.CONNECTED);
   /** Records calls; does not change `status`. */
   readonly connect = vi.fn<() => void>();
+  /** Records calls; does not change `status`. */
+  readonly reconnect = vi.fn<() => void>();
   /** Resolve it with `mockResolvedValue` to answer a command. */
   readonly emitWithAck = vi.fn<GameSocketService['emitWithAck']>();
   /** Listeners by event name. */

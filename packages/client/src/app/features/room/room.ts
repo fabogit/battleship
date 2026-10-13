@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, linkedSignal } from '@angular/core';
+import { Component, computed, effect, inject, input, linkedSignal, untracked } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ERROR_CODES, ROOM_PHASES, isRoomId } from '@battleship/core';
 
@@ -27,7 +27,7 @@ export const ROOM_VIEWS = {
   PLACEMENT: 'placement',
   /** `IN_PROGRESS` and `GAME_OVER`: the battle view, which turns into the game-over screen (ADR-0058). */
   BATTLE: 'battle',
-  /** A malformed link, or `ROOM_NOT_FOUND`. */
+  /** A malformed link, `ROOM_NOT_FOUND`, or stored credentials the server refused (`SESSION_INVALID`). */
   NOT_FOUND: 'not-found',
   /** `ROOM_FULL`: both seats were taken when the player tried to join. */
   FULL: 'full',
@@ -57,7 +57,7 @@ export class Room {
   private readonly gameState = inject(GameStateService);
   /** A stored seat for this room means the player is already in: no join form. */
   private readonly sessions = inject(SessionStore);
-  /** Sends `JOIN_ROOM` for the join form. */
+  /** Sends `JOIN_ROOM` for the join form, and takes back a stored seat. */
   private readonly roomEntry = inject(RoomEntryService);
 
   /** The words of the page. */
@@ -80,12 +80,12 @@ export class Room {
   });
 
   /**
-   * What the page shows: a room the tab has left stays left; otherwise the snapshot decides once it arrives, then the
-   * stored session, then the join attempt.
+   * What the page shows: a room whose stored seat the server refused is not found, and a room the tab has left stays
+   * left; otherwise the snapshot decides once it arrives, then the stored session, then the join attempt.
    */
   protected readonly view = computed<RoomView>(() => {
     const roomId = this.roomId();
-    if (!isRoomId(roomId)) {
+    if (!isRoomId(roomId) || this.sessions.wasRefused(roomId)) {
       return ROOM_VIEWS.NOT_FOUND;
     }
     if (this.sessions.hasLeft(roomId)) {
@@ -135,4 +135,19 @@ export class Room {
       this.joinError.set(result.error);
     }
   };
+
+  /**
+   * Takes back the stored seat of every room the page opens in a tab that is in no room yet, such as a new tab on the
+   * room link (ADR-0069).
+   */
+  constructor() {
+    effect(() => {
+      const roomId = this.roomId();
+      if (isRoomId(roomId)) {
+        untracked(() => {
+          this.roomEntry.reopen(roomId);
+        });
+      }
+    });
+  }
 }

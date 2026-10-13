@@ -41,6 +41,19 @@ describe('RoomEntryService', () => {
 
       expect(sessions.get(ROOM_ID)).toBeNull();
     });
+
+    it('reconnects after NO_ACK only, so the handshake binds the socket to the room the client follows (#52, F1)', async () => {
+      socket.emitWithAck.mockResolvedValueOnce({ ok: false, error: ERROR_CODES.SERVER_FULL });
+      await service.create('Ada');
+      socket.emitWithAck.mockResolvedValueOnce({ ok: false, error: TRANSPORT_ERRORS.NOT_CONNECTED });
+      await service.create('Ada');
+      expect(socket.reconnect).not.toHaveBeenCalled();
+
+      socket.emitWithAck.mockResolvedValueOnce({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      await service.create('Ada');
+
+      expect(socket.reconnect).toHaveBeenCalledOnce();
+    });
   });
 
   describe('join', () => {
@@ -64,8 +77,45 @@ describe('RoomEntryService', () => {
         await expect(service.join(ROOM_ID, 'Grace')).resolves.toEqual({ ok: false, error });
 
         expect(sessions.get(ROOM_ID)).toBeNull();
+        expect(socket.reconnect).not.toHaveBeenCalled();
       },
     );
+
+    it('reconnects after NO_ACK (#52, F1)', async () => {
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+
+      await expect(service.join(ROOM_ID, 'Grace')).resolves.toEqual({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+
+      expect(sessions.get(ROOM_ID)).toBeNull();
+      expect(socket.reconnect).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('reopen', () => {
+    it('enters a stored room in a tab that is in no room, and reconnects so the handshake sends it (ADR-0069)', () => {
+      sessions.save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      // A new tab: the credentials are in localStorage, the current room is not.
+      sessionStorage.clear();
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [provideFakeGameSocket(socket)] });
+      service = TestBed.inject(RoomEntryService);
+      sessions = TestBed.inject(SessionStore);
+
+      service.reopen(ROOM_ID);
+
+      expect(sessions.current()).toEqual({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      expect(socket.reconnect).toHaveBeenCalledOnce();
+    });
+
+    it('does nothing without stored credentials, or in a tab already in a room', () => {
+      service.reopen(ROOM_ID);
+      sessions.save({ roomId: 'zz23cd45', playerSecret: PLAYER_SECRET });
+      sessions.save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      service.reopen('zz23cd45');
+
+      expect(sessions.current()?.roomId).toBe(ROOM_ID);
+      expect(socket.reconnect).not.toHaveBeenCalled();
+    });
   });
 });
 

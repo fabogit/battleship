@@ -9,6 +9,7 @@ import {
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
+  SHOT_OUTCOMES,
   type PlayerStateSnapshot,
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,7 +62,8 @@ function joinedSnapshot(): PlayerStateSnapshot {
 let socket: FakeGameSocket;
 let harness: RouterTestingHarness;
 
-beforeEach(async () => {
+/** Starts the app with a fresh fake socket; web storage is whatever the spec left in it. */
+async function startApp(): Promise<void> {
   socket = new FakeGameSocket();
   TestBed.configureTestingModule({
     providers: [provideFakeGameSocket(socket), provideRouter(routes, withComponentInputBinding())],
@@ -69,6 +71,17 @@ beforeEach(async () => {
   // Created up front, as the app does through the shell, so it listens to `STATE` from the start.
   TestBed.inject(GameStateService);
   harness = await RouterTestingHarness.create();
+}
+
+/** Starts the app again in the same tab, as a reload does: `localStorage` and `sessionStorage` are kept. */
+async function reload(): Promise<void> {
+  TestBed.inject(GameStateService).clear();
+  TestBed.resetTestingModule();
+  await startApp();
+}
+
+beforeEach(async () => {
+  await startApp();
 });
 
 afterEach(() => {
@@ -336,6 +349,78 @@ describe('Room', () => {
 
       expect(TestBed.inject(Router).url).toBe(`/r/${NEXT_ROOM_ID}`);
       expect(heading()).toBe(LOBBY_TEXT.heading);
+    });
+  });
+
+  describe('after a reload or in a new tab (#21)', () => {
+    beforeEach(() => {
+      TestBed.inject(SessionStore).save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+    });
+
+    it('takes the seat back on a reload mid-match: the handshake already sends the session', async () => {
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+
+      expect(page().textContent).toContain(ROOM_TEXT.entering);
+      expect(socket.reconnect).not.toHaveBeenCalled();
+
+      await receive(battleSnapshot(ROOM_ID));
+      expect(heading()).toBe(BATTLE_TEXT.myTurn);
+    });
+
+    it('enters the room when its link opens in a new tab, and reconnects so the handshake sends the session', async () => {
+      sessionStorage.clear();
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+
+      expect(page().textContent).toContain(ROOM_TEXT.entering);
+      expect(socket.reconnect).toHaveBeenCalledOnce();
+      expect(TestBed.inject(SessionStore).current()?.roomId).toBe(ROOM_ID);
+
+      await receive(battleSnapshot(ROOM_ID));
+      expect(heading()).toBe(BATTLE_TEXT.myTurn);
+    });
+
+    it('shows both final boards when reloaded at game over (#52, F16)', async () => {
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+
+      await receive(
+        gameOverSnapshot(ROOM_ID, {
+          incomingShots: [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.MISS }],
+          outgoingShots: [{ coordinate: { x: 9, y: 9 }, outcome: SHOT_OUTCOMES.MISS }],
+        }),
+      );
+
+      expect(heading()).toBe(BATTLE_TEXT.wonHeading);
+      for (const [label, cell] of [
+        [BATTLE_TEXT.myFleet, 'A1, miss'],
+        [BATTLE_TEXT.enemyWaters, 'J10, miss'],
+      ] as const) {
+        const cells = [...page().querySelectorAll(`[role="grid"][aria-label="${label}"] button`)];
+        expect(cells.map((element) => element.getAttribute('aria-label'))).toContain(cell);
+      }
+    });
+
+    it('still says a left room was left after a reload', async () => {
+      TestBed.inject(SessionStore).save({ roomId: NEXT_ROOM_ID, playerSecret: PLAYER_SECRET });
+
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+
+      expect(heading()).toBe(ROOM_TEXT.leftHeading);
+      expect(socket.reconnect).not.toHaveBeenCalled();
+    });
+
+    it('shows not-found once the server refused the stored session, even over an older snapshot', async () => {
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+      await receive(battleSnapshot(ROOM_ID));
+
+      TestBed.inject(SessionStore).refuse(ROOM_ID);
+      await harness.fixture.whenStable();
+
+      expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
+      expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
     });
   });
 

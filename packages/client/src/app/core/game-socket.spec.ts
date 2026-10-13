@@ -19,6 +19,7 @@ import {
   type TransportFailure,
 } from './game-socket';
 import { SERVER_URL } from './server-url';
+import { SessionStore } from './session-store';
 
 vi.mock('socket.io-client', () => ({
   io: vi.fn(),
@@ -48,6 +49,15 @@ class FakeSocket {
   readonly close = vi.fn(() => {
     this.active = false;
     this.connected = false;
+  });
+  /** As `Socket.disconnect()`: closes the socket, firing `disconnect` only when it was connected. */
+  readonly disconnect = vi.fn(() => {
+    const wasConnected = this.connected;
+    this.active = false;
+    this.connected = false;
+    if (wasConnected) {
+      this.fire('disconnect', 'io client disconnect');
+    }
   });
   private readonly listeners = new Map<string, Set<Listener>>();
 
@@ -113,6 +123,21 @@ function connected(): void {
   socket.handshake();
 }
 
+/**
+ * Calls the handshake `auth` callback, as Socket.io does on every connection attempt.
+ * @returns What the callback sent.
+ */
+function handshakeAuth(): unknown {
+  const auth = vi.mocked(io).mock.calls[0]?.[1]?.auth;
+  if (typeof auth !== 'function') {
+    throw new Error('The handshake auth is not a callback');
+  }
+  const send = vi.fn();
+  auth(send);
+  expect(send).toHaveBeenCalledOnce();
+  return send.mock.calls[0]?.[0];
+}
+
 // Written out on purpose (ADR-0043): renaming a key is a refactor, changing a value is not.
 describe('CONNECTION_STATUSES', () => {
   it('pins the values', () => {
@@ -144,13 +169,21 @@ describe('GameSocketService', () => {
       expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTING);
     });
 
-    it('sends the protocol version in the handshake auth (ADR-0061)', () => {
-      // A callback, so Socket.io reads it again on every reconnect attempt; #21 adds the stored session to it.
-      const auth = vi.mocked(io).mock.calls[0]?.[1]?.auth;
-      expect(auth).toBeTypeOf('function');
-      const send = vi.fn();
-      (auth as (send: (data: object) => void) => void)(send);
-      expect(send).toHaveBeenCalledExactlyOnceWith({ protocolVersion: PROTOCOL_VERSION });
+    it('sends the protocol version alone in the handshake auth while the tab is in no room (ADR-0061)', () => {
+      // No `session` key at all: `null` would be refused with SESSION_INVALID.
+      expect(handshakeAuth()).toStrictEqual({ protocolVersion: PROTOCOL_VERSION });
+    });
+
+    it("adds the current room's stored session, read again on every attempt (ADR-0063)", () => {
+      const sessions = TestBed.inject(SessionStore);
+      const first = { roomId: 'ab23cd45', playerSecret: crypto.randomUUID() };
+      const next = { roomId: 'zz23cd45', playerSecret: crypto.randomUUID() };
+
+      sessions.save(first);
+      expect(handshakeAuth()).toStrictEqual({ protocolVersion: PROTOCOL_VERSION, session: first });
+
+      sessions.save(next);
+      expect(handshakeAuth()).toStrictEqual({ protocolVersion: PROTOCOL_VERSION, session: next });
     });
 
     it('reports connected once the handshake succeeds', () => {
@@ -194,6 +227,74 @@ describe('GameSocketService', () => {
       // A middleware error (`next(err)`), e.g. PROTOCOL_MISMATCH: Socket.io stops retrying.
       socket.refuse(ERROR_CODES.PROTOCOL_MISMATCH, { isStillActive: false });
 
+      expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
+    });
+
+    it('drops a session refused with SESSION_INVALID and connects again without it (ADR-0070)', () => {
+      const sessions = TestBed.inject(SessionStore);
+      const refused = { roomId: 'ab23cd45', playerSecret: crypto.randomUUID() };
+      const other = { roomId: 'zz23cd45', playerSecret: crypto.randomUUID() };
+      sessions.save(other);
+      sessions.save(refused);
+      service.connect();
+      handshakeAuth();
+
+      socket.refuse(ERROR_CODES.SESSION_INVALID, { isStillActive: false });
+
+      expect(sessions.get(refused.roomId)).toBeNull();
+      expect(sessions.wasRefused(refused.roomId)).toBe(true);
+      expect(sessions.get(other.roomId)).not.toBeNull();
+      expect(socket.connect).toHaveBeenCalledTimes(2);
+      expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTING);
+      expect(handshakeAuth()).toStrictEqual({ protocolVersion: PROTOCOL_VERSION });
+    });
+
+    it('keeps the stored session when the handshake is refused for another reason', () => {
+      const sessions = TestBed.inject(SessionStore);
+      const session = { roomId: 'ab23cd45', playerSecret: crypto.randomUUID() };
+      sessions.save(session);
+      service.connect();
+      handshakeAuth();
+
+      socket.refuse(ERROR_CODES.PROTOCOL_MISMATCH, { isStillActive: false });
+
+      expect(sessions.current()).toEqual(session);
+      expect(socket.connect).toHaveBeenCalledOnce();
+      expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
+    });
+
+    it('does not reconnect on SESSION_INVALID when the handshake sent no session', () => {
+      service.connect();
+      handshakeAuth();
+
+      socket.refuse(ERROR_CODES.SESSION_INVALID, { isStillActive: false });
+
+      expect(socket.connect).toHaveBeenCalledOnce();
+      expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
+    });
+
+    it('reopens an open or opening connection on reconnect(), so the handshake runs again (ADR-0070)', () => {
+      connected();
+
+      service.reconnect();
+
+      expect(socket.disconnect).toHaveBeenCalledOnce();
+      expect(socket.connect).toHaveBeenCalledTimes(2);
+      expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTING);
+
+      service.reconnect();
+      expect(socket.disconnect).toHaveBeenCalledTimes(2);
+      expect(socket.connect).toHaveBeenCalledTimes(3);
+    });
+
+    it('leaves a closed connection closed on reconnect(): the next connect() sends the session', () => {
+      service.reconnect();
+
+      socket.drop('io server disconnect', { isStillActive: false });
+      service.reconnect();
+
+      expect(socket.disconnect).not.toHaveBeenCalled();
+      expect(socket.connect).not.toHaveBeenCalled();
       expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
     });
 
