@@ -393,5 +393,46 @@ describe('PlacementStore', () => {
       expect(store.draft()).toEqual([]);
       expect(store.feedback()).toBeNull();
     });
+
+    it('keeps a refusal and its preview made while a failed update waits for its ack', async () => {
+      const answer = holdNextReply();
+      store.selectShip(SHIP_TYPES.CARRIER);
+      store.activateCell({ x: 0, y: 0 });
+      store.selectShip(SHIP_TYPES.DESTROYER);
+      store.activateCell({ x: 5, y: 1 });
+
+      answer({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      await settle();
+
+      expect(store.draft()).toEqual([]);
+      expect(store.error()).toBe(TRANSPORT_ERRORS.NO_ACK);
+      expect(store.feedback()).toEqual({
+        kind: PLACEMENT_FEEDBACK.REFUSED,
+        ship: SHIP_TYPES.DESTROYER,
+        reason: PLACEMENT_VIOLATIONS.ADJACENT_SHIPS,
+      });
+      expect(store.invalidPreview()).toEqual([
+        { x: 5, y: 1 },
+        { x: 6, y: 1 },
+      ]);
+    });
+
+    it('keeps a dock selection made while a failed update waits for its ack', async () => {
+      const answer = holdNextReply();
+      store.selectShip(SHIP_TYPES.CARRIER);
+      store.activateCell({ x: 0, y: 0 });
+      store.selectShip(SHIP_TYPES.DESTROYER);
+
+      answer({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      await settle();
+
+      expect(store.draft()).toEqual([]);
+      expect(store.feedback()).toEqual({
+        kind: PLACEMENT_FEEDBACK.SELECTED,
+        ship: SHIP_TYPES.DESTROYER,
+        orientation: ORIENTATIONS.HORIZONTAL,
+        isPlaced: false,
+      });
+    });
   });
 });

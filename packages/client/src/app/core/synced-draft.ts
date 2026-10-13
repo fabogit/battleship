@@ -18,7 +18,10 @@ export interface SyncedDraftOptions<T, F> {
   readonly equal: (a: T, b: T) => boolean;
   /** Sends the whole draft with its update command (ADR-0005); never rejects, like `emitWithAck`. */
   readonly send: (draft: T) => Promise<CommandResult<CommandEvent>>;
-  /** The store's live-region feedback: set by an update with its draft, cleared when a failed update is rolled back. */
+  /**
+   * The store's live-region feedback: set by an update with its draft, cleared when a failed update is rolled back
+   * while it still holds the latest update's feedback.
+   */
   readonly feedback: WritableSignal<F | null>;
   /** The store's command error, shared with its other commands: every update's ack sets it, to `null` on success. */
   readonly error: WritableSignal<ErrorCode | TransportError | null>;
@@ -35,7 +38,8 @@ export interface SyncedDraft<T, F> {
   /**
    * Shows a new draft at once, with the feedback describing it, and sends it whole. A failed update sets the error;
    * once no other update is in flight it also puts back the server's draft and clears the feedback, which described a
-   * change just dropped.
+   * change just dropped. It clears it only while it is still the one the latest update passed, compared by identity:
+   * a feedback another action set since, such as a refused tap, stays.
    * @param draft The new draft, valid for the store's rules.
    * @param feedback What the change did, for the live region; the feedback is left as it is when omitted.
    */
@@ -69,6 +73,8 @@ export function createSyncedDraft<T, F>(options: SyncedDraftOptions<T, F>): Sync
   const draft = signal<T>(serverDraft(), { equal });
   // Updates sent and not yet answered; while there is one, `STATE` does not replace the draft.
   let updatesInFlight = 0;
+  // The feedback of the latest update that passed one; a rollback clears the store's feedback only while it holds it.
+  let updateFeedback: F | null = null;
 
   const stopListening = socket.on(SERVER_EVENTS.STATE, (snapshot) => {
     if (updatesInFlight !== 0) {
@@ -86,6 +92,7 @@ export function createSyncedDraft<T, F>(options: SyncedDraftOptions<T, F>): Sync
     update(next, shown) {
       if (shown !== undefined) {
         feedback.set(shown);
+        updateFeedback = shown;
       }
       draft.set(next);
       updatesInFlight++;
@@ -98,7 +105,9 @@ export function createSyncedDraft<T, F>(options: SyncedDraftOptions<T, F>): Sync
         error.set(result.error);
         if (updatesInFlight === 0) {
           draft.set(serverDraft());
-          feedback.set(null);
+          if (feedback() === updateFeedback) {
+            feedback.set(null);
+          }
         }
       });
     },

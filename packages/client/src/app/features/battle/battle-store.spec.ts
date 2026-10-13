@@ -188,6 +188,24 @@ describe('BattleStore', () => {
       expect(store.draftTargets()).toEqual([]);
       expect(store.feedback()).toBeNull();
     });
+
+    it('keeps a refusal made while a failed update waits for its ack', async () => {
+      const answer = holdNextReply();
+      store.activateCell(B7);
+      store.activateCell(MISS_ON_J10.coordinate);
+
+      answer({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      await settle();
+
+      expect(store.draftTargets()).toEqual([]);
+      expect(store.error()).toBe(TRANSPORT_ERRORS.NO_ACK);
+      expect(store.feedback()).toEqual({
+        kind: BATTLE_FEEDBACK.REFUSED,
+        coordinate: MISS_ON_J10.coordinate,
+        reason: TARGET_VIOLATIONS.ALREADY_TARGETED,
+        shotsAllowed: 1,
+      });
+    });
   });
 
   describe("during the opponent's turn", () => {
