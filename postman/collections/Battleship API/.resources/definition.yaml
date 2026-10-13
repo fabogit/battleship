@@ -12,6 +12,7 @@ description: |-
   - `baseUrl`, `allowedOrigin` (environment): server root, and an origin listed in the server's `ALLOWED_ORIGINS`
   - `foreignOrigin`: any origin not in `ALLOWED_ORIGINS`, to check the 403s (ADR-0021)
   - `roomId`: the room of the **Seat P1** / **Seat P2** match, copied by hand from the `CREATE_ROOM` ack
+  - `protocolVersion`: the server's `PROTOCOL_VERSION`, sent as a query parameter by every Socket.IO request (ADR-0062)
 variables:
   - key: foreignOrigin
     value: 'http://evil.example'
@@ -19,3 +20,6 @@ variables:
   - key: roomId
     value: ''
     description: 'The room id from the CREATE_ROOM ack of Seat P1; JOIN_ROOM of Seat P2 sends it'
+  - key: protocolVersion
+    value: '2'
+    description: 'PROTOCOL_VERSION of the server; Postman cannot send the handshake auth, so it goes in the query (ADR-0062)'

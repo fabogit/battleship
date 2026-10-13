@@ -14,15 +14,19 @@ description: |-
 
   Every accepted command acks `{ "ok": true }` (plus credentials for `CREATE_ROOM` / `JOIN_ROOM`); a refused one
   `{ "ok": false, "error": "<ErrorCode>" }` and nothing else. `CREATE_ROOM — invalid payload` shows `INVALID_PAYLOAD`.
-  A reconnected socket has no seat until #22: reconnect means starting a new room.
+  The URL carries `protocolVersion` as a query parameter: Postman cannot send the handshake `auth` (ADR-0062).
+  It cannot send a `session` either, so a reconnected Postman socket has no seat: reconnect means starting a new room.
   The server answers `SERVER_FULL` after 50 rooms until it restarts (rooms are never removed before #24).
-url: '{{baseUrl}}'
+url: '{{baseUrl}}?protocolVersion={{protocolVersion}}'
 events:
   - name: STATE
     description: The receiver's snapshot (fog-of-war), after every accepted command; it follows the ack and any SHOT_RESOLVED.
     subscribeOnConnect: true
   - name: SHOT_RESOLVED
     description: A fired turn, for animation; sent to both players before the STATE that reflects it.
+    subscribeOnConnect: true
+  - name: SESSION_REPLACED
+    description: A newer socket took this seat (ADR-0014, ADR-0063); a server disconnect follows. Postman cannot send a session, so only the tests and a socket.io-client script trigger it.
     subscribeOnConnect: true
   - name: SERVER_SHUTDOWN
     description: The server is restarting; any match in progress is lost (docs/deployment.md#backend-render).
@@ -31,3 +35,6 @@ settings:
   version: '4'
 messages: .resources/Seat P1.resources/messages
 order: 3000
+queryParams:
+  - key: protocolVersion
+    value: '{{protocolVersion}}'
