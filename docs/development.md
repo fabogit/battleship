@@ -27,7 +27,7 @@ battleship/
     │   │   ├── constants.ts       # Board size, timings, limits, PROTOCOL_VERSION
     │   │   ├── types.ts           # Domain entities and their named value sets (SEATS, ROOM_PHASES, …)
     │   │   ├── grid.ts            # Board geometry: CELL_COUNT, row-major cell index ↔ coordinate
-    │   │   ├── rules.ts           # Defaults, rules validation
+    │   │   ├── rules.ts           # DEFAULT_RULES (validateRules: #26)
     │   │   ├── placement.ts       # Layout validation, random generation, completion
     │   │   ├── engine.ts          # Shot resolution, shot count, victory check
     │   │   ├── random.ts          # Rng interface, seeded (tests) and crypto (production) implementations
@@ -38,22 +38,24 @@ battleship/
     │
     ├── server/
     │   ├── src/
-    │   │   ├── room/
-    │   │   │   ├── room.ts            # Pure transition logic (state, command, now) → (state, effects)
-    │   │   │   ├── room-manager.ts    # Room registry, TTL sweeps, capacity cap
-    │   │   │   └── scheduler.ts       # Thin timer shell over an injectable Clock
-    │   │   ├── socket/
-    │   │   │   ├── connection.ts      # Handshake (auth, protocol version), session binding
-    │   │   │   ├── handlers.ts        # Validate → dispatch to room → emit snapshots
-    │   │   │   └── rate-limit.ts
-    │   │   ├── config.ts              # PORT / ALLOWED_ORIGINS parsing, validated at startup
+    │   │   ├── room/                  # Room logic, no timers, sockets or I/O (server.md#room-logic)
+    │   │   │   ├── room.ts            # RoomState per phase, createRoom, applyCommand(state, command, now) → state + effects
+    │   │   │   ├── snapshot.ts        # projectSnapshot(state, seat, now): one player's snapshot, with fog-of-war
+    │   │   │   └── room-manager.ts    # RoomManager: rooms by id, room ids, secrets, MAX_ROOMS cap (TTL sweeps: #24)
+    │   │   ├── plugins/               # fastify-plugin wrapped, composed by createServer (server.md#plugins)
+    │   │   │   ├── origin-policy.ts   # HTTP side of the origin policy: 403 onRequest hook + @fastify/cors (D21)
+    │   │   │   ├── socket-io.ts       # Socket.io on the HTTP server: allowRequest origin check, app.io, connection logs
+    │   │   │   ├── echo.ts            # ECHO smoke check (D48)
+    │   │   │   └── room-handlers.ts   # Every command: guard → RoomManager → ack, effects, STATE
+    │   │   ├── config.ts              # PORT / ALLOWED_ORIGINS / LOG_* parsing, validated at startup
     │   │   ├── origins.ts             # Origin matcher: exact origins + https://*.<domain> wildcards (D21, D24)
-    │   │   ├── server.ts              # Fastify bootstrap, /health, origin policy, Socket.io (app.io), graceful shutdown
+    │   │   ├── server.ts              # createServer: plugins + /health; rooms and now() injectable for tests
     │   │   ├── shutdown.ts            # SIGTERM/SIGINT → app.close(); repeats ignored, 10 s deadline (D27)
     │   │   └── index.ts               # Entry point: config, server, signal handling, listen
+    │   │                              # Not yet: timers (#28, #30), per-socket rate limit plugin (#24)
     │   ├── scripts/echo-client.ts     # Production smoke test: handshake + ECHO round trip (D48)
     │   ├── .env.example               # Local PORT / ALLOWED_ORIGINS / LOG_*: copy to .env (Local tooling)
-    │   └── test/                      # Room unit tests (fake clock) + socket integration tests
+    │   └── test/                      # Vitest: room/ unit tests (seeded fleets, fixed time) + socket integration tests
     │
     └── client/                    # Angular 22, @angular/build (esbuild), unit tests on Vitest + jsdom
         ├── vitest-base.config.ts  # `ng test` runnerConfig: resolves core from source (D22)
@@ -63,11 +65,12 @@ battleship/
             ├── build-defines.d.ts # BUILD_SERVER_URL, read only by the SERVER_URL token
             ├── app/
             │   ├── app.routes.ts  # `/` home, `/r/:roomId` room (D49)
-            │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService, I18nService,
+            │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService,
             │   │                  # ServerWakeService, createSyncedDraft (the draft sync of placement and battle)
-            │   ├── features/      # home (nickname, create), room (join + one view per phase), lobby (waiting + rules),
-            │   │                  # placement, battle, game-over
-            │   └── shared/        # Server status, nickname form, board grid, timer, dice, modal, language switch
+            │   ├── features/      # home (nickname, create), room (one view per phase), lobby (waiting screen; rules: #27),
+            │   │                  # placement (+ PlacementStore), battle (+ BattleStore; also the game-over screen, D58)
+            │   └── shared/        # board-grid/, nickname-form/, server-status/, countdown.ts
+            │                      # Not yet: I18nService (#37), dice (#29), timers UI (#31)
             └── testing/           # Test doubles shared by the specs (FakeGameSocket), left out of the app build
 ```
 
@@ -110,7 +113,7 @@ Decisions: [ADR-0043](adr/0043-named-constants.md), [ADR-0044](adr/0044-code-for
 
   - Comparisons, returns, emits and listeners use the object, type positions too (`typeof ROOM_PHASES.PLACEMENT`). An Angular template reads it from a component field (`protected readonly wakeStatuses = WAKE_STATUSES`).
   - No `enum` and no `const enum`: the values stay plain strings, and the code runs under type stripping.
-  - Sets shared by server and client live in core and are exported from `@battleship/core`. A set one package owns stays there: `CELL_STATES`, `CONNECTION_STATUSES`, `TRANSPORT_ERRORS` and `WAKE_STATUSES` in the client, `LOG_FORMATS` in the server.
+  - Sets shared by server and client live in core and are exported from `@battleship/core`. A set one package owns stays there, such as `CONNECTION_STATUSES` or `ROOM_VIEWS` in the client and `LOG_FORMATS` in the server.
   - A runtime list is `Object.values(…)`, in declaration order; a guard checks membership against the values, never the keys.
 
 - **Pinned values:** one test per object writes its values out. Renaming a key is a refactor; changing a value changes the protocol (and `PROTOCOL_VERSION`), the logs or the styles.
@@ -132,11 +135,12 @@ Decisions: [ADR-0028](adr/0028-local-tooling.md), [ADR-0029](adr/0029-watch-mode
 - **Setup:** `cp packages/server/.env.example packages/server/.env && cp packages/client/.env.example packages/client/.env`, once per checkout; a new `git worktree` needs both files too (copy them from the main checkout). Without them the server refuses to start, and `ng serve` (`pnpm dev`) and the client build (`pnpm build`, `pnpm verify`) stop without a `SERVER_URL` ([Deployment: Environment variables](deployment.md#environment-variables)); the client's points at the local server, so `pnpm verify` builds a bundle that talks to `http://localhost:3000`. `ng test` needs neither: the specs override the `SERVER_URL` token.
 - **Run:** with the server's `.env` in place (it allows `http://localhost:4200` and sets `LOG_FORMAT=pretty` and `LOG_LEVEL=debug`, so the terminal shows every request and socket event in readable form, [Logging](server.md#logging); without it the server refuses to start, [Backend (Render)](deployment.md#backend-render)), then `pnpm dev`: the server restarts on every change to its own or core's sources (`tsx watch`, sources read through `@battleship/source`), the client rebuilds and reloads (`ng serve`), and every output line is prefixed with its package. Set the server port in `.env`, not in the shell: `ng serve` reads `PORT` too. Ctrl+C kills the server partway through its shutdown (ADR-0029). To run what production runs: `pnpm build && pnpm --filter @battleship/server start` (`start` runs `dist/`, so rebuild after every change).
 - **Debug (VS Code, `.vscode/launch.json`):** `Server` (builds core and server, runs `dist/` with source maps in the integrated terminal), `Client` (`ng serve` + Chrome/Chromium), `Server + Client`, `Server tests: current file` (Vitest), `Client tests: current file` (`ng test --debug`, attach on port 9229).
-- **Manual checks (Postman):** open the repo folder in the Postman desktop app (Native Git, free plan) and select the `localhost` environment (`baseUrl`, `allowedOrigin`). The `health` folder runs in the Collection Runner; Socket.IO requests are sent by hand: `ECHO`, `ECHO — foreign origin`, and a match between `Seat P1` and `Seat P2` (connect both, send `CREATE_ROOM` from P1, copy the `roomId` from its ack into the collection variable `roomId`, then follow the saved messages in order). Outside the app: `npx postman-cli collection lint "postman/collections/Battleship API"` and `npx postman-cli collection run "postman/collections/Battleship API" -e postman/environments/localhost.environment.yaml -i health`.
+- **Manual checks (Postman):** open the repo folder in the Postman desktop app (Native Git, free plan) and select the `localhost` environment (`baseUrl`, `allowedOrigin`). The `health` folder runs in the Collection Runner; Socket.IO requests are sent by hand: `ECHO`, `ECHO — foreign origin`, and a match between `Seat P1` and `Seat P2` (connect both, send `CREATE_ROOM` from P1, copy the `roomId` from its ack into the collection variable `roomId`, then follow the saved messages in order). Outside the app: `npx postman-cli collection run "postman/collections/Battleship API" -e postman/environments/localhost.environment.yaml -i health` runs the `health` folder against the local server, and `npx postman-cli collection lint "postman/collections/Battleship API"` checks the collection's files.
+- **What lint checks:** the requests (`*.request.yaml`) and what they reference: the folder definitions (`.resources/definition.yaml`) and the saved examples (`*.example.yaml`). It never reads the saved Socket.IO messages (`*.message.yaml`, 14 of the collection's 26 files): a message with broken YAML, or a `messages:` path to a missing folder, still gets "No issues found". Messages are checked by sending them, in order, against a local server, from the app or a short socket.io-client script; a changed or new message is sent before its pull request. #24 adds a server test that loads each `*.message.yaml` and sends it, so `pnpm test` covers them.
 - **Keeping it current:** an issue that adds a REST route or a Socket.IO event adds the matching request, message or listener to the collection.
 - **Format:** `pnpm format` writes the whole repo, `pnpm format:check` lists the files that differ (the CI step). In VS Code, the recommended Prettier extension formats on save (`.vscode/settings.json`).
 - **Client tests:** `ng test` runs each spec file in its own module registry (`"isolate": true` in `angular.json`, against the builder's default), so a `vi.mock` in one file, such as `socket.io-client` in `game-socket.spec.ts`, holds whichever other files share its Vitest worker (ADR-0055). To check that a spec does not lean on its neighbours, run the suite with one worker (`test: { maxWorkers: 1 }` in `vitest-base.config.ts`, not committed).
 - **Before a pull request:** `pnpm verify` runs `format:check`, `lint`, `typecheck`, `test` and `build` on the whole workspace, stopping at the first failure.
 - **Pre-commit hook:** `pnpm install` sets it up (root `prepare` script, Husky). lint-staged runs `prettier --write` on the staged files only and adds the result to the commit; unstaged changes are left alone. It does nothing else, so commits stay fast; `git commit --no-verify` skips it, and CI still checks the format.
 - **Blame:** GitHub skips the commits in `.git-blame-ignore-revs`; for local `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once. A formatting-only commit (a Prettier or plugin upgrade that changes its output) goes into the file, with its full SHA, and its pull request is merged with a merge commit so the SHA survives.
-- **YAML schema:** SchemaStore's CrowdSec schema matches `**/collections/*/*.yaml`, so `.vscode/settings.json` maps `postman/**` to a permissive schema. Postman publishes no JSON schema for Collection v3; `postman-cli collection lint` is the real check.
+- **YAML schema:** SchemaStore's CrowdSec schema matches `**/collections/*/*.yaml`, so `.vscode/settings.json` maps `postman/**` to a permissive schema. Postman publishes no JSON schema for Collection v3; `postman-cli collection lint` checks the request files, and the saved messages are checked by sending them (Manual checks above).

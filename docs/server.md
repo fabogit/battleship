@@ -176,8 +176,8 @@ Behaviour of the game server, `packages/server`.
 ## Hardening
 
 - Every inbound payload passes its `core/validation.ts` guard (`PAYLOAD_PARSERS`) before reaching room logic; failures → `INVALID_PAYLOAD` ([Payload validation](protocol.md#payload-validation)). Room logic receives the guard's copy, never the raw payload.
-- Socket.io `maxHttpBufferSize` is set to a small value (e.g. 16 KB).
-- Per-socket rate limit (`RATE_LIMIT_EVENTS_PER_SECOND`) → `RATE_LIMITED`.
+- Socket.io `maxHttpBufferSize` drops to a small value (about 16 KB) with #24; until then it is Socket.io's default, 1 MB, and a larger message closes the socket.
+- Per-socket rate limit (`RATE_LIMIT_EVENTS_PER_SECOND`) → `RATE_LIMITED`, with #24.
 - `MAX_ROOMS` cap → `SERVER_FULL`.
 
 ## Logging
@@ -197,6 +197,6 @@ Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `L
 
 ## Testability
 
-- Room logic is a pure transition function `(state, command, now) → { state, effects }`; timers are scheduled effects executed by a thin `scheduler.ts` over an injectable `Clock`.
+- Room logic is a pure transition function `(state, command, now) → { state, effects }`. The clock is `createServer`'s `now?: () => number` option (`Date.now` in production), read once per command ([Socket handlers](#socket-handlers)). Timers (#28, #30) will be scheduled effects, run by a thin shell over the same clock.
 - The `Rng` is injected (dice, auto shots, auto placement); production uses `createCryptoRng()`, tests `createSeededRng(seed)` ([Randomness](domain.md#randomness)).
 - Unit tests drive rooms with a fake clock and a fixed seed. Integration tests use real `socket.io-client` instances against an in-process server on an ephemeral port: `test/game.test.ts` plays a whole match (create → join → place → play to victory) with seeded fleets, a seeded registry and a fixed clock, reading every event each client receives in order.

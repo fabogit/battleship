@@ -9,7 +9,7 @@ Real-time 1v1 Battleship in the browser: create a private room, share the link a
 | Client (Cloudflare Pages) | <https://battleship-ac7.pages.dev>                                                                              |
 | Server (Render)           | <https://battleship-server-jumc.onrender.com> ([`/health`](https://battleship-server-jumc.onrender.com/health)) |
 
-The server runs on Render's free tier and sleeps when idle: the first visit waits about 25 s while it wakes up. Until milestone M1 is complete, two players can meet in a room but not play yet (see the [roadmap](docs/roadmap.md)).
+The server runs on Render's free tier and sleeps when idle: the first visit waits about 25 s while it wakes up. Since milestone M1, two players can play a full match with the default rules, on phones and on desktop: create a room, share its link, place the fleets and fire until one fleet is sunk. Reconnection comes with M2 (until then a reload or a dropped connection loses the seat), timers and rules negotiation with M3, salvo, surrender and rematch with M4 (see the [roadmap](docs/roadmap.md)).
 
 ## Prerequisites
 
@@ -37,22 +37,22 @@ pnpm test
 pnpm build
 ```
 
-CI runs the same steps, in this order, on every pull request and on every push to `main` ([`ci.yml`](.github/workflows/ci.yml)); `pnpm verify` runs them all locally. A pre-commit hook formats the staged files with Prettier ([Local tooling](docs/development.md#local-tooling)).
+CI runs these steps, in this order, on every pull request and on every push to `main` ([`ci.yml`](.github/workflows/ci.yml)). `pnpm verify` runs the same steps locally, with `lint` before `typecheck`, and stops at the first failure. A pre-commit hook formats the staged files with Prettier ([Local tooling](docs/development.md#local-tooling)).
 
 ## Docs
 
-| Document                           | Contents                                                               |
-| ---------------------------------- | ---------------------------------------------------------------------- |
-| [Overview](docs/overview.md)       | Product scope, the good-faith principle, technical constraints         |
-| [Development](docs/development.md) | Monorepo layout, how `@battleship/core` is resolved, local tooling     |
-| [Deployment](docs/deployment.md)   | Render facts that shape the design, backend and frontend deploys       |
-| [Domain](docs/domain.md)           | Constants, domain types, rules, placement, shot engine                 |
-| [Server](docs/server.md)           | Room state machine, transition rules, sessions, hardening, testability |
-| [Protocol](docs/protocol.md)       | Socket.io events, the snapshot, error codes                            |
-| [Client](docs/client.md)           | Reactive model, board and interaction, layout, cold-start handling     |
-| [Roadmap](docs/roadmap.md)         | Milestones, review & consolidation, open risks                         |
-| [Decisions](docs/adr/README.md)    | One file per architecture decision, ADR-0001 to ADR-0028               |
-| [Glossary](GLOSSARY.md)            | Domain terms and the words to avoid                                    |
+| Document                           | Contents                                                                                                              |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [Overview](docs/overview.md)       | Product scope, the good-faith principle, technical constraints                                                        |
+| [Development](docs/development.md) | Monorepo layout, how `@battleship/core` is resolved, code conventions, local tooling                                  |
+| [Deployment](docs/deployment.md)   | Render facts that shape the design, environment variables, backend and frontend deploys                               |
+| [Domain](docs/domain.md)           | Constants, domain types, rules, randomness, placement, shot engine                                                    |
+| [Server](docs/server.md)           | Room state machine, transition rules, room logic, plugins, socket handlers, sessions, hardening, logging, testability |
+| [Protocol](docs/protocol.md)       | Handshake, Socket.io events, payload validation, the snapshot, error codes                                            |
+| [Client](docs/client.md)           | Reactive model, board and interaction, routes and lobby flow, layout, cold-start handling                             |
+| [Roadmap](docs/roadmap.md)         | Milestones, review & consolidation, open risks                                                                        |
+| [Decisions](docs/adr/README.md)    | One file per architecture decision, ADR-0001 onwards                                                                  |
+| [Glossary](GLOSSARY.md)            | Domain terms and the words to avoid                                                                                   |
 
 ## How work is tracked
 
