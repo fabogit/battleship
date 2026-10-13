@@ -2,18 +2,22 @@ $kind: socket.io-request
 description: |-
   Smoke check (ADR-0048) over the WebSocket transport: the request `pnpm --filter @battleship/server echo <url>` sends after every deploy.
 
-  1. **Connect**: the `SERVER_SHUTDOWN` listener is armed on connect.
+  1. **Connect**: the `SERVER_SHUTDOWN` listener is armed on connect. The URL carries the collection variable
+     `protocolVersion` as a query parameter, since Postman cannot send the handshake `auth` (ADR-0062).
   2. Send the saved `hello` message: `ECHO` with an ack.
-  3. The ack must be `{ "ok": true, "payload": { "hello": "postman" }, "protocolVersion": 1 }`.
+  3. The ack must be `{ "ok": true, "payload": { "hello": "postman" }, "protocolVersion": 2 }`.
 
   Stop the server with Ctrl+C while connected: `SERVER_SHUTDOWN` arrives, then the server disconnects.
-url: "{{baseUrl}}"
+url: '{{baseUrl}}?protocolVersion={{protocolVersion}}'
 events:
   - name: SERVER_SHUTDOWN
     description: The server is restarting; any match in progress is lost (docs/deployment.md#backend-render).
     subscribeOnConnect: true
 settings:
-  version: "4"
+  version: '4'
 examples: .resources/ECHO.resources/examples
 messages: .resources/ECHO.resources/messages
 order: 1000
+queryParams:
+  - key: protocolVersion
+    value: '{{protocolVersion}}'

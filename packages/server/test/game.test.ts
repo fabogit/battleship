@@ -9,6 +9,7 @@ import {
   MAX_ROOMS,
   parseSessionCredentials,
   PLACEMENT_TIME_LIMIT_MS,
+  PROTOCOL_VERSION,
   REMATCH_CHOICES,
   ROOM_PHASES,
   SEATS,
@@ -16,11 +17,14 @@ import {
   SHOT_OUTCOMES,
   type ClientToServerEvents,
   type CommandEvent,
+  type HandshakeAuth,
   type CommandPayload,
   type Coordinate,
   type PlacedShip,
   type PlayerStateSnapshot,
+  type Seat,
   type ServerToClientEvents,
+  type SessionCredentials,
   type ShipPlacement,
   type ShotResolvedPayload,
 } from '@battleship/core';
@@ -30,7 +34,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
 import { COMMAND_EVENTS } from '../src/plugins/room-handlers.js';
-import { generateRoomId, RoomManager } from '../src/room/room-manager.js';
+import { createPlayerSecret, generateRoomId, RoomManager } from '../src/room/room-manager.js';
 import { createServer } from '../src/server.js';
 
 type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -165,15 +169,39 @@ interface Player {
   readonly inbox: Inbox;
 }
 
-/** A connected client, as the browser opens it. */
-async function player(): Promise<Player> {
-  const socket: ClientSocket = connect(baseUrl, { transports: ['websocket'], reconnection: false });
+/**
+ * A connected client, as the browser opens it: the current protocol version and, to reopen a seat, a session.
+ * @param session Credentials from a `CREATE_ROOM` or `JOIN_ROOM` ack; none for a client without a room.
+ */
+async function player(session?: SessionCredentials): Promise<Player> {
+  const auth: HandshakeAuth =
+    session === undefined ? { protocolVersion: PROTOCOL_VERSION } : { protocolVersion: PROTOCOL_VERSION, session };
+  const socket: ClientSocket = connect(baseUrl, { transports: ['websocket'], reconnection: false, auth });
   clients.push(socket);
   const inbox = new Inbox(socket);
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
     socket.once('connect', resolve);
+    socket.once('connect_error', reject);
   });
   return { socket, inbox };
+}
+
+/**
+ * Opens a socket whose handshake the server must refuse.
+ * @param auth The handshake `auth`, as a misbehaving or outdated client could send it.
+ * @returns The `connect_error` message: the error code (ADR-0061).
+ */
+async function refusedHandshake(auth: object): Promise<string> {
+  const socket: ClientSocket = connect(baseUrl, { transports: ['websocket'], reconnection: false, auth });
+  clients.push(socket);
+  const error = await new Promise<Error>((resolve, reject) => {
+    socket.once('connect_error', resolve);
+    socket.once('connect', () => {
+      reject(new Error('the handshake was accepted'));
+    });
+  });
+  expect(socket.active).toBe(false);
+  return error.message;
 }
 
 /** Sends a command and returns its ack, untyped: each test asserts the shape. */
@@ -239,19 +267,34 @@ function waterOf(fleet: readonly PlacedShip[]): Coordinate[] {
   })).filter(({ x, y }) => !occupied.has(`${String(x)},${String(y)}`));
 }
 
+/** Two seated players, with the credentials each got in its ack. */
+interface SeatedPlayers {
+  readonly p1: Player;
+  readonly p2: Player;
+  readonly roomId: string;
+  /** Each seat's session, as the client stores it. */
+  readonly sessions: Readonly<Record<Seat, SessionCredentials>>;
+}
+
 /** P1 creates a room and P2 joins it; the snapshots this sends are read. */
-async function seatedPlayers(): Promise<{ p1: Player; p2: Player; roomId: string }> {
+async function seatedPlayers(): Promise<SeatedPlayers> {
   const [p1, p2] = await Promise.all([player(), player()]);
-  const created = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
-  await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId: created.roomId, nickname: 'Bob' });
+  const created = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as SessionCredentials;
+  const { roomId } = created;
+  const joined = (await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' })) as { playerSecret: string };
   await p1.inbox.states(2);
   await p2.inbox.states(1);
-  return { p1, p2, roomId: created.roomId };
+  const sessions = {
+    P1: { roomId, playerSecret: created.playerSecret },
+    P2: { roomId, playerSecret: joined.playerSecret },
+  };
+  return { p1, p2, roomId, sessions };
 }
 
 /** Both players place and confirm their seeded fleets, so the match starts with `P1` to fire. */
-async function startedMatch(): Promise<{ p1: Player; p2: Player }> {
-  const { p1, p2 } = await seatedPlayers();
+async function startedMatch(): Promise<SeatedPlayers> {
+  const seated = await seatedPlayers();
+  const { p1, p2 } = seated;
   for (const [from, seed] of [
     [p1, P1_FLEET_SEED],
     [p2, P2_FLEET_SEED],
@@ -262,7 +305,35 @@ async function startedMatch(): Promise<{ p1: Player; p2: Player }> {
   // One snapshot per accepted command, to each player.
   await p1.inbox.states(4);
   await p2.inbox.states(4);
-  return { p1, p2 };
+  return seated;
+}
+
+/**
+ * Plays a started match to its end without reading the inboxes: P1 fires at every cell of P2's fleet, P2 at water in
+ * between, so P1 wins with its last shot.
+ * @returns The cells each player fired at, in order.
+ */
+async function playToVictory(p1: Player, p2: Player): Promise<Record<Seat, Coordinate[]>> {
+  const p1Targets = placedFleet(P2_FLEET_SEED).flatMap((ship) => ship.coordinates);
+  const p2Targets = waterOf(placedFleet(P1_FLEET_SEED)).slice(0, p1Targets.length - 1);
+  for (const [turn, target] of p1Targets.entries()) {
+    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [target] })).toEqual({ ok: true });
+    const p2Target = p2Targets[turn];
+    if (p2Target !== undefined) {
+      expect(await send(p2, CLIENT_EVENTS.FIRE, { targets: [p2Target] })).toEqual({ ok: true });
+    }
+  }
+  return { P1: p1Targets, P2: p2Targets };
+}
+
+/**
+ * Resolves with the reason of a client's next disconnection.
+ * @param target The client the server should disconnect.
+ */
+function disconnection(target: Player): Promise<string> {
+  return new Promise((resolve) => {
+    target.socket.once('disconnect', resolve);
+  });
 }
 
 describe('a match between two real clients', () => {
@@ -595,5 +666,121 @@ describe('room isolation', () => {
     await p1.inbox.state();
 
     await expectNothingPending(p2);
+  });
+});
+
+describe('handshake', () => {
+  it.each([
+    ['no auth', {}],
+    ['another protocol version', { protocolVersion: PROTOCOL_VERSION - 1 }],
+    // The version is checked first, so an outdated client is told to reload even with a session it lost.
+    [
+      'another protocol version and a malformed session',
+      { protocolVersion: PROTOCOL_VERSION - 1, session: { roomId: 'not an id' } },
+    ],
+  ])('refuses %s with PROTOCOL_MISMATCH', async (_label, auth) => {
+    await start();
+    expect(await refusedHandshake(auth)).toBe(ERROR_CODES.PROTOCOL_MISMATCH);
+  });
+
+  it('refuses a malformed, unknown or wrong session with SESSION_INVALID and leaves the seat alone', async () => {
+    await start();
+    const { p1, p2, roomId, sessions } = await startedMatch();
+    const otherRoomId = generateRoomId(createSeededRng(ROOM_SEED + 1));
+    for (const session of [
+      null,
+      { roomId },
+      { ...sessions.P1, playerSecret: sessions.P1.playerSecret.toUpperCase() },
+      { roomId, playerSecret: createPlayerSecret() },
+      { roomId: otherRoomId, playerSecret: sessions.P1.playerSecret },
+    ]) {
+      expect(await refusedHandshake({ protocolVersion: PROTOCOL_VERSION, session })).toBe(ERROR_CODES.SESSION_INVALID);
+    }
+    // P1's socket still holds the seat.
+    expect(p1.socket.connected).toBe(true);
+    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
+    for (const { inbox } of [p1, p2]) {
+      expect((await inbox.shot()).shooter).toBe(SEATS.P1);
+      await inbox.state();
+    }
+  });
+
+  it.each(Object.values(SEATS))(
+    'rebinds a reconnecting %s to its seat and sends it STATE at once, and nothing to the opponent',
+    async (seat) => {
+      await start();
+      const { p1, p2, roomId, sessions } = await startedMatch();
+      const [leaving, staying] = seat === SEATS.P1 ? [p1, p2] : [p2, p1];
+      const left = disconnection(leaving);
+      leaving.socket.close();
+      expect(await left).toBe('io client disconnect');
+
+      const back = await player(sessions[seat]);
+      expect(await back.inbox.state()).toMatchObject({
+        roomId,
+        phase: ROOM_PHASES.IN_PROGRESS,
+        me: { seat },
+        battle: { currentTurn: SEATS.P1, incomingShots: [], outgoingShots: [] },
+      });
+
+      // The rebound socket plays the seat, and gets the room's events again.
+      const shooter = seat === SEATS.P1 ? back : staying;
+      expect(await send(shooter, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
+      for (const { inbox } of [back, staying]) {
+        expect((await inbox.shot()).shooter).toBe(SEATS.P1);
+        expect((await inbox.state()).battle?.currentTurn).toBe(SEATS.P2);
+      }
+      await expectNothingPending(staying);
+    },
+  );
+
+  it.each(Object.values(SEATS))(
+    'lets the latest connection win: a zombie %s socket gets SESSION_REPLACED and is disconnected',
+    async (seat) => {
+      await start();
+      const { p1, p2, sessions } = await startedMatch();
+      const [zombie, opponent] = seat === SEATS.P1 ? [p1, p2] : [p2, p1];
+      const replaced = disconnection(zombie);
+
+      // The zombie never left: a backgrounded tab whose socket the server still thinks is alive (ADR-0014).
+      const fresh = await player(sessions[seat]);
+      expect((await fresh.inbox.state()).me.seat).toBe(seat);
+      expect(await zombie.inbox.next()).toEqual({ event: SERVER_EVENTS.SESSION_REPLACED, payload: {} });
+      expect(await replaced).toBe('io server disconnect');
+
+      // The seat is the fresh socket's now: the room's events reach it, and the zombie gets nothing more.
+      const shooter = seat === SEATS.P1 ? fresh : opponent;
+      expect(await send(shooter, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
+      for (const { inbox } of [fresh, opponent]) {
+        expect((await inbox.shot()).shooter).toBe(SEATS.P1);
+        await inbox.state();
+      }
+      expect(app.io.of('/').sockets.size).toBe(2);
+    },
+  );
+
+  it('sends a socket that rebinds after the final shot a GAME_OVER STATE with both boards', async () => {
+    await start();
+    const { p1, p2, sessions } = await startedMatch();
+    const fired = await playToVictory(p1, p2);
+    const fleets = { P1: placedFleet(P1_FLEET_SEED), P2: placedFleet(P2_FLEET_SEED) };
+
+    for (const seat of Object.values(SEATS)) {
+      const opponentSeat = seat === SEATS.P1 ? SEATS.P2 : SEATS.P1;
+      const snapshot = await (await player(sessions[seat])).inbox.state();
+      expect(snapshot).toMatchObject({ phase: ROOM_PHASES.GAME_OVER, me: { seat }, battle: null });
+      const gameOver = snapshot.gameOver;
+      expect(gameOver).toMatchObject({ winner: SEATS.P1, reason: GAME_OVER_REASONS.FLEET_DESTROYED });
+      expect(gameOver?.myShips).toEqual(fleets[seat]);
+      expect(gameOver?.opponentShips).toEqual(fleets[opponentSeat]);
+      // Every shot on both boards, the winning one included, in firing order: P1 hit, P2 missed.
+      const winnerShots = seat === SEATS.P1 ? gameOver?.outgoingShots : gameOver?.incomingShots;
+      const loserShots = seat === SEATS.P1 ? gameOver?.incomingShots : gameOver?.outgoingShots;
+      expect(winnerShots?.map((shot) => shot.coordinate)).toEqual(fired.P1);
+      expect(loserShots?.map((shot) => shot.coordinate)).toEqual(fired.P2);
+      expect(winnerShots?.every((shot) => shot.outcome !== SHOT_OUTCOMES.MISS)).toBe(true);
+      expect(winnerShots?.at(-1)?.sunkShip).toBeDefined();
+      expect(loserShots?.every((shot) => shot.outcome === SHOT_OUTCOMES.MISS)).toBe(true);
+    }
   });
 });

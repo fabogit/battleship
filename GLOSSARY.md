@@ -27,7 +27,7 @@ A room id plus its player secret, stored by `SessionStore`, that binds a reconne
 _Avoid_: login
 
 **Seat binding**:
-The link between a connected socket and the seat it plays, set when the socket creates or joins a room; the server takes the sender's seat from it. It lasts as long as the socket; a session restores it after a reconnection.
+The link between a connected socket and the seat it plays, set when the socket creates or joins a room, or at the handshake from a session; the server takes the sender's seat from it. It lasts as long as the socket; a session restores it after a reconnection.
 _Avoid_: login, attachment
 
 **Phase**:

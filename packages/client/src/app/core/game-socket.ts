@@ -1,8 +1,10 @@
 import { DestroyRef, Service, inject, signal } from '@angular/core';
 import {
+  PROTOCOL_VERSION,
   type ClientToServerEvents,
   type CommandEvent,
   type CommandPayload,
+  type HandshakeAuth,
   type ServerToClientEvents,
 } from '@battleship/core';
 import { io } from 'socket.io-client';
@@ -79,6 +81,10 @@ export class GameSocketService {
    * Polling is the fallback for networks that block WebSocket: without `tryAllTransports` the client never moves past
    * the first transport and keeps retrying WebSocket (#51, F3).
    *
+   * The handshake `auth` is a callback, which Socket.io calls again on every reconnect attempt
+   * (docs/protocol.md#handshake): the server refuses a missing or different `protocolVersion` with `PROTOCOL_MISMATCH`
+   * (ADR-0061). The stored `session` joins it with #21.
+   *
    * Left with Socket.io's untyped event maps on purpose: its typed `emit` and `on` resolve payloads through conditional
    * types that a generic event name cannot narrow, so `emitWithAck` and `on` carry the contract's types instead
    * (ADR-0035). They are the only way to reach the socket's events.
@@ -87,6 +93,9 @@ export class GameSocketService {
     autoConnect: false,
     transports: ['websocket', 'polling'],
     tryAllTransports: true,
+    auth: (send) => {
+      send({ protocolVersion: PROTOCOL_VERSION } satisfies HandshakeAuth);
+    },
   });
 
   /** Mirrors the socket's lifecycle events into `status`, and closes the socket with the injector. */

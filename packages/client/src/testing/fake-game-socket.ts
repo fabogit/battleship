@@ -152,6 +152,9 @@ export function gameOverSnapshot(roomId: string, gameOver: Partial<GameOverSnaps
     gameOver: {
       winner: SEATS.P1,
       reason: GAME_OVER_REASONS.FLEET_DESTROYED,
+      myShips: [],
+      incomingShots: [],
+      outgoingShots: [],
       opponentShips: [],
       rematch: { me: null, opponent: null },
       ...gameOver,

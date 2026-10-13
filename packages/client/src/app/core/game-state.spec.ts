@@ -108,6 +108,10 @@ function gameOver(overrides: Partial<GameOverSnapshot> = {}): PlayerStateSnapsho
     gameOver: {
       winner: SEATS.P1,
       reason: GAME_OVER_REASONS.FLEET_DESTROYED,
+      // Left empty: the boards still come from the battle record until #21 reads them from here (ADR-0064).
+      myShips: [],
+      incomingShots: [],
+      outgoingShots: [],
       opponentShips: [SUNK_DESTROYER],
       rematch: { me: null, opponent: null },
       ...overrides,

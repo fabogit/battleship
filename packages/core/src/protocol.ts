@@ -112,12 +112,19 @@ export interface SessionCredentials {
 
 /**
  * The Socket.io handshake `auth`, re-evaluated by the client on every reconnect attempt (docs/protocol.md#handshake).
- * The server compares `protocolVersion` first (ADR-0017), then checks `session` with `parseSessionCredentials`.
+ * The server compares `protocolVersion` first (ADR-0017), then checks `session` with `parseSessionCredentials`; a
+ * refusal reaches the client as a `connect_error` whose message is the error code (ADR-0061).
  */
 export interface HandshakeAuth {
-  /** The client's `PROTOCOL_VERSION`; any other value, or none, is refused with `PROTOCOL_MISMATCH`. */
+  /**
+   * The client's `PROTOCOL_VERSION`; any other value, or none, is refused with `PROTOCOL_MISMATCH`. Tools that cannot
+   * send `auth` pass it as the `protocolVersion` query parameter instead (ADR-0062).
+   */
   readonly protocolVersion: number;
-  /** Stored credentials of the room being reopened; absent when the client is not in a room. */
+  /**
+   * Stored credentials of the room being reopened; absent when the client is not in a room. Valid ones bind the socket
+   * to their seat (ADR-0063); a malformed, unknown or expired session is refused with `SESSION_INVALID`.
+   */
   readonly session?: SessionCredentials;
 }
 
@@ -311,13 +318,22 @@ export interface BattleSnapshot {
   readonly afkCount: PerPlayer<number>;
 }
 
-/** The `GAME_OVER` part of a snapshot. */
+/**
+ * The `GAME_OVER` part of a snapshot: both final boards, so a client that rebinds after the last shot draws the same
+ * boards as one that watched the match (ADR-0064).
+ */
 export interface GameOverSnapshot {
   /** `null` only when the reason is `ABANDONED`. */
   readonly winner: Seat | null;
   /** How the match ended (docs/server.md#game-over--rematch). */
   readonly reason: GameOverReason;
-  /** The opponent's whole fleet, revealed now that the match is over. */
+  /** The receiver's fleet as placed, as in `BattleSnapshot`; hits on it are in `incomingShots`. */
+  readonly myShips: readonly PlacedShip[];
+  /** Every shot the opponent fired at the receiver's board, oldest first, the last one included. */
+  readonly incomingShots: readonly ShotResult[];
+  /** Every shot the receiver fired at the opponent's board, oldest first, the last one included. */
+  readonly outgoingShots: readonly ShotResult[];
+  /** The opponent's whole fleet, revealed now that the match is over; `outgoingShots` landed on it. */
   readonly opponentShips: readonly PlacedShip[];
   /** Each player's pick so far; `null` until they choose. */
   readonly rematch: PerPlayer<RematchChoice | null>;
@@ -377,7 +393,7 @@ export interface ServerToClientEvents {
   SHOT_RESOLVED: (payload: ShotResolvedPayload) => void;
   /** The starting dice roll; the first turn timer waits `DICE_ANIMATION_MS` for it. */
   DICE_ROLLED: (payload: DiceRolledPayload) => void;
-  /** A newer socket took this seat; the server disconnects this one (ADR-0014). */
+  /** A newer socket took this seat; the server disconnects this one right after (ADR-0014, ADR-0063). */
   SESSION_REPLACED: (payload: EmptyPayload) => void;
   /** The server is restarting; any match in progress is lost (docs/deployment.md#backend-render). */
   SERVER_SHUTDOWN: (payload: EmptyPayload) => void;

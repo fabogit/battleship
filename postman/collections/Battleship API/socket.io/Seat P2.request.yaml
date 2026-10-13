@@ -5,13 +5,16 @@ description: |-
   The joiner, `P2`. Set the collection variable `roomId` from the `CREATE_ROOM` ack of **Seat P1** first,
   then send `JOIN_ROOM`; see **Seat P1** for the whole sequence. Its fleet stands in columns 0, 2, 4, 6 and 8,
   so P1's saved `FIRE` at (0, 0) hits; P2's saved `FIRE` at (9, 9) misses P1's fleet (rows 0, 2, 4, 6, 8).
-url: '{{baseUrl}}'
+url: '{{baseUrl}}?protocolVersion={{protocolVersion}}'
 events:
   - name: STATE
     description: The receiver's snapshot (fog-of-war), after every accepted command; it follows the ack and any SHOT_RESOLVED.
     subscribeOnConnect: true
   - name: SHOT_RESOLVED
     description: A fired turn, for animation; sent to both players before the STATE that reflects it.
+    subscribeOnConnect: true
+  - name: SESSION_REPLACED
+    description: A newer socket took this seat (ADR-0014, ADR-0063); a server disconnect follows. Postman cannot send a session, so only the tests and a socket.io-client script trigger it.
     subscribeOnConnect: true
   - name: SERVER_SHUTDOWN
     description: The server is restarting; any match in progress is lost (docs/deployment.md#backend-render).
@@ -20,3 +23,6 @@ settings:
   version: '4'
 messages: .resources/Seat P2.resources/messages
 order: 4000
+queryParams:
+  - key: protocolVersion
+    value: '{{protocolVersion}}'

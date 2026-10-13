@@ -1,0 +1,14 @@
+$kind: socket.io-request
+id: 73d926581b92736f99126e2d
+name: ECHO — wrong protocol version
+description: |-
+  Same connection with an outdated protocol version in the query (`1`).
+  **Connect** must fail with `PROTOCOL_MISMATCH`: the handshake check refuses it with a `connect_error` whose message
+  is the error code, and the connection never opens (ADR-0061, ADR-0062). Without any `protocolVersion` it fails the same way.
+url: '{{baseUrl}}?protocolVersion=1'
+settings:
+  version: '4'
+order: 1500
+queryParams:
+  - key: protocolVersion
+    value: '1'

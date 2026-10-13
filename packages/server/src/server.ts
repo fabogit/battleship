@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 
 import { createOriginMatcher } from './origins.js';
 import echo from './plugins/echo.js';
+import handshake from './plugins/handshake.js';
 import originPolicy from './plugins/origin-policy.js';
 import roomHandlers from './plugins/room-handlers.js';
 import socketIo from './plugins/socket-io.js';
@@ -47,9 +48,13 @@ export function createServer(options: ServerOptions): FastifyInstance {
     uptime: process.uptime(),
   }));
 
+  const rooms = options.rooms ?? new RoomManager();
+  const now = options.now ?? Date.now;
   void app.register(socketIo, { isOriginAllowed });
+  // Before every event plugin: the handshake middleware refuses outdated clients and binds sessions (ADR-0061).
+  void app.register(handshake, { rooms, now });
   void app.register(echo);
-  void app.register(roomHandlers, { rooms: options.rooms ?? new RoomManager(), now: options.now ?? Date.now });
+  void app.register(roomHandlers, { rooms, now });
 
   return app;
 }

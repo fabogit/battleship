@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0064
 date: 2026-10-10
 ---
 
 # ADR-0058: Game-over boards
+
+> Superseded by [ADR-0064](0064-game-over-snapshot-boards.md): the game-over snapshot now carries both final boards (#22). The client keeps this record until #21 reads the boards from the snapshot.
 
 The game-over snapshot carries the revealed opponent fleet but no shots and not the player's own fleet ([Protocol: Snapshot](../protocol.md#snapshot)). To show both boards with every shot at game over, `GameStateService` keeps a battle record: the boards of the latest `IN_PROGRESS` snapshot (own fleet, incoming and outgoing shots) for that room, plus the results of each `SHOT_RESOLVED` received since. The shot that ends the match arrives as `SHOT_RESOLVED` before the `GAME_OVER` snapshot ([ADR-0047](0047-reply-order.md)), so the record holds it. At game over `myFleet` is the recorded fleet under the recorded incoming shots, and `trackingBoard` is the revealed fleet under the recorded outgoing shots. Without a record for the room (a client that arrives at game over, e.g. after #21), `myFleet` is `null` and the revealed fleet has no shots. The battle view serves both `IN_PROGRESS` and `GAME_OVER`, so it stays on the page when the match ends and only its heading, status and actions change. Details in [Client: Game state](../client.md#game-state) (#20).
 

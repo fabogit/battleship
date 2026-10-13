@@ -183,9 +183,13 @@ describe('projectSnapshot', () => {
     for (const seat of Object.values(SEATS)) {
       const snapshot = expectFogOfWar(state, seat);
       expect(snapshot.battle).toBeNull();
+      // Both final boards, as the battle part showed them, plus the opponent's revealed fleet (ADR-0064).
       expect(snapshot.gameOver).toEqual({
         winner: state.winner,
         reason: GAME_OVER_REASONS.FLEET_DESTROYED,
+        myShips: state.battle.boards[seat].ships,
+        incomingShots: state.battle.boards[seat].shots,
+        outgoingShots: state.battle.boards[otherSeat(seat)].shots,
         opponentShips: state.battle.boards[otherSeat(seat)].ships,
         rematch: { me: null, opponent: null },
       });

@@ -16,7 +16,7 @@ import { type BattleRoom, type GameOverRoom, type PlacementRoom, type RoomPlayer
 
 /**
  * Builds what one seated player may see of a room. Fog-of-war: the opponent's fleet appears only as the receiver's own
- * shots (with `sunkShip` on each sinking shot) until `GAME_OVER`, which reveals it. Secrets are never included.
+ * shots (with `sunkShip` on each sinking shot) until `GAME_OVER`, which reveals it next to both final boards. Secrets are never included.
  * @param state The room, in any phase.
  * @param seat The receiver; must be seated.
  * @param now Current time in epoch ms; stored deadlines become remaining milliseconds.
@@ -95,16 +95,22 @@ function toBattleSnapshot(state: BattleRoom, seat: Seat): BattleSnapshot {
 }
 
 /**
- * Builds the `GAME_OVER` part, which reveals the opponent's whole fleet.
+ * Builds the `GAME_OVER` part: both final boards, as the battle part shows them, plus the opponent's whole fleet, now
+ * revealed (ADR-0064).
  * @param state The room in `GAME_OVER`.
  * @param seat The receiver.
  * @returns The game-over part. Rematch choices stay `null` until the rematch flow lands (#36).
  */
 function toGameOverSnapshot(state: GameOverRoom, seat: Seat): GameOverSnapshot {
+  const { boards } = state.battle;
+  const opponentSeat = otherSeat(seat);
   return {
     winner: state.winner,
     reason: state.reason,
-    opponentShips: state.battle.boards[otherSeat(seat)].ships,
+    myShips: boards[seat].ships,
+    incomingShots: boards[seat].shots,
+    outgoingShots: boards[opponentSeat].shots,
+    opponentShips: boards[opponentSeat].ships,
     rematch: { me: null, opponent: null },
   };
 }

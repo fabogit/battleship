@@ -9,15 +9,19 @@ import {
   MAX_ROOMS,
   ROOM_ID_ALPHABET,
   ROOM_ID_LENGTH,
+  SEATS,
   type CreateRoomPayload,
   type JoinRoomPayload,
   type Rng,
+  type Seat,
+  type SessionCredentials,
 } from '@battleship/core';
 
 import {
   applyCommand,
   createRoom,
   type RejectedTransition,
+  type RoomPlayer,
   type RoomState,
   type SeatCommand,
   type TransitionResult,
@@ -107,6 +111,24 @@ export class RoomManager {
    */
   get(roomId: string): RoomState | undefined {
     return this.#rooms.get(roomId);
+  }
+
+  /**
+   * Finds the seat a handshake `session` reopens (docs/server.md#sessions--reconnection, ADR-0063).
+   * @param credentials The guard's copy of the session: a well-formed room id and secret.
+   * @returns The open room with the seat whose secret matches, or `undefined` for an unknown room or secret, which the
+   * handshake refuses as `SESSION_INVALID`.
+   */
+  findSeat(credentials: SessionCredentials): { readonly state: RoomState; readonly seat: Seat } | undefined {
+    const state = this.#rooms.get(credentials.roomId);
+    if (state === undefined) {
+      return undefined;
+    }
+    const players: Readonly<Record<Seat, RoomPlayer | null>> = state.players;
+    const seat = Object.values(SEATS).find(
+      (candidate) => players[candidate]?.playerSecret === credentials.playerSecret,
+    );
+    return seat === undefined ? undefined : { state, seat };
   }
 
   /**
