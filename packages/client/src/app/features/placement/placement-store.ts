@@ -124,7 +124,7 @@ export class PlacementStore {
 
   /** Set by every action, for the live region; read through `feedback`. */
   private readonly feedbackSignal = signal<PlacementFeedback | null>(null);
-  /** What the last action did; `null` before the first one and after a failed update. */
+  /** What the last action did; `null` before the first one and after a failed update, unless a later action set it. */
   readonly feedback = this.feedbackSignal.asReadonly();
 
   /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */

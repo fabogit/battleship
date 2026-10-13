@@ -73,7 +73,10 @@ export class BattleStore {
 
   /** Set by every tap and every `SHOT_RESOLVED`, for the live region; read through `feedback`. */
   private readonly feedbackSignal = signal<BattleFeedback | null>(null);
-  /** The last tap's outcome or the last fired turn; `null` before the first one and after a failed update. */
+  /**
+   * The last tap's outcome or the last fired turn; `null` before the first one and after a failed update, unless a
+   * later tap or turn set it.
+   */
   readonly feedback = this.feedbackSignal.asReadonly();
 
   /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */
