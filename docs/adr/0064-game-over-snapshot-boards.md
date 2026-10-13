@@ -15,7 +15,7 @@ The `GAME_OVER` part of the snapshot carries both final boards, named as in `Bat
 
 ## Consequences
 
-- The client keeps its battle record and ignores the new fields until #21 drops the record and reads the boards from the snapshot; until then a client that reaches game over without having seen the battle still shows `myFleet` as `null` ([Client: Game state](../client.md#game-state)).
+- The client kept its battle record and ignored the new fields until #21, which dropped the record and its `SHOT_RESOLVED` listener and reads both boards from the snapshot. A client that reaches game over without having seen the battle, after a reload for instance, now shows both boards and the board toggle ([Client: Game state](../client.md#game-state)).
 - Fog-of-war does not change: at game over the receiver already knew every shot, and the opponent's fleet was revealed before ([ADR-0038](0038-snapshot-projection.md)).
 
 ## Links

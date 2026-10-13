@@ -26,6 +26,10 @@ _Avoid_: token, password
 A room id plus its player secret, stored by `SessionStore`, that binds a reconnecting socket back to its seat. The latest connection to a seat wins.
 _Avoid_: login
 
+**Current room**:
+The room a tab is in now: the room of its last accepted `CREATE_ROOM` or `JOIN_ROOM`, or the stored room it reopened from a link. The handshake sends its session. Each tab keeps its own, across reloads; another stored room the tab has left shows "You left this room".
+_Avoid_: active room
+
 **Seat binding**:
 The link between a connected socket and the seat it plays, set when the socket creates or joins a room, or at the handshake from a session; the server takes the sender's seat from it. It lasts as long as the socket; a session restores it after a reconnection.
 _Avoid_: login, attachment
