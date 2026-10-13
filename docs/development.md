@@ -140,7 +140,7 @@ Decisions: [ADR-0043](adr/0043-named-constants.md), [ADR-0044](adr/0044-code-for
 Decision: [ADR-0071](adr/0071-milestone-versioning.md).
 
 - **One number:** the root and the three packages share one version, `0.(n+1).0` after milestone `Mn` (M0 → `0.1.0`, M1 → `0.2.0`), and `1.0.0` waits for a stable protocol and rules. The packages are private, so nothing is published.
-- **Closing a milestone:** the last PR of its review issue sets the new version in the four `package.json` files. After the merge, tag that commit and publish the release:
+- **Closing a milestone:** the last PR of its review issue sets the new version in the four `package.json` files. After the merge, tag the commit that closed the milestone (the PR's merge commit, or the real end of the milestone if the bump came later, as for M1) and publish the release:
 
   ```bash
   git tag -a v0.3.0 <merge-commit> -m "M2 · Resilience"
