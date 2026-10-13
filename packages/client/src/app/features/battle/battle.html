@@ -16,28 +16,26 @@
   }
 </div>
 
-@if (hasBothBoards()) {
-  <div class="toggle" role="group" [attr.aria-label]="text.boardToggle">
-    <button
-      type="button"
-      aria-controls="my-fleet"
-      [attr.aria-pressed]="shownBoard() === boards.MY_FLEET"
-      (click)="show(boards.MY_FLEET)"
-    >
-      {{ text.myFleet }}
-    </button>
-    <button
-      type="button"
-      aria-controls="enemy-waters"
-      [attr.aria-pressed]="shownBoard() === boards.ENEMY_WATERS"
-      (click)="show(boards.ENEMY_WATERS)"
-    >
-      {{ text.enemyWaters }}
-    </button>
-  </div>
-}
+<div class="toggle" role="group" [attr.aria-label]="text.boardToggle">
+  <button
+    type="button"
+    aria-controls="my-fleet"
+    [attr.aria-pressed]="shownBoard() === boards.MY_FLEET"
+    (click)="show(boards.MY_FLEET)"
+  >
+    {{ text.myFleet }}
+  </button>
+  <button
+    type="button"
+    aria-controls="enemy-waters"
+    [attr.aria-pressed]="shownBoard() === boards.ENEMY_WATERS"
+    (click)="show(boards.ENEMY_WATERS)"
+  >
+    {{ text.enemyWaters }}
+  </button>
+</div>
 
-<div class="boards" [attr.data-shown]="hasBothBoards() ? shownBoard() : boards.ENEMY_WATERS">
+<div class="boards" [attr.data-shown]="shownBoard()">
   @if (gameState.myFleet(); as myFleet) {
     <section id="my-fleet" class="board" [attr.data-board]="boards.MY_FLEET" aria-labelledby="my-fleet-heading">
       <h2 id="my-fleet-heading">{{ text.myFleet }}</h2>

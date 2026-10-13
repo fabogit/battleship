@@ -154,9 +154,6 @@ export class Battle {
   /** The board shown on a narrow screen: the focused one, until the player toggles to the other one. */
   protected readonly shownBoard = linkedSignal<BattleBoard>(() => this.focusedBoard());
 
-  /** Whether the toggle is offered: at game over the player's board exists only if this client saw the battle. */
-  protected readonly hasBothBoards = computed(() => this.gameState.myFleet() !== null);
-
   /** Holds the board each fired turn lands on; stops with the view. */
   constructor() {
     const stopListening = inject(GameSocketService).on(SERVER_EVENTS.SHOT_RESOLVED, ({ shooter }) => {
