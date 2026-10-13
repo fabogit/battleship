@@ -15,11 +15,12 @@ Client forms use Angular's Signal Forms (`@angular/forms/signals`, stable since 
 
 ## Consequences
 
-- One more Angular package in the initial bundle (368 kB raw, about 98 kB transferred, after #17), within the 500 kB warning budget.
+- One more Angular package in the initial bundle (368 kB raw after #17, about 98 kB transferred by Angular's brotli estimate), within the 500 kB warning budget. Cloudflare Pages compresses less than that estimate: on 2026-10-13 it served the M1 bundle (`main` @ 9b593a6, `main-O7J47ETF.js`, 426.1 kB raw) as 131.8 kB with brotli and 128.9 kB with gzip, about 17 % above Angular's estimate for the same file (112.4 kB). Measured as the bytes received by `curl -s -o /dev/null -w '%{size_download}' -H 'Accept-Encoding: br'` (then `gzip`) on the deployed file; `curl --compressed` gets the brotli response.
 
 ## Links
 
 - Added on 2026-10-08 for the nickname form ([#17](https://github.com/fabogit/battleship/issues/17)).
+- Amended on 2026-10-13 for the M1 review ([#52](https://github.com/fabogit/battleship/issues/52)): transfer size measured on Pages.
 - Spec: [Client: Routes & lobby flow](../client.md#routes--lobby-flow)
 - Related: [ADR-0031](0031-payload-guard-strictness.md) (the guards the forms reuse)
 - Issues: [#17](https://github.com/fabogit/battleship/issues/17), [#27](https://github.com/fabogit/battleship/issues/27) (rules negotiation UI)

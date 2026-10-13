@@ -5,7 +5,7 @@ date: 2026-10-08
 
 # ADR-0049: One room route for both players
 
-The client has two routes: `/` (home: nickname, "Create room") and `/r/:roomId`, the page of one room for both players. After `CREATE_ROOM` the creator is sent to `/r/<roomId>`, so the link to share is the address they are on. The joiner opens the same address. The room page picks its view from what the client knows, in this order: a malformed id is "Room not found" without asking the server; the room's snapshot, once it arrives, decides by phase (waiting screen, then the match views of #19 and #20); a seat held in `SessionStore` without a snapshot yet is "Entering the room…"; otherwise the nickname form and "Join room", replaced by its own screen on `ROOM_NOT_FOUND` or `ROOM_FULL`. The route parameter reaches the page as an input (`withComponentInputBinding`). Details in [Client: Routes & lobby flow](../client.md#routes--lobby-flow) (#17).
+The client has two routes: `/` (home: nickname, "Create room") and `/r/:roomId`, the page of one room for both players. After `CREATE_ROOM` the creator is sent to `/r/<roomId>`, so the link to share is the address they are on. The joiner opens the same address. The room page picks its view from what the client knows, in this order: a malformed id is "Room not found" without asking the server; a seat held in `SessionStore` for a room this tab has left since (it created or joined another one) is "You left this room", with a link home; the room's snapshot, once it arrives, decides by phase (waiting screen, then the match views of #19 and #20); a seat held for the room of the last accepted `CREATE_ROOM` or `JOIN_ROOM`, without a snapshot yet, is "Entering the room…"; otherwise the nickname form and "Join room", replaced by its own screen on `ROOM_NOT_FOUND` or `ROOM_FULL`. The route parameter reaches the page as an input (`withComponentInputBinding`). Details in [Client: Routes & lobby flow](../client.md#routes--lobby-flow) (#17).
 
 ## Considered options
 
@@ -20,6 +20,7 @@ The client has two routes: `/` (home: nickname, "Create room") and `/r/:roomId`,
 ## Links
 
 - Added on 2026-10-08 for the home and lobby screens ([#17](https://github.com/fabogit/battleship/issues/17)).
+- Amended on 2026-10-13 for the M1 review ([#52](https://github.com/fabogit/battleship/issues/52)): the "You left this room" step, added by [#96](https://github.com/fabogit/battleship/pull/96) (F1), where "Entering the room…" waited forever for a room the tab had left.
 - Spec: [Client: Routes & lobby flow](../client.md#routes--lobby-flow) · [Client: Layout](../client.md#layout)
 - Related: [ADR-0013](0013-session-persistence.md) (session persistence), [ADR-0015](0015-protocol-shape.md) (snapshots as the source of truth)
 - Issues: [#17](https://github.com/fabogit/battleship/issues/17), [#21](https://github.com/fabogit/battleship/issues/21)
