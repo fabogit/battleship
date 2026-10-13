@@ -1,15 +1,18 @@
 import { DestroyRef, Service, inject, signal } from '@angular/core';
 import {
+  ERROR_CODES,
   PROTOCOL_VERSION,
   type ClientToServerEvents,
   type CommandEvent,
   type CommandPayload,
   type HandshakeAuth,
   type ServerToClientEvents,
+  type SessionCredentials,
 } from '@battleship/core';
 import { io } from 'socket.io-client';
 
 import { SERVER_URL } from './server-url';
+import { SessionStore } from './session-store';
 
 /** The states of the Socket.io connection, as `GameSocketService.status` reports them (ADR-0043). */
 export const CONNECTION_STATUSES = {
@@ -75,6 +78,11 @@ export class GameSocketService {
   /** `connecting` from `connect()` until the handshake succeeds, and while Socket.io retries after a drop. */
   readonly status = this.statusSignal.asReadonly();
 
+  /** Where the handshake reads the current room's credentials, and drops them when the server refuses them. */
+  private readonly sessions = inject(SessionStore);
+  /** The credentials the latest handshake sent; `null` when it sent none. */
+  private sentSession: SessionCredentials | null = null;
+
   /**
    * Created idle (`autoConnect: false`), so services can listen to server events before the server is awake.
    * WebSocket first: the server URL is https in production, so this is `wss://` (docs/deployment.md#frontend-cloudflare-pages).
@@ -83,7 +91,8 @@ export class GameSocketService {
    *
    * The handshake `auth` is a callback, which Socket.io calls again on every reconnect attempt
    * (docs/protocol.md#handshake): the server refuses a missing or different `protocolVersion` with `PROTOCOL_MISMATCH`
-   * (ADR-0061). The stored `session` joins it with #21.
+   * (ADR-0061). It adds the current room's stored `session`, which binds the socket to its seat (ADR-0063), and omits
+   * the field when the tab is in no room: `null` would be refused with `SESSION_INVALID`.
    *
    * Left with Socket.io's untyped event maps on purpose: its typed `emit` and `on` resolve payloads through conditional
    * types that a generic event name cannot narrow, so `emitWithAck` and `on` carry the contract's types instead
@@ -94,11 +103,18 @@ export class GameSocketService {
     transports: ['websocket', 'polling'],
     tryAllTransports: true,
     auth: (send) => {
-      send({ protocolVersion: PROTOCOL_VERSION } satisfies HandshakeAuth);
+      const session = this.sessions.current();
+      this.sentSession = session;
+      const auth: HandshakeAuth =
+        session === null ? { protocolVersion: PROTOCOL_VERSION } : { protocolVersion: PROTOCOL_VERSION, session };
+      send(auth);
     },
   });
 
-  /** Mirrors the socket's lifecycle events into `status`, and closes the socket with the injector. */
+  /**
+   * Mirrors the socket's lifecycle events into `status`, drops credentials the server refuses, and closes the socket
+   * with the injector.
+   */
   constructor() {
     const socket = this.socket;
     socket.on('connect', () => {
@@ -110,7 +126,14 @@ export class GameSocketService {
     socket.on('disconnect', () => {
       this.statusSignal.set(socket.active ? CONNECTION_STATUSES.CONNECTING : CONNECTION_STATUSES.DISCONNECTED);
     });
-    socket.on('connect_error', () => {
+    // A refused handshake carries the error code as its message (ADR-0061). `SESSION_INVALID` drops the credentials
+    // sent and connects again without them (ADR-0070); the screens for refusals belong to #25.
+    socket.on('connect_error', (error: Error) => {
+      const session = this.sentSession;
+      if (error.message === ERROR_CODES.SESSION_INVALID && session !== null && !socket.active) {
+        this.sessions.refuse(session.roomId);
+        socket.connect();
+      }
       this.statusSignal.set(socket.active ? CONNECTION_STATUSES.CONNECTING : CONNECTION_STATUSES.DISCONNECTED);
     });
     inject(DestroyRef).onDestroy(() => socket.close());
@@ -127,6 +150,20 @@ export class GameSocketService {
     }
     this.statusSignal.set(CONNECTION_STATUSES.CONNECTING);
     this.socket.connect();
+  }
+
+  /**
+   * Opens the connection again while it is open or opening, so the handshake sends the current room's credentials
+   * anew (ADR-0070): after the tab enters a stored room, or after a `CREATE_ROOM` or `JOIN_ROOM` without an ack, which
+   * may have moved the socket to a room the client does not know. Does nothing while the socket is closed: the next
+   * `connect()` sends them.
+   */
+  reconnect(): void {
+    if (!this.socket.active) {
+      return;
+    }
+    this.socket.disconnect();
+    this.connect();
   }
 
   /**

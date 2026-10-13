@@ -14,7 +14,7 @@ The client has two routes: `/` (home: nickname, "Create room") and `/r/:roomId`,
 
 ## Consequences
 
-- A reload of `/r/<roomId>` keeps the address but, until #21 stores the session and sends it in the handshake, loses the seat: the page shows the join form again.
+- A reload of `/r/<roomId>` keeps the address. Until #21 stored the session and sent it in the handshake, it also lost the seat and showed the join form again; since then the handshake restores the seat ([ADR-0069](0069-session-storage-layout.md)).
 - Each match view (#19, #20) plugs into the room page's phase switch rather than adding a route.
 
 ## Links

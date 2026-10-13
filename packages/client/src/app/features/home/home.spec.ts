@@ -12,10 +12,10 @@ import { SessionStore } from '../../core/session-store';
 import { NICKNAME_FORM_TEXT } from '../../shared/nickname-form/nickname-form.text';
 import { Home } from './home';
 import { HOME_TEXT } from './home.text';
+import { createRoomId, createPlayerSecret } from '../../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
-// Generated, as the server does: a literal UUID named like a secret trips secret scanners.
-const PLAYER_SECRET = crypto.randomUUID();
+const ROOM_ID = createRoomId(0);
+const PLAYER_SECRET = createPlayerSecret();
 
 let socket: FakeGameSocket;
 let harness: RouterTestingHarness;

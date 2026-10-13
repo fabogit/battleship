@@ -5,7 +5,7 @@ date: 2026-10-13
 
 # ADR-0061: Handshake checks
 
-The server checks every Socket.io handshake in a namespace middleware (`io.use`), in the `handshake` plugin, before the socket connects: first the protocol version, by strict equality with `PROTOCOL_VERSION` ([ADR-0017](0017-protocol-versioning.md)), then the stored `session`, if the handshake has one ([ADR-0063](0063-session-rebinding.md)). A refusal calls `next(new Error(code))`, so the client gets a `connect_error` whose `message` is the error code, `PROTOCOL_MISMATCH` or `SESSION_INVALID`, and nothing else; the connection never opens, and Socket.io does not retry it (`socket.active` turns `false`). The version comes first, so an outdated client is told to reload even when its stored session is gone too. The client sends the handshake `auth` as a callback that Socket.io calls again on every reconnect attempt; today it holds only `{ protocolVersion }`, and #21 adds the stored session to it. Details in [Protocol: Handshake](../protocol.md#handshake) and [Server: Sessions & reconnection](../server.md#sessions--reconnection) (#22).
+The server checks every Socket.io handshake in a namespace middleware (`io.use`), in the `handshake` plugin, before the socket connects: first the protocol version, by strict equality with `PROTOCOL_VERSION` ([ADR-0017](0017-protocol-versioning.md)), then the stored `session`, if the handshake has one ([ADR-0063](0063-session-rebinding.md)). A refusal calls `next(new Error(code))`, so the client gets a `connect_error` whose `message` is the error code, `PROTOCOL_MISMATCH` or `SESSION_INVALID`, and nothing else; the connection never opens, and Socket.io does not retry it (`socket.active` turns `false`). The version comes first, so an outdated client is told to reload even when its stored session is gone too. The client sends the handshake `auth` as a callback that Socket.io calls again on every reconnect attempt; it held only `{ protocolVersion }` until #21 added the stored session to it ([ADR-0069](0069-session-storage-layout.md)). Details in [Protocol: Handshake](../protocol.md#handshake) and [Server: Sessions & reconnection](../server.md#sessions--reconnection) (#22).
 
 ## Considered options
 
@@ -17,7 +17,7 @@ The server checks every Socket.io handshake in a namespace middleware (`io.use`)
 ## Consequences
 
 - Every client must send the handshake `auth`: the client does from this change on, the `echo` smoke check already did ([ADR-0048](0048-echo-smoke-check.md)), and tools without `auth` pass the version in the query ([ADR-0062](0062-protocol-version-query.md)). A tab opened before the deploy has no `auth` and is refused with `PROTOCOL_MISMATCH`.
-- Until #21 and #25 read the code, a refused client only shows the disconnected status; the "please reload" and "session lost" screens arrive with them.
+- Until #25 reads the code, a refused client only shows the disconnected status; the "please reload" and "session lost" screens arrive with it. #21 acts on `SESSION_INVALID` without a screen of its own ([ADR-0070](0070-client-handshake-refusals.md)).
 - Refused handshakes are logged at `info` as "Handshake refused", with the error code ([Server: Logging](../server.md#logging)).
 
 ## Links

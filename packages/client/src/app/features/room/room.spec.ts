@@ -9,6 +9,7 @@ import {
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
+  SHOT_OUTCOMES,
   type PlayerStateSnapshot,
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -30,11 +31,11 @@ import { LOBBY_TEXT } from '../lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../placement/placement.text';
 import { ROOM_VIEWS } from './room';
 import { ROOM_TEXT } from './room.text';
+import { createRoomId, createPlayerSecret } from '../../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
-const NEXT_ROOM_ID = 'zz23cd45';
-// Generated, as the server does: a literal UUID named like a secret trips secret scanners.
-const PLAYER_SECRET = crypto.randomUUID();
+const ROOM_ID = createRoomId(0);
+const NEXT_ROOM_ID = createRoomId(1);
+const PLAYER_SECRET = createPlayerSecret();
 
 /**
  * The room right after the joiner took the seat, seen by the joiner. Until rules negotiation lands (#26) the server
@@ -61,7 +62,8 @@ function joinedSnapshot(): PlayerStateSnapshot {
 let socket: FakeGameSocket;
 let harness: RouterTestingHarness;
 
-beforeEach(async () => {
+/** Starts the app with a fresh fake socket; web storage is whatever the spec left in it. */
+async function startApp(): Promise<void> {
   socket = new FakeGameSocket();
   TestBed.configureTestingModule({
     providers: [provideFakeGameSocket(socket), provideRouter(routes, withComponentInputBinding())],
@@ -69,6 +71,17 @@ beforeEach(async () => {
   // Created up front, as the app does through the shell, so it listens to `STATE` from the start.
   TestBed.inject(GameStateService);
   harness = await RouterTestingHarness.create();
+}
+
+/** Starts the app again in the same tab, as a reload does: `localStorage` and `sessionStorage` are kept. */
+async function reload(): Promise<void> {
+  TestBed.inject(GameStateService).clear();
+  TestBed.resetTestingModule();
+  await startApp();
+}
+
+beforeEach(async () => {
+  await startApp();
 });
 
 afterEach(() => {
@@ -106,7 +119,7 @@ async function join(nickname: string): Promise<void> {
  * @param roomId The id the server gives the new room.
  */
 async function createRoom(roomId: string): Promise<void> {
-  socket.emitWithAck.mockResolvedValueOnce({ ok: true, roomId, playerSecret: crypto.randomUUID() });
+  socket.emitWithAck.mockResolvedValueOnce({ ok: true, roomId, playerSecret: createPlayerSecret() });
   const input = page().querySelector('input');
   if (input === null) {
     throw new Error('No nickname field');
@@ -232,13 +245,13 @@ describe('Room', () => {
         expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
       });
 
-      await harness.navigateByUrl('/r/zz23cd45');
+      await harness.navigateByUrl(`/r/${NEXT_ROOM_ID}`);
 
       expect(heading()).toBe(ROOM_TEXT.joinHeading);
     });
 
     it("ignores another room's snapshot", async () => {
-      await receive(waitingSnapshot('zz23cd45'));
+      await receive(waitingSnapshot(NEXT_ROOM_ID));
 
       expect(heading()).toBe(ROOM_TEXT.joinHeading);
     });
@@ -339,10 +352,86 @@ describe('Room', () => {
     });
   });
 
-  it.each(['abc', 'AB23CD45', 'ab23cd4o'])('shows not-found for the malformed room id %s', async (roomId) => {
-    await harness.navigateByUrl(`/r/${roomId}`);
+  describe('after a reload or in a new tab (#21)', () => {
+    beforeEach(() => {
+      TestBed.inject(SessionStore).save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+    });
 
-    expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
-    expect(socket.emitWithAck).not.toHaveBeenCalled();
+    it('takes the seat back on a reload mid-match: the handshake already sends the session', async () => {
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+
+      expect(page().textContent).toContain(ROOM_TEXT.entering);
+      expect(socket.reconnect).not.toHaveBeenCalled();
+
+      await receive(battleSnapshot(ROOM_ID));
+      expect(heading()).toBe(BATTLE_TEXT.myTurn);
+    });
+
+    it('enters the room when its link opens in a new tab, and reconnects so the handshake sends the session', async () => {
+      sessionStorage.clear();
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+
+      expect(page().textContent).toContain(ROOM_TEXT.entering);
+      expect(socket.reconnect).toHaveBeenCalledOnce();
+      expect(TestBed.inject(SessionStore).current()?.roomId).toBe(ROOM_ID);
+
+      await receive(battleSnapshot(ROOM_ID));
+      expect(heading()).toBe(BATTLE_TEXT.myTurn);
+    });
+
+    it('shows both final boards when reloaded at game over (#52, F16)', async () => {
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+
+      await receive(
+        gameOverSnapshot(ROOM_ID, {
+          incomingShots: [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.MISS }],
+          outgoingShots: [{ coordinate: { x: 9, y: 9 }, outcome: SHOT_OUTCOMES.MISS }],
+        }),
+      );
+
+      expect(heading()).toBe(BATTLE_TEXT.wonHeading);
+      for (const [label, cell] of [
+        [BATTLE_TEXT.myFleet, 'A1, miss'],
+        [BATTLE_TEXT.enemyWaters, 'J10, miss'],
+      ] as const) {
+        const cells = [...page().querySelectorAll(`[role="grid"][aria-label="${label}"] button`)];
+        expect(cells.map((element) => element.getAttribute('aria-label'))).toContain(cell);
+      }
+    });
+
+    it('still says a left room was left after a reload', async () => {
+      TestBed.inject(SessionStore).save({ roomId: NEXT_ROOM_ID, playerSecret: PLAYER_SECRET });
+
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+
+      expect(heading()).toBe(ROOM_TEXT.leftHeading);
+      expect(socket.reconnect).not.toHaveBeenCalled();
+    });
+
+    it('shows not-found once the server refused the stored session, even over an older snapshot', async () => {
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+      await receive(battleSnapshot(ROOM_ID));
+
+      TestBed.inject(SessionStore).refuse(ROOM_ID);
+      await harness.fixture.whenStable();
+
+      expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
+      expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
+    });
   });
+
+  // Drawn from a well-formed id: too short, upper case, and a letter outside ROOM_ID_ALPHABET.
+  it.each([ROOM_ID.slice(0, 3), ROOM_ID.toUpperCase(), `${ROOM_ID.slice(0, -1)}o`])(
+    'shows not-found for the malformed room id %s',
+    async (roomId) => {
+      await harness.navigateByUrl(`/r/${roomId}`);
+
+      expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
+      expect(socket.emitWithAck).not.toHaveBeenCalled();
+    },
+  );
 });

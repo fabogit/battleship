@@ -17,8 +17,9 @@ import { GameStateService } from '../../core/game-state';
 import { CELL_STATES } from '../../shared/board-grid/board-cells';
 import { Placement } from './placement';
 import { PLACEMENT_TEXT } from './placement.text';
+import { createRoomId } from '../../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
+const ROOM_ID = createRoomId(0);
 
 /** A complete valid fleet, one ship every other row from A1. */
 const FULL_FLEET = FLEET.map((type, index) =>

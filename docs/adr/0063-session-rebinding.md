@@ -17,7 +17,7 @@ A handshake `session` that passes `parseSessionCredentials` is looked up in the 
 
 ## Consequences
 
-- A reload or a dropped connection gets its seat back as soon as the client sends its stored session (#21); until then only tests and scripts send one.
+- A reload or a dropped connection gets its seat back as soon as the client sends its stored session, which it does since #21 ([ADR-0069](0069-session-storage-layout.md)).
 - The secret is the only credential: whoever holds it plays the seat, and the previous holder is disconnected.
 - Rebinding is logged at `info` as "Session resumed" and "Session replaced", with the room, the seat and the replaced socket's id, never the secret ([Server: Logging](../server.md#logging)).
 

@@ -68,5 +68,7 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0062](0062-protocol-version-query.md)        | Protocol version in the query          | Accepted, 2026-10-13   |
 | [ADR-0063](0063-session-rebinding.md)             | Session rebinding                      | Accepted, 2026-10-13   |
 | [ADR-0064](0064-game-over-snapshot-boards.md)     | Game-over snapshot boards              | Accepted, 2026-10-13   |
+| [ADR-0069](0069-session-storage-layout.md)        | Session storage layout                 | Accepted, 2026-10-13   |
+| [ADR-0070](0070-client-handshake-refusals.md)     | Handshake refusals and resync          | Accepted, 2026-10-13   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

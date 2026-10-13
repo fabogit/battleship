@@ -14,3 +14,4 @@ date: 2026-10-03
 ## Links
 
 - Added on 2026-10-03 after the requirements analysis session.
+- Detailed by: [ADR-0069](0069-session-storage-layout.md) (keys, expiry, the current room per tab; #21)
