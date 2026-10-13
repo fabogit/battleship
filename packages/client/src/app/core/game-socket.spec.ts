@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import {
   CLIENT_EVENTS,
   ERROR_CODES,
+  PROTOCOL_VERSION,
   SERVER_EVENTS,
   type AckResponse,
   type JoinRoomAckData,
@@ -132,6 +133,7 @@ describe('GameSocketService', () => {
         autoConnect: false,
         transports: ['websocket', 'polling'],
         tryAllTransports: true,
+        auth: expect.any(Function) as unknown,
       });
       expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
       expect(socket.connect).not.toHaveBeenCalled();
@@ -140,6 +142,15 @@ describe('GameSocketService', () => {
 
       expect(socket.connect).toHaveBeenCalledOnce();
       expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTING);
+    });
+
+    it('sends the protocol version in the handshake auth (ADR-0061)', () => {
+      // A callback, so Socket.io reads it again on every reconnect attempt; #21 adds the stored session to it.
+      const auth = vi.mocked(io).mock.calls[0]?.[1]?.auth;
+      expect(auth).toBeTypeOf('function');
+      const send = vi.fn();
+      (auth as (send: (data: object) => void) => void)(send);
+      expect(send).toHaveBeenCalledExactlyOnceWith({ protocolVersion: PROTOCOL_VERSION });
     });
 
     it('reports connected once the handshake succeeds', () => {

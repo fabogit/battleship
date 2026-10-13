@@ -18,8 +18,12 @@ export interface SessionCredentials {
 }
 ```
 
-- `protocolVersion` is checked first, by strict equality with `PROTOCOL_VERSION`: any other value, a missing `auth` included, is `PROTOCOL_MISMATCH`.
-- `session` then goes through `parseSessionCredentials`; a malformed session is `SESSION_INVALID`, like an unknown or expired one.
+The `handshake` plugin checks it in a Socket.io middleware, before the socket connects ([ADR-0061](adr/0061-handshake-checks.md)):
+
+- `protocolVersion` is checked first, by strict equality with `PROTOCOL_VERSION`: any other value, a string or a missing `auth` included, is `PROTOCOL_MISMATCH`. When `auth` has no `protocolVersion`, the server reads a `protocolVersion` query parameter instead, which must equal the decimal form (`?protocolVersion=2`): tools such as Postman cannot send `auth` ([ADR-0062](adr/0062-protocol-version-query.md)). The app always sends `auth`.
+- `session`, when present, then goes through `parseSessionCredentials` and is looked up: its room must be open and one of its seats must hold the `playerSecret`. A malformed session is `SESSION_INVALID`, like an unknown or expired one. A session is never read from the query.
+- A refusal is a `connect_error` whose `message` is the error code; the connection never opens and Socket.io does not retry it.
+- A valid session binds the socket to its seat; any other socket on that seat gets `SESSION_REPLACED` and a server disconnect, and the new socket gets `STATE` at once ([ADR-0063](adr/0063-session-rebinding.md), [Sessions & reconnection](server.md#sessions--reconnection)).
 
 ## Client → server
 
@@ -27,7 +31,7 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 
 - A command sent without an ack callback is ignored: not applied, not answered.
 - A refused command gets only its ack. An accepted one gets its ack, then any effect (`SHOT_RESOLVED`) and then `STATE` reach both players ([ADR-0047](adr/0047-reply-order.md)).
-- The commands after `JOIN_ROOM` come from the socket that created or joined the room; from any other socket they are `NOT_ALLOWED` ([ADR-0045](adr/0045-socket-seat-binding.md)). Until sessions are bound at the handshake (#22), a reconnected socket has no seat.
+- The commands after `JOIN_ROOM` come from the socket that created or joined the room; from any other socket they are `NOT_ALLOWED` ([ADR-0045](adr/0045-socket-seat-binding.md)). A socket that reconnects with its stored `session` gets its seat back at the [handshake](#handshake); without one it has no seat.
 - `UPDATE_RULES`, `CONFIRM_RULES`, `SET_PAUSED`, `SURRENDER`, `REMATCH_CHOICE` and `LEAVE_ROOM` pass their guard, then are `NOT_ALLOWED` until their room logic lands ([ADR-0046](adr/0046-commands-ahead-of-room-logic.md)).
 - Until rules negotiation lands (#26), `JOIN_ROOM` moves the room straight to `PLACEMENT`.
 - `JOIN_ROOM` outside `WAITING_FOR_OPPONENT` finds both seats taken, so it is `ROOM_FULL`, never `WRONG_PHASE` ([Server: Room creation & joining](server.md#room-creation--joining)).
@@ -77,7 +81,7 @@ Code names these events through `SERVER_EVENTS` (`SERVER_EVENTS.STATE`), which `
 | `STATE`            | `PlayerStateSnapshot`                                    | Source of truth; sent after every state change and on (re)connect |
 | `SHOT_RESOLVED`    | `{ shooter: Seat, results: ShotResult[] }`               | Animation/sound only; the `STATE` right after it reflects it      |
 | `DICE_ROLLED`      | `{ rolls: { P1: number, P2: number }[], starter: Seat }` | Dice animation, including re-rolls                                |
-| `SESSION_REPLACED` | `{}`                                                     | This socket was superseded by a newer one                         |
+| `SESSION_REPLACED` | `{}`                                                     | A newer socket took this seat; a server disconnect follows        |
 | `SERVER_SHUTDOWN`  | `{}`                                                     | Server restarting; the match is lost                              |
 
 ## Snapshot
@@ -117,7 +121,10 @@ export interface BattleSnapshot {
 export interface GameOverSnapshot {
   readonly winner: Seat | null; // null only for ABANDONED
   readonly reason: GameOverReason;
-  readonly opponentShips: readonly PlacedShip[];
+  readonly myShips: readonly PlacedShip[]; // both final boards, as in BattleSnapshot (ADR-0064)
+  readonly incomingShots: readonly ShotResult[]; // the winning shot included
+  readonly outgoingShots: readonly ShotResult[];
+  readonly opponentShips: readonly PlacedShip[]; // revealed
   readonly rematch: PerPlayer<RematchChoice | null>;
 }
 
@@ -143,7 +150,7 @@ Timers are sent as **remaining milliseconds** (not absolute timestamps) to avoid
 
 | Code                | When                                                                                                                                                                                                                                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PROTOCOL_MISMATCH` | Handshake `protocolVersion` differs from `PROTOCOL_VERSION`                                                                                                                                                                                                                                 |
+| `PROTOCOL_MISMATCH` | Handshake `protocolVersion` differs from `PROTOCOL_VERSION` or is missing                                                                                                                                                                                                                   |
 | `INVALID_PAYLOAD`   | A payload failed its guard ([Payload validation](#payload-validation))                                                                                                                                                                                                                      |
 | `RATE_LIMITED`      | More than `RATE_LIMIT_EVENTS_PER_SECOND` events from one socket                                                                                                                                                                                                                             |
 | `SERVER_FULL`       | `CREATE_ROOM` with `MAX_ROOMS` rooms open                                                                                                                                                                                                                                                   |

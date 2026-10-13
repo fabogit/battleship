@@ -1,7 +1,10 @@
 // Fixed values shared by server and client (docs/domain.md#constants).
 
-/** Bumped on any breaking protocol change; checked in the Socket.io handshake (ADR-0017). */
-export const PROTOCOL_VERSION = 1;
+/**
+ * Bumped on any breaking protocol change; checked in the Socket.io handshake (ADR-0017). 2: the game-over snapshot
+ * carries both final boards (ADR-0064).
+ */
+export const PROTOCOL_VERSION = 2;
 
 /** Side length of the square board, in cells. */
 export const BOARD_SIZE = 10;

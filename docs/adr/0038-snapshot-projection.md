@@ -5,7 +5,7 @@ date: 2026-10-07
 
 # ADR-0038: Snapshot projection
 
-The `STATE` snapshot is built on the server by `projectSnapshot(state, seat, now)` in `packages/server/src/room/snapshot.ts`, a pure function of the room, the receiver and the time. It is the only place that decides what a player sees: the receiver's own fleet, the shots on both boards (each `sunkShip` included), and the opponent's fleet only in `GAME_OVER`; player secrets are never copied. The room state keeps everything; fog-of-war is applied once, on the way out, instead of being kept as a separate per-player state. Timers are turned from stored timestamps into remaining milliseconds here ([ADR-0036](0036-countdown-resync.md)). Details in [Server: Room logic](../server.md#room-logic) (#14).
+The `STATE` snapshot is built on the server by `projectSnapshot(state, seat, now)` in `packages/server/src/room/snapshot.ts`, a pure function of the room, the receiver and the time. It is the only place that decides what a player sees: the receiver's own fleet and the shots on both boards (each `sunkShip` included), in battle and at game over alike, and the opponent's fleet only in `GAME_OVER`, where the snapshot carries both final boards ([ADR-0064](0064-game-over-snapshot-boards.md)); player secrets are never copied. The room state keeps everything; fog-of-war is applied once, on the way out, instead of being kept as a separate per-player state. Timers are turned from stored timestamps into remaining milliseconds here ([ADR-0036](0036-countdown-resync.md)). Details in [Server: Room logic](../server.md#room-logic) (#14).
 
 ## Considered options
 
@@ -24,5 +24,5 @@ The `STATE` snapshot is built on the server by `projectSnapshot(state, seat, now
 
 - Added on 2026-10-07 for the room logic ([#14](https://github.com/fabogit/battleship/issues/14)).
 - Spec: [Protocol: Snapshot](../protocol.md#snapshot) · [Server: Game over & rematch](../server.md#game-over--rematch)
-- Related: [ADR-0015](0015-protocol-shape.md) (snapshot as the client's source of truth) · [ADR-0034](0034-shot-history.md) (shot history) · [ADR-0036](0036-countdown-resync.md) (remaining milliseconds) · [ADR-0037](0037-room-transition-shape.md) (room transition shape)
+- Related: [ADR-0015](0015-protocol-shape.md) (snapshot as the client's source of truth) · [ADR-0034](0034-shot-history.md) (shot history) · [ADR-0036](0036-countdown-resync.md) (remaining milliseconds) · [ADR-0037](0037-room-transition-shape.md) (room transition shape) · [ADR-0064](0064-game-over-snapshot-boards.md) (game-over snapshot boards)
 - Issues: [#14](https://github.com/fabogit/battleship/issues/14)

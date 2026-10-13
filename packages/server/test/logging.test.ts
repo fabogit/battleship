@@ -3,6 +3,7 @@ import {
   ERROR_CODES,
   ORIENTATIONS,
   PLACEMENT_VIOLATIONS,
+  PROTOCOL_VERSION,
   SEATS,
   SERVER_EVENTS,
   SHIP_TYPES,
@@ -57,11 +58,12 @@ async function start(level: LogLevel): Promise<{ baseUrl: string; lines: LogLine
   return { baseUrl, lines };
 }
 
-function client(baseUrl: string, origin = ALLOWED): ClientSocket {
+function client(baseUrl: string, origin = ALLOWED, auth: object = { protocolVersion: PROTOCOL_VERSION }): ClientSocket {
   const socket: ClientSocket = connect(baseUrl, {
     transports: ['polling', 'websocket'],
     reconnection: false,
     extraHeaders: { origin },
+    auth,
   });
   clients.push(socket);
   return socket;
@@ -196,5 +198,37 @@ describe('room logs', () => {
     const log = JSON.stringify(lines);
     expect(log).not.toContain(playerSecret);
     expect(log).not.toContain((joined as { playerSecret: string }).playerSecret);
+  });
+});
+
+describe('session logs', () => {
+  it('record refused handshakes, resumed and replaced sessions at info, never the secret even at debug', async () => {
+    const { baseUrl, lines } = await start('debug');
+    const first = client(baseUrl);
+    const created: unknown = await first.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const { roomId, playerSecret } = created as { roomId: string; playerSecret: string };
+    // The client clears its id once the server disconnects it.
+    const firstId = first.id;
+
+    const outdated = client(baseUrl, ALLOWED, {
+      protocolVersion: PROTOCOL_VERSION - 1,
+      session: { roomId, playerSecret },
+    });
+    await new Promise((resolve) => outdated.once('connect_error', resolve));
+    const second = client(baseUrl, ALLOWED, { protocolVersion: PROTOCOL_VERSION, session: { roomId, playerSecret } });
+    await new Promise((resolve) => second.once(SERVER_EVENTS.STATE, resolve));
+    await vi.waitFor(() => {
+      expect(messages(lines)).toContain('Socket disconnected');
+    });
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Handshake refused', error: ERROR_CODES.PROTOCOL_MISMATCH }),
+        expect.objectContaining({ msg: 'Session resumed', roomId, seat: SEATS.P1, socketId: second.id }),
+        expect.objectContaining({ msg: 'Session replaced', roomId, seat: SEATS.P1, replacedSocketId: firstId }),
+        expect.objectContaining({ msg: 'Socket disconnected', reason: 'server namespace disconnect' }),
+      ]),
+    );
+    expect(JSON.stringify(lines)).not.toContain(playerSecret);
   });
 });

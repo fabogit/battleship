@@ -100,7 +100,7 @@ Behaviour of the game server, `packages/server`.
 
 ### Game over & rematch
 
-- The snapshot reveals the opponent's fleet.
+- The snapshot reveals the opponent's fleet and carries both final boards, every shot included, so a player who reconnects at game over sees what the other saw ([ADR-0064](adr/0064-game-over-snapshot-boards.md)).
 - Each player sends `REMATCH_CHOICE`; a player may change their choice until resolution.
   - Both `SAME_RULES` → `PLACEMENT`.
   - Both chosen and at least one `CHANGE_RULES` → `RULES_NEGOTIATION`, with the previous rules pre-filled and confirmations cleared.
@@ -126,21 +126,22 @@ Behaviour of the game server, `packages/server`.
 - **After an accepted command** the caller stores the state (`RoomManager` does), performs the effects in order, then sends `STATE` to every seated player ([Socket handlers](#socket-handlers)). The only effect so far is `SHOT_RESOLVED`, for both players.
 - **Time:** `now` is epoch ms. Deadlines are stored as timestamps (`PlacementRoom.deadline`) and projected as remaining milliseconds.
 - **Phase checks:** a placement command outside `PLACEMENT` and a turn command outside `IN_PROGRESS` → `WRONG_PHASE`; the phase is checked before the seat or the payload.
-- **Projection:** the receiver's own fleet and both shot lists; the opponent's fleet only in `GAME_OVER`; never a secret. Fields whose feature is not built yet hold neutral values ([ADR-0038](adr/0038-snapshot-projection.md)).
+- **Projection:** the receiver's own fleet and both shot lists, in battle and at game over; the opponent's fleet only in `GAME_OVER`; never a secret. Fields whose feature is not built yet hold neutral values ([ADR-0038](adr/0038-snapshot-projection.md)).
 - **Registry:** `createRoom` → `SERVER_FULL` at `MAX_ROOMS`; `joinRoom` → `ROOM_NOT_FOUND` for an unknown id; `dispatch` runs a seated player's command. Rooms are not removed until the TTL sweeps (#24).
 
 ## Plugins
 
 `createServer` (`packages/server/src/server.ts`) only composes plugins and routes. The plugins live in `packages/server/src/plugins/`, each wrapped with `fastify-plugin` so that what it adds reaches the root instance ([ADR-0023](adr/0023-socket-io-integration.md)).
 
-| Plugin          | Module             | Role                                                                                                                                 |
-| --------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `origin-policy` | `origin-policy.ts` | HTTP side of the [origin policy](deployment.md#backend-render): 403 `onRequest` hook and `@fastify/cors`                             |
-| `socket-io`     | `socket-io.ts`     | Socket.io on the HTTP server: `allowRequest` origin check, `app.io` decorator, connection logs, `preClose` flush and `onClose` close |
-| `echo`          | `echo.ts`          | The `ECHO` smoke check, sent after every deploy ([ADR-0048](adr/0048-echo-smoke-check.md))                                           |
-| `room-handlers` | `room-handlers.ts` | Every command, wired to room logic ([Socket handlers](#socket-handlers))                                                             |
+| Plugin          | Module             | Role                                                                                                                                              |
+| --------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `origin-policy` | `origin-policy.ts` | HTTP side of the [origin policy](deployment.md#backend-render): 403 `onRequest` hook and `@fastify/cors`                                          |
+| `socket-io`     | `socket-io.ts`     | Socket.io on the HTTP server: `allowRequest` origin check, `app.io` decorator, connection logs, `preClose` flush and `onClose` close              |
+| `handshake`     | `handshake.ts`     | Handshake middleware: protocol version, session lookup and rebinding, latest connection wins ([Sessions & reconnection](#sessions--reconnection)) |
+| `echo`          | `echo.ts`          | The `ECHO` smoke check, sent after every deploy ([ADR-0048](adr/0048-echo-smoke-check.md))                                                        |
+| `room-handlers` | `room-handlers.ts` | Every command, wired to room logic ([Socket handlers](#socket-handlers))                                                                          |
 
-- `echo` and `room-handlers` declare `dependencies: ['socket-io']`; so will the per-socket rate limit (#24), registered before the handlers.
+- `handshake`, `echo` and `room-handlers` declare `dependencies: ['socket-io']`; so will the per-socket rate limit (#24), registered before the handlers. `handshake` is registered first: its middleware runs before any socket connects, and `handshake` and `room-handlers` share the registry and the clock.
 - `createServer` takes the room registry and the clock as options (`rooms`, `now`), so tests pass a seeded `RoomManager` and a fixed time; production gets a `RoomManager` with crypto randomness and `Date.now`.
 - `app.io` exists once the instance is ready (`listen()` or `ready()`).
 
@@ -157,7 +158,7 @@ Behaviour of the game server, `packages/server`.
    - `UPDATE_RULES`, `CONFIRM_RULES`, `SET_PAUSED`, `SURRENDER`, `REMATCH_CHOICE`, `LEAVE_ROOM` → `NOT_ALLOWED` until their room logic lands (#23, #26, #35, #36).
 4. **Replies:** a refused command gets `{ ok: false, error }` and nothing else. An accepted one gets the ack (`{ ok: true }`, plus the credentials for `CREATE_ROOM` / `JOIN_ROOM`), then each effect goes to both players (`SHOT_RESOLVED`), then every seated socket gets `STATE` with its own projection.
 
-- **Seat binding:** `socket.data.binding` holds `{ roomId, seat }`, and the socket joins the Socket.io room named after the room id; `STATE` goes to each socket of that room. The binding goes away with the socket until #22 binds sessions at the handshake. Creating or joining another room moves the socket there; the seat it leaves stays taken until #23.
+- **Seat binding:** `socket.data.binding` holds `{ roomId, seat }`, and the socket joins the Socket.io room named after the room id; `STATE` goes to each socket of that room. The binding goes away with the socket; a reconnecting socket gets it back from its handshake `session` ([Sessions & reconnection](#sessions--reconnection)). Creating or joining another room moves the socket there; the seat it leaves stays taken until #23.
 - **Time:** one `now()` per command, shared by the transition and the projections it triggers.
 - **Room cap:** rooms are never removed until the TTL sweeps (#24), so a server answers `SERVER_FULL` after `MAX_ROOMS` rooms over its lifetime, until a restart ([ADR-0039](adr/0039-room-registry.md)).
 
@@ -166,11 +167,11 @@ Behaviour of the game server, `packages/server`.
 - **Credentials:** on `CREATE_ROOM` / `JOIN_ROOM` the server returns a `playerSecret` (`crypto.randomUUID()`). Seats (`P1`/`P2`) are public; secrets are never sent to the other player.
 - **Room ids:** `ROOM_ID_LENGTH` (8) characters of `ROOM_ID_ALPHABET`, a URL-safe alphabet without easily confused characters, drawn with the injected `Rng` (`createCryptoRng()` in production); an id already in use is drawn again ([ADR-0039](adr/0039-room-registry.md)).
 - **Client storage:** `SessionStore` writes `{ roomId, playerSecret, expiresAt }` under a per-room key in `localStorage`.
-- **Handshake:** the Socket.io client passes `auth` as a callback, re-evaluated on every reconnect attempt: `{ protocolVersion, session?: { roomId, playerSecret } }`.
-  - Version mismatch, a missing `protocolVersion` included → `connect_error` with `PROTOCOL_MISMATCH`; the client shows "please reload" ([Handshake](protocol.md#handshake)).
-  - Valid session → the socket is bound to the seat and receives a `STATE` snapshot immediately.
-  - Malformed (`parseSessionCredentials` fails), unknown or expired session → `SESSION_INVALID`; the client drops the stored credentials and returns to the home screen with an explanation.
-- **Latest connection wins:** binding a new socket to a seat emits `SESSION_REPLACED` to the previous socket and disconnects it.
+- **Handshake:** the Socket.io client passes `auth` as a callback, re-evaluated on every reconnect attempt: `{ protocolVersion, session?: { roomId, playerSecret } }`. The client sends `{ protocolVersion }` today; the stored session joins it with #21. The `handshake` plugin checks it in a namespace middleware, before the socket connects ([ADR-0061](adr/0061-handshake-checks.md)); a refusal is a `connect_error` whose message is the error code, and Socket.io does not retry it.
+  - Version mismatch, a missing `protocolVersion` included → `PROTOCOL_MISMATCH`; the client shows "please reload" (#25). Checked before the session. Tools that cannot send `auth` pass `?protocolVersion=<n>` in the URL instead ([ADR-0062](adr/0062-protocol-version-query.md), [Handshake](protocol.md#handshake)).
+  - Valid session → `RoomManager.findSeat` finds the open room and the seat holding the secret; the socket is bound to it (`socket.data.binding`) before it connects, joins the room's Socket.io room and receives a `STATE` snapshot immediately. The opponent gets nothing until #23 tracks disconnections ([ADR-0063](adr/0063-session-rebinding.md)).
+  - Malformed (`parseSessionCredentials` fails), unknown or expired session (the room is gone, or no seat holds the secret) → `SESSION_INVALID`; the client drops the stored credentials and returns to the home screen with an explanation (#21).
+- **Latest connection wins:** binding a new socket to a seat emits `SESSION_REPLACED` to every other socket bound to that seat and disconnects it from the namespace, so the client reads the event, then `io server disconnect`, and does not reconnect on its own ([ADR-0014](adr/0014-duplicate-sessions.md), [ADR-0063](adr/0063-session-rebinding.md)).
 - **Mobile:** app switching kills sockets frequently. Reconnection is a primary flow and must be covered by integration tests.
 
 ## Hardening
@@ -184,19 +185,19 @@ Behaviour of the game server, `packages/server`.
 
 Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `LOG_FORMAT` how it is written ([Backend (Render)](deployment.md#backend-render)).
 
-| Level                    | Logged                                                                                                                                                                                                                                        |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `info` (default, Render) | HTTP requests except `/health`; socket connections (transport, origin, address) and disconnections (reason); handshakes refused by the origin policy; rooms created and joined, room phase changes and refused commands; startup and shutdown |
-| `debug` (local `.env`)   | Also `/health` requests, every socket event received or sent with its payload (broadcasts included, ack callbacks left out), and transport upgrades                                                                                           |
+| Level                    | Logged                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `info` (default, Render) | HTTP requests except `/health`; socket connections (transport, origin, address) and disconnections (reason); handshakes refused by the origin policy or by the handshake check (error code); sessions resumed and replaced (room, seat, replaced socket); rooms created and joined, room phase changes and refused commands; startup and shutdown |
+| `debug` (local `.env`)   | Also `/health` requests, every socket event received or sent with its payload (broadcasts included, ack callbacks left out), and transport upgrades                                                                                                                                                                                               |
 
 - Every socket line carries the `socketId`, so one client's history can be followed.
 - Room lines carry the `roomId` and, for creation and joining, the `seat`. A refused command logs its event and error code and, for `INVALID_PLACEMENT` and `INVALID_TARGETS`, the core violation, which is never sent ([ADR-0032](adr/0032-fleet-placement.md)).
-- Ack replies are not logged: Socket.io has no hook for them, so the handlers log refusals and room changes themselves. Player secrets travel only in acks, so they never reach the log.
-- Payloads stay at `debug` because they will carry player data; when sessions arrive (#22), `playerSecret` must be redacted (Pino `redact`).
+- Ack replies are not logged: Socket.io has no hook for them, so the handlers log refusals and room changes themselves.
+- Payloads stay at `debug` because they carry player data. No log line carries a `playerSecret`: secrets travel only in acks, which are not logged, and in the handshake `auth`, which is never logged. A debug-level test reads the whole log of a session rebinding for the secret, instead of a Pino `redact` list of paths ([ADR-0063](adr/0063-session-rebinding.md)).
 - Socket.io's own internals (handshakes, polling, heartbeats) are not routed through Pino: run with `DEBUG=engine,socket.io*` to see them.
 
 ## Testability
 
 - Room logic is a pure transition function `(state, command, now) → { state, effects }`. The clock is `createServer`'s `now?: () => number` option (`Date.now` in production), read once per command ([Socket handlers](#socket-handlers)). Timers (#28, #30) will be scheduled effects, run by a thin shell over the same clock.
 - The `Rng` is injected (dice, auto shots, auto placement); production uses `createCryptoRng()`, tests `createSeededRng(seed)` ([Randomness](domain.md#randomness)).
-- Unit tests drive rooms with a fake clock and a fixed seed. Integration tests use real `socket.io-client` instances against an in-process server on an ephemeral port: `test/game.test.ts` plays a whole match (create → join → place → play to victory) with seeded fleets, a seeded registry and a fixed clock, reading every event each client receives in order.
+- Unit tests drive rooms with a fake clock and a fixed seed. Integration tests use real `socket.io-client` instances against an in-process server on an ephemeral port: `test/game.test.ts` plays a whole match (create → join → place → play to victory) with seeded fleets, a seeded registry and a fixed clock, reading every event each client receives in order; it also covers the handshake: refusals, a reconnecting socket rebound to its seat, a zombie socket replaced by a newer one, and a rebind at game over.

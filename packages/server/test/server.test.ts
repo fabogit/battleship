@@ -1,11 +1,12 @@
 import {
   CLIENT_EVENTS,
+  ERROR_CODES,
   PROTOCOL_VERSION,
   SERVER_EVENTS,
   type ClientToServerEvents,
   type ServerToClientEvents,
 } from '@battleship/core';
-import { io as connect, type Socket } from 'socket.io-client';
+import { io as connect, type ManagerOptions, type Socket, type SocketOptions } from 'socket.io-client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { FastifyInstance } from 'fastify';
@@ -35,10 +36,22 @@ afterEach(async () => {
   await app.close();
 });
 
-function client(transport: (typeof TRANSPORTS)[number], origin?: string): ClientSocket {
+/** The handshake of a client without a room, as the browser sends it. */
+const CURRENT_AUTH = { protocolVersion: PROTOCOL_VERSION };
+
+/**
+ * A client over one transport, connecting at once.
+ * @param handshake Overrides the handshake `auth` and `query`; the current protocol version by default.
+ */
+function client(
+  transport: (typeof TRANSPORTS)[number],
+  origin?: string,
+  handshake: Pick<Partial<ManagerOptions & SocketOptions>, 'auth' | 'query'> = { auth: CURRENT_AUTH },
+): ClientSocket {
   const socket: ClientSocket = connect(baseUrl, {
     transports: [transport],
     reconnection: false,
+    ...handshake,
     ...(origin === undefined ? {} : { extraHeaders: { origin } }),
   });
   clients.push(socket);
@@ -114,6 +127,32 @@ describe.each(TRANSPORTS)('Socket.io over %s', (transport) => {
     await nextEvent(socket, 'connect_error');
     expect(socket.connected).toBe(false);
     expect(app.io.engine.clientsCount).toBe(0);
+  });
+
+  it.each([
+    ['without auth', {}],
+    ['with an empty auth', { auth: {} }],
+    ['with the previous version', { auth: { protocolVersion: PROTOCOL_VERSION - 1 } }],
+    ['with the version as a string', { auth: { protocolVersion: String(PROTOCOL_VERSION) } }],
+    ['with a wrong version in the query', { query: { protocolVersion: String(PROTOCOL_VERSION - 1) } }],
+    // auth wins over the query when it has a version (ADR-0062).
+    [
+      'with a wrong auth version and the right query',
+      { auth: { protocolVersion: PROTOCOL_VERSION + 1 }, query: { protocolVersion: String(PROTOCOL_VERSION) } },
+    ],
+  ])('refuses a handshake %s with PROTOCOL_MISMATCH', async (_label, handshake) => {
+    const socket = client(transport, ALLOWED, handshake);
+    const error = (await nextEvent(socket, 'connect_error')) as Error;
+    expect(error.message).toBe(ERROR_CODES.PROTOCOL_MISMATCH);
+    // A middleware refusal is final: Socket.io does not retry it.
+    expect(socket.active).toBe(false);
+    expect(app.io.of('/').sockets.size).toBe(0);
+  });
+
+  it('accepts the protocol version as a query parameter, for tools without auth (ADR-0062)', async () => {
+    const socket = client(transport, ALLOWED, { query: { protocolVersion: String(PROTOCOL_VERSION) } });
+    await nextEvent(socket, 'connect');
+    expect(await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'hi')).toMatchObject({ ok: true });
   });
 
   it('sends SERVER_SHUTDOWN before closing', async () => {

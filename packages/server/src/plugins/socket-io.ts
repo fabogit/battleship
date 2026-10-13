@@ -11,7 +11,10 @@ import { corsOrigin, type OriginMatcher } from '../origins.js';
 /** Upper bound for flushing `SERVER_SHUTDOWN`; Render sends SIGKILL 30 s after SIGTERM. */
 const SHUTDOWN_GRACE_MS = 3_000;
 
-/** The seat a socket plays, set by an accepted `CREATE_ROOM` or `JOIN_ROOM` (ADR-0045). */
+/**
+ * The seat a socket plays, set by an accepted `CREATE_ROOM` or `JOIN_ROOM` (ADR-0045), or at the handshake by a valid
+ * session (ADR-0063).
+ */
 export interface SeatBinding {
   /** The room the socket sits in; the socket is also in the Socket.io room of the same name. */
   readonly roomId: string;
@@ -21,7 +24,10 @@ export interface SeatBinding {
 
 /** What the server keeps on each socket (`socket.data`). */
 export interface SocketData {
-  /** Absent until the socket creates or joins a room; gone with the socket, since sessions are not bound yet (#22). */
+  /**
+   * Absent until the socket reopens a session, creates or joins a room; gone with the socket, and a reconnecting
+   * socket gets it back from its handshake `session` (ADR-0063).
+   */
   binding?: SeatBinding;
 }
 
@@ -49,8 +55,8 @@ export interface SocketIoOptions {
  * Creates the Socket.io server on the instance's HTTP server and decorates the instance with it as `app.io`. Handshakes
  * from foreign origins are refused; connections, disconnections and, at `debug`, every event are logged
  * (docs/server.md#logging). `app.close()` sends `SERVER_SHUTDOWN` to every socket and waits for it to flush before
- * closing Socket.io. Event handlers and, later, rate limiting (#24) are separate plugins that declare
- * `dependencies: ['socket-io']`.
+ * closing Socket.io. The handshake checks, event handlers and, later, rate limiting (#24) are separate plugins that
+ * declare `dependencies: ['socket-io']`.
  */
 export default fp<SocketIoOptions>(
   (app, options, done) => {

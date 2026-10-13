@@ -61,8 +61,12 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0055](0055-isolated-client-tests.md)         | Isolated client test files             | Accepted, 2026-10-08   |
 | [ADR-0056](0056-target-draft.md)                  | Targets by taps                        | Accepted, 2026-10-10   |
 | [ADR-0057](0057-battle-layout.md)                 | Battle layout                          | Accepted, 2026-10-10   |
-| [ADR-0058](0058-game-over-boards.md)              | Game-over boards                       | Accepted, 2026-10-10   |
+| [ADR-0058](0058-game-over-boards.md)              | Game-over boards                       | Superseded by ADR-0064 |
 | [ADR-0059](0059-jsdoc-enforced-by-lint.md)        | JSDoc on every declaration             | Accepted, 2026-10-10   |
 | [ADR-0060](0060-nickname-characters.md)           | Nickname characters                    | Accepted, 2026-10-11   |
+| [ADR-0061](0061-handshake-checks.md)              | Handshake checks                       | Accepted, 2026-10-13   |
+| [ADR-0062](0062-protocol-version-query.md)        | Protocol version in the query          | Accepted, 2026-10-13   |
+| [ADR-0063](0063-session-rebinding.md)             | Session rebinding                      | Accepted, 2026-10-13   |
+| [ADR-0064](0064-game-over-snapshot-boards.md)     | Game-over snapshot boards              | Accepted, 2026-10-13   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
