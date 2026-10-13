@@ -135,6 +135,21 @@ Decisions: [ADR-0043](adr/0043-named-constants.md), [ADR-0044](adr/0044-code-for
   - `@example` on the public `core` API where it helps: placement, engine, validation guards.
   - `CLIENT_EVENTS` and `SERVER_EVENTS` are documented as a whole: each event is documented in its event map.
 
+## Versions
+
+Decision: [ADR-0071](adr/0071-milestone-versioning.md).
+
+- **One number:** the root and the three packages share one version, `0.(n+1).0` after milestone `Mn` (M0 → `0.1.0`, M1 → `0.2.0`), and `1.0.0` waits for a stable protocol and rules. The packages are private, so nothing is published.
+- **Closing a milestone:** the last PR of its review issue sets the new version in the four `package.json` files. After the merge, tag that commit and publish the release:
+
+  ```bash
+  git tag -a v0.3.0 <merge-commit> -m "M2 · Resilience"
+  git push origin v0.3.0
+  gh release create v0.3.0 --verify-tag --title "v0.3.0 · M2 Resilience" --notes "…"
+  ```
+
+- **`PROTOCOL_VERSION`** is separate: it changes with the wire contract, not with a milestone ([ADR-0017](adr/0017-protocol-versioning.md)).
+
 ## Local tooling
 
 Decisions: [ADR-0028](adr/0028-local-tooling.md), [ADR-0029](adr/0029-watch-mode.md), [ADR-0044](adr/0044-code-formatter.md), [ADR-0052](adr/0052-server-url-build-variable.md), [ADR-0055](adr/0055-isolated-client-tests.md), [ADR-0062](adr/0062-protocol-version-query.md).

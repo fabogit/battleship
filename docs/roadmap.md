@@ -37,6 +37,7 @@ Every milestone (M0–M5) ends with a `Mn · Review & consolidation` issue (#51�
 2. Triage: fix now only code the milestone delivered, without abstractions for later phases; deferred findings go into the issues that will touch that code, or into new ones.
 3. Small themed PRs, bugfixes separate from refactors; the docs changes go in the last PR, which closes the issue. A new decision gets a new file in `docs/adr/`; a spec change edits the topic document.
 4. After the deploy: re-measure in production what the fixes changed, then a retro comment on the issue.
+5. Release: the last PR bumps the version in the four `package.json` files; its merge commit gets the annotated tag and a GitHub Release ([ADR-0071](adr/0071-milestone-versioning.md), [Development: Versions](development.md#versions)).
 
 M0 (#51) piloted the step.
 
