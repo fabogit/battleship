@@ -4,12 +4,13 @@ import { SESSION_STORE_TTL_MS } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CURRENT_ROOM_KEY, SESSION_KEY_PREFIX, SessionStore } from './session-store';
+import { createRoomId, createPlayerSecret } from '../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
-const NEXT_ROOM_ID = 'zz23cd45';
-// Generated, as the server does: a literal UUID named like a secret trips secret scanners.
-const FIRST_SECRET = crypto.randomUUID();
-const SECOND_SECRET = crypto.randomUUID();
+const ROOM_ID = createRoomId(0);
+const NEXT_ROOM_ID = createRoomId(1);
+const OTHER_ROOM_ID = createRoomId(2);
+const FIRST_SECRET = createPlayerSecret();
+const SECOND_SECRET = createPlayerSecret();
 
 let store: SessionStore;
 
@@ -76,7 +77,7 @@ describe('SessionStore', () => {
       store.save({ roomId: NEXT_ROOM_ID, playerSecret: SECOND_SECRET });
       expect(store.hasLeft(ROOM_ID)).toBe(true);
       expect(store.hasLeft(NEXT_ROOM_ID)).toBe(false);
-      expect(store.hasLeft('cd23ef45')).toBe(false);
+      expect(store.hasLeft(OTHER_ROOM_ID)).toBe(false);
       expect(store.current()).toEqual({ roomId: NEXT_ROOM_ID, playerSecret: SECOND_SECRET });
     });
 
@@ -131,7 +132,7 @@ describe('SessionStore', () => {
 
       expect(store.current()).toBeNull();
       expect(store.hasLeft(ROOM_ID)).toBe(false);
-      expect(store.enter('cd23ef45')).toBe(false);
+      expect(store.enter(OTHER_ROOM_ID)).toBe(false);
       expect(store.enter(ROOM_ID)).toBe(true);
       expect(store.current()).toEqual({ roomId: ROOM_ID, playerSecret: FIRST_SECRET });
       expect(sessionStorage.getItem(CURRENT_ROOM_KEY)).toBe(ROOM_ID);
@@ -210,7 +211,8 @@ describe('SessionStore', () => {
 
     it('drops a malformed current room', () => {
       localStorage.setItem(`${SESSION_KEY_PREFIX}${ROOM_ID}`, JSON.stringify(valid()));
-      sessionStorage.setItem(CURRENT_ROOM_KEY, 'ab23cd4o');
+      // A letter outside ROOM_ID_ALPHABET.
+      sessionStorage.setItem(CURRENT_ROOM_KEY, `${ROOM_ID.slice(0, -1)}o`);
 
       reload();
 

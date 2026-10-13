@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RECEIVER_SEATS, fromSeat } from '../../testing/fake-game-socket';
 import { GameSocketService } from './game-socket';
 import { COUNTDOWN_TICK_MS, GameStateService } from './game-state';
+import { createRoomId } from '../../testing/session-fixtures';
 
 const ME: PlayerView = { seat: SEATS.P1, nickname: 'Ada', isConnected: true, forfeitRemainingMs: null };
 const OPPONENT: PlayerView = { seat: SEATS.P2, nickname: 'Grace', isConnected: true, forfeitRemainingMs: null };
@@ -48,7 +49,7 @@ const INCOMING: readonly ShotResult[] = [{ coordinate: { x: 0, y: 0 }, outcome: 
 
 function waiting(): PlayerStateSnapshot {
   return {
-    roomId: 'abcd2345',
+    roomId: createRoomId(0),
     phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
     me: ME,
     opponent: null,

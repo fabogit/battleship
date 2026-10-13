@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Lobby, SHARE_OUTCOMES } from './lobby';
 import { LOBBY_TEXT } from './lobby.text';
+import { createRoomId } from '../../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
+const ROOM_ID = createRoomId(0);
 
 /** Stand-ins for the browser APIs the lobby uses; jsdom has neither. */
 const share = vi.fn<(data: ShareData) => Promise<void>>();

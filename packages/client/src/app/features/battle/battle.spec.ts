@@ -31,8 +31,9 @@ import { GameStateService } from '../../core/game-state';
 import { CELL_STATES } from '../../shared/board-grid/board-cells';
 import { BATTLE_BOARDS, Battle, SHOT_HOLD_MS } from './battle';
 import { BATTLE_TEXT } from './battle.text';
+import { createRoomId } from '../../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
+const ROOM_ID = createRoomId(0);
 /** Ada's destroyer on A1–A2. */
 const MY_DESTROYER = toPlacedShip({
   type: SHIP_TYPES.DESTROYER,

@@ -20,6 +20,7 @@ import {
 } from './game-socket';
 import { SERVER_URL } from './server-url';
 import { SessionStore } from './session-store';
+import { createRoomId, createPlayerSecret } from '../../testing/session-fixtures';
 
 vi.mock('socket.io-client', () => ({
   io: vi.fn(),
@@ -176,8 +177,8 @@ describe('GameSocketService', () => {
 
     it("adds the current room's stored session, read again on every attempt (ADR-0063)", () => {
       const sessions = TestBed.inject(SessionStore);
-      const first = { roomId: 'ab23cd45', playerSecret: crypto.randomUUID() };
-      const next = { roomId: 'zz23cd45', playerSecret: crypto.randomUUID() };
+      const first = { roomId: createRoomId(0), playerSecret: createPlayerSecret() };
+      const next = { roomId: createRoomId(1), playerSecret: createPlayerSecret() };
 
       sessions.save(first);
       expect(handshakeAuth()).toStrictEqual({ protocolVersion: PROTOCOL_VERSION, session: first });
@@ -232,8 +233,8 @@ describe('GameSocketService', () => {
 
     it('drops a session refused with SESSION_INVALID and connects again without it (ADR-0070)', () => {
       const sessions = TestBed.inject(SessionStore);
-      const refused = { roomId: 'ab23cd45', playerSecret: crypto.randomUUID() };
-      const other = { roomId: 'zz23cd45', playerSecret: crypto.randomUUID() };
+      const refused = { roomId: createRoomId(0), playerSecret: createPlayerSecret() };
+      const other = { roomId: createRoomId(1), playerSecret: createPlayerSecret() };
       sessions.save(other);
       sessions.save(refused);
       service.connect();
@@ -251,7 +252,7 @@ describe('GameSocketService', () => {
 
     it('keeps the stored session when the handshake is refused for another reason', () => {
       const sessions = TestBed.inject(SessionStore);
-      const session = { roomId: 'ab23cd45', playerSecret: crypto.randomUUID() };
+      const session = { roomId: createRoomId(0), playerSecret: createPlayerSecret() };
       sessions.save(session);
       service.connect();
       handshakeAuth();
@@ -320,7 +321,7 @@ describe('GameSocketService', () => {
   });
 
   describe('emitWithAck', () => {
-    const joinRoom = { roomId: 'abcd2345', nickname: 'Ada' };
+    const joinRoom = { roomId: createRoomId(0), nickname: 'Ada' };
 
     it('emits the command with the ack timeout and resolves with the server reply', async () => {
       connected();
@@ -332,9 +333,10 @@ describe('GameSocketService', () => {
         payload: joinRoom,
         timeoutMs: ACK_TIMEOUT_MS,
       });
-      socket.emitted[0]?.ack(null, { ok: true, playerSecret: 'secret' });
+      const playerSecret = createPlayerSecret();
+      socket.emitted[0]?.ack(null, { ok: true, playerSecret });
 
-      await expect(result).resolves.toEqual({ ok: true, playerSecret: 'secret' });
+      await expect(result).resolves.toEqual({ ok: true, playerSecret });
       expectTypeOf(result).resolves.toEqualTypeOf<AckResponse<JoinRoomAckData> | TransportFailure>();
     });
 
@@ -380,7 +382,7 @@ describe('GameSocketService', () => {
   describe('server events', () => {
     it('delivers events to a listener until it is removed', () => {
       const listener = vi.fn<(snapshot: PlayerStateSnapshot) => void>();
-      const snapshot = { roomId: 'abcd2345' } as PlayerStateSnapshot;
+      const snapshot = { roomId: createRoomId(0) } as PlayerStateSnapshot;
 
       const stop = service.on(SERVER_EVENTS.STATE, listener);
       socket.fire(SERVER_EVENTS.STATE, snapshot);

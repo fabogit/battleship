@@ -22,8 +22,9 @@ import {
 import { TRANSPORT_ERRORS, type CommandResult } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { BATTLE_FEEDBACK, BattleStore } from './battle-store';
+import { createRoomId } from '../../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
+const ROOM_ID = createRoomId(0);
 const B7 = { x: 6, y: 1 };
 const C3 = { x: 2, y: 2 };
 const MISS_ON_J10: ShotResult = { coordinate: { x: 9, y: 9 }, outcome: SHOT_OUTCOMES.MISS };

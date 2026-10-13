@@ -7,10 +7,11 @@ import { TRANSPORT_ERRORS } from './game-socket';
 import { RoomEntryService } from './room-entry';
 import { ROOM_ENTRY_TEXT, roomEntryErrorMessage } from './room-entry.text';
 import { SessionStore } from './session-store';
+import { createRoomId, createPlayerSecret } from '../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
-// Generated, as the server does: a literal UUID named like a secret trips secret scanners.
-const PLAYER_SECRET = crypto.randomUUID();
+const ROOM_ID = createRoomId(0);
+const NEXT_ROOM_ID = createRoomId(1);
+const PLAYER_SECRET = createPlayerSecret();
 
 let socket: FakeGameSocket;
 let service: RoomEntryService;
@@ -109,9 +110,9 @@ describe('RoomEntryService', () => {
 
     it('does nothing without stored credentials, or in a tab already in a room', () => {
       service.reopen(ROOM_ID);
-      sessions.save({ roomId: 'zz23cd45', playerSecret: PLAYER_SECRET });
+      sessions.save({ roomId: NEXT_ROOM_ID, playerSecret: PLAYER_SECRET });
       sessions.save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
-      service.reopen('zz23cd45');
+      service.reopen(NEXT_ROOM_ID);
 
       expect(sessions.current()?.roomId).toBe(ROOM_ID);
       expect(socket.reconnect).not.toHaveBeenCalled();

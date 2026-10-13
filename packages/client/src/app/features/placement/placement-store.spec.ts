@@ -18,8 +18,9 @@ import { FakeGameSocket, placementSnapshot, provideFakeGameSocket } from '../../
 import { TRANSPORT_ERRORS, type CommandResult } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { PLACEMENT_FEEDBACK, PlacementStore } from './placement-store';
+import { createRoomId } from '../../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
+const ROOM_ID = createRoomId(0);
 
 /** A carrier on A1–A5. */
 const CARRIER: ShipPlacement = {

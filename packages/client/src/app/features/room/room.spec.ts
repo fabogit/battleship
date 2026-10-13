@@ -31,11 +31,11 @@ import { LOBBY_TEXT } from '../lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../placement/placement.text';
 import { ROOM_VIEWS } from './room';
 import { ROOM_TEXT } from './room.text';
+import { createRoomId, createPlayerSecret } from '../../../testing/session-fixtures';
 
-const ROOM_ID = 'ab23cd45';
-const NEXT_ROOM_ID = 'zz23cd45';
-// Generated, as the server does: a literal UUID named like a secret trips secret scanners.
-const PLAYER_SECRET = crypto.randomUUID();
+const ROOM_ID = createRoomId(0);
+const NEXT_ROOM_ID = createRoomId(1);
+const PLAYER_SECRET = createPlayerSecret();
 
 /**
  * The room right after the joiner took the seat, seen by the joiner. Until rules negotiation lands (#26) the server
@@ -119,7 +119,7 @@ async function join(nickname: string): Promise<void> {
  * @param roomId The id the server gives the new room.
  */
 async function createRoom(roomId: string): Promise<void> {
-  socket.emitWithAck.mockResolvedValueOnce({ ok: true, roomId, playerSecret: crypto.randomUUID() });
+  socket.emitWithAck.mockResolvedValueOnce({ ok: true, roomId, playerSecret: createPlayerSecret() });
   const input = page().querySelector('input');
   if (input === null) {
     throw new Error('No nickname field');
@@ -245,13 +245,13 @@ describe('Room', () => {
         expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
       });
 
-      await harness.navigateByUrl('/r/zz23cd45');
+      await harness.navigateByUrl(`/r/${NEXT_ROOM_ID}`);
 
       expect(heading()).toBe(ROOM_TEXT.joinHeading);
     });
 
     it("ignores another room's snapshot", async () => {
-      await receive(waitingSnapshot('zz23cd45'));
+      await receive(waitingSnapshot(NEXT_ROOM_ID));
 
       expect(heading()).toBe(ROOM_TEXT.joinHeading);
     });
@@ -424,10 +424,14 @@ describe('Room', () => {
     });
   });
 
-  it.each(['abc', 'AB23CD45', 'ab23cd4o'])('shows not-found for the malformed room id %s', async (roomId) => {
-    await harness.navigateByUrl(`/r/${roomId}`);
+  // Drawn from a well-formed id: too short, upper case, and a letter outside ROOM_ID_ALPHABET.
+  it.each([ROOM_ID.slice(0, 3), ROOM_ID.toUpperCase(), `${ROOM_ID.slice(0, -1)}o`])(
+    'shows not-found for the malformed room id %s',
+    async (roomId) => {
+      await harness.navigateByUrl(`/r/${roomId}`);
 
-    expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
-    expect(socket.emitWithAck).not.toHaveBeenCalled();
-  });
+      expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
+      expect(socket.emitWithAck).not.toHaveBeenCalled();
+    },
+  );
 });
