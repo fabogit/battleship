@@ -74,5 +74,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0068](0068-postman-replay-test.md)           | Postman messages replayed by a test    | Accepted, 2026-10-13   |
 | [ADR-0069](0069-session-storage-layout.md)        | Session storage layout                 | Accepted, 2026-10-13   |
 | [ADR-0070](0070-client-handshake-refusals.md)     | Handshake refusals and resync          | Accepted, 2026-10-13   |
+| [ADR-0071](0071-milestone-versioning.md)          | Versions and tags per milestone        | Accepted, 2026-10-14   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
