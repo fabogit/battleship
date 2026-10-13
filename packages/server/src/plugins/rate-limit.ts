@@ -18,8 +18,8 @@ export interface RateLimitOptions {
 /**
  * Gives every socket its own limiter: an inbound event beyond `RATE_LIMIT_EVENTS_PER_SECOND` in any second is dropped
  * before any listener sees it, `ECHO` and malformed commands included, and its ack, if it has one, gets
- * `{ ok: false, error: 'RATE_LIMITED' }`. The first refusal of a run is logged at `info`; the next ones are not, so a
- * flood cannot flood the log. The socket stays connected.
+ * `{ ok: false, error: 'RATE_LIMITED' }`, in turn with the replies to the events before it. The first refusal of a run
+ * is logged at `info`; the next ones are not, so a flood cannot flood the log. The socket stays connected.
  */
 export default fp<RateLimitOptions>(
   (app, { clock }, done) => {
@@ -41,7 +41,11 @@ export default fp<RateLimitOptions>(
         const ack: unknown = packet.at(-1);
         if (typeof ack === 'function') {
           const refusal: AckFailure = { ok: false, error: ERROR_CODES.RATE_LIMITED };
-          (ack as (response: AckFailure) => void)(refusal);
+          // Socket.io hands an admitted event to its listeners on `process.nextTick`; replying on the same queue keeps
+          // the acks in the order the events arrived, so a refusal never overtakes an earlier event's reply.
+          process.nextTick(() => {
+            (ack as (response: AckFailure) => void)(refusal);
+          });
         }
       });
     });

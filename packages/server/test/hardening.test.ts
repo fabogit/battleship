@@ -245,6 +245,37 @@ describe('game-over TTL', () => {
 });
 
 describe('rate limit', () => {
+  // A client reads the last reply as the state of its last change (createSyncedDraft): a refusal must not overtake the
+  // replies to the events sent before it (ADR-0066).
+  it.each(['websocket', 'polling'] as const)('keeps the acks in emit order over %s', async (transport) => {
+    await start();
+    const alice = await player(transport);
+    const count = RATE_LIMIT_EVENTS_PER_SECOND + 5;
+    const arrivals: string[] = [];
+    await new Promise<void>((resolve, reject) => {
+      for (let index = 0; index < count; index++) {
+        (alice as Socket)
+          .timeout(ACK_TIMEOUT_MS)
+          .emit(CLIENT_EVENTS.ECHO, index, (error: Error | null, reply: unknown) => {
+            if (error !== null) {
+              reject(error);
+              return;
+            }
+            const { ok } = reply as { ok: boolean };
+            arrivals.push(ok ? String(index) : `${String(index)}x`);
+            if (arrivals.length === count) {
+              resolve();
+            }
+          });
+      }
+    });
+    expect(arrivals).toEqual(
+      Array.from({ length: count }, (_, index) =>
+        index < RATE_LIMIT_EVENTS_PER_SECOND ? String(index) : `${String(index)}x`,
+      ),
+    );
+  });
+
   it.each(['websocket', 'polling'] as const)(
     'refuses events beyond RATE_LIMIT_EVENTS_PER_SECOND with RATE_LIMITED over %s',
     async (transport) => {

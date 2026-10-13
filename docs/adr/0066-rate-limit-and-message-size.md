@@ -5,7 +5,7 @@ date: 2026-10-13
 
 # ADR-0066: Rate limit and message size
 
-Each socket gets its own limiter (`packages/server/src/rate-limiter.ts`), installed by the `rate-limit` plugin as a Socket.io middleware (`socket.use`), so it runs before every event listener. It is a sliding window over the server's `Clock` ([ADR-0065](0065-clock-and-room-timers.md)): an event is admitted when fewer than `RATE_LIMIT_EVENTS_PER_SECOND` (20) admitted events from the same socket fall in the second before it. Every inbound event counts, `ECHO` and malformed commands included. A refused event is dropped before any guard or handler sees it; its ack, if the client asked for one, gets `{ ok: false, error: 'RATE_LIMITED' }`, and refused events do not count towards the window. The socket stays connected. The first refusal of a run is logged at `info` ("Socket rate limited"); the next ones are not, until an event is admitted again. Inbound messages are capped at `MAX_MESSAGE_BYTES` (16 KiB) through Socket.io's `maxHttpBufferSize`: a larger one closes the connection before anything parses it. Details in [Server: Hardening](../server.md#hardening) (#24).
+Each socket gets its own limiter (`packages/server/src/rate-limiter.ts`), installed by the `rate-limit` plugin as a Socket.io middleware (`socket.use`), so it runs before every event listener. It is a sliding window over the server's `Clock` ([ADR-0065](0065-clock-and-room-timers.md)): an event is admitted when fewer than `RATE_LIMIT_EVENTS_PER_SECOND` (20) admitted events from the same socket fall in the second before it. Every inbound event counts, `ECHO` and malformed commands included. A refused event is dropped before any guard or handler sees it; its ack, if the client asked for one, gets `{ ok: false, error: 'RATE_LIMITED' }`, and refused events do not count towards the window. The refusal is sent on `process.nextTick`, the queue on which Socket.io hands an admitted event to its listeners, so the acks of one socket arrive in the order its events did, refusals included. The socket stays connected. The first refusal of a run is logged at `info` ("Socket rate limited"); the next ones are not, until an event is admitted again. Inbound messages are capped at `MAX_MESSAGE_BYTES` (16 KiB) through Socket.io's `maxHttpBufferSize`: a larger one closes the connection before anything parses it. Details in [Server: Hardening](../server.md#hardening) (#24).
 
 ## Considered options
 
@@ -19,6 +19,8 @@ Each socket gets its own limiter (`packages/server/src/rate-limiter.ts`), instal
 
 ## Consequences
 
+- **Reply order:** a client reads the last reply as the fate of its last change (`createSyncedDraft` keeps the error of the last ack that arrives, [ADR-0054](0054-placement-draft-sync.md)), so a refusal must not overtake the replies to earlier events, in the spirit of [ADR-0047](0047-reply-order.md). Calling the ack from the middleware itself did: Socket.io dispatches admitted events on `process.nextTick`, so a synchronous refusal reached the client before replies to events sent earlier (25 `ECHO`s in one tick arrived as `0 … 15 20x … 24x 16 … 19` over WebSocket and `0 20x … 24x 1 … 19` over polling), and a late `ok` cleared the "Too many changes" message the player should have seen. A test emits 25 `ECHO`s in one tick over both transports and expects the acks in emit order.
+
 - The client already maps `RATE_LIMITED` to a message in every view that sends commands ("Too many taps at once. Wait a moment and try again."). A full match played in a browser stays well under the limit; the local-stack check of #24 played one end to end.
 - An integration test that sends more than 20 events from one socket must advance its `FakeClock` between them ([ADR-0065](0065-clock-and-room-timers.md)).
 - An oversized message closes the connection without an ack; Socket.io reports `transport close` or `transport error` to the client, which reconnects like after any drop. Only a modified client can send one: the real client's largest message is far below the cap.
@@ -26,7 +28,7 @@ Each socket gets its own limiter (`packages/server/src/rate-limiter.ts`), instal
 
 ## Links
 
-- Added on 2026-10-13 for server hardening ([#24](https://github.com/fabogit/battleship/issues/24)).
+- Added on 2026-10-13 for server hardening ([#24](https://github.com/fabogit/battleship/issues/24)); the reply order was found in the hub's review of PR #100.
 - Spec: [Server: Hardening](../server.md#hardening) · [Protocol: Error codes](../protocol.md#error-codes) · [Domain: Constants](../domain.md#constants)
 - Related: [ADR-0016](0016-payload-validation.md) (payload validation), [ADR-0048](0048-echo-smoke-check.md) (`ECHO` counts like any event)
 - Issues: [#24](https://github.com/fabogit/battleship/issues/24)
