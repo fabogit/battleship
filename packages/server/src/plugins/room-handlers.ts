@@ -2,8 +2,11 @@
 
 import {
   CLIENT_EVENTS,
+  EMPTY_ROOM_TTL_MS,
   ERROR_CODES,
+  GAME_OVER_TTL_MS,
   PAYLOAD_PARSERS,
+  ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
   type AckFailure,
@@ -18,7 +21,9 @@ import fp from 'fastify-plugin';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Socket } from 'socket.io';
 
+import type { Clock } from '../clock.js';
 import type { RoomManager } from '../room/room-manager.js';
+import { ROOM_TIMER_KINDS, RoomTimers } from '../room/room-timers.js';
 import type { RejectedTransition, RoomState, SeatCommand, SeatCommandEvent } from '../room/room.js';
 import { projectSnapshot } from '../room/snapshot.js';
 import type { GameServer, GameSocket } from './socket-io.js';
@@ -53,20 +58,89 @@ export const COMMAND_EVENTS: readonly CommandEvent[] = Object.values(CLIENT_EVEN
 export interface RoomHandlersOptions {
   /** The open rooms; one registry per server. */
   readonly rooms: RoomManager;
-  /** Current time in epoch ms, passed to room logic and the snapshot projection. */
+  /** The time of each command, passed to room logic and the snapshot projection, and the room TTLs (ADR-0065). */
+  readonly clock: Clock;
+}
+
+/** What the listeners of one socket share with the rest of the plugin. */
+interface CommandContext {
+  /** The open rooms. */
+  readonly rooms: RoomManager;
+  /** Current time in epoch ms. */
   readonly now: () => number;
+  /**
+   * Brings a room's TTL timers in line with its phase and its sockets; called after every change to either, a session
+   * resumed at the handshake included.
+   * @param roomId The room that changed; an id no room has is ignored.
+   */
+  readonly reviewLifetime: (roomId: string) => void;
 }
 
 /**
  * Listens to every command on every socket (docs/server.md#socket-handlers). A payload that fails its core guard is
  * refused with `INVALID_PAYLOAD` before room logic sees it; a command sent without an ack callback is ignored. An
  * accepted command is acked first, then its effects (`SHOT_RESOLVED`) go to the room and each seated socket gets its
- * own `STATE` projection (ADR-0047).
+ * own `STATE` projection (ADR-0047). Rooms expire here too (docs/server.md#room-lifecycle, ADR-0065): one no socket
+ * sits in after `EMPTY_ROOM_TTL_MS`, one in `GAME_OVER` after `GAME_OVER_TTL_MS`; the sockets still in it lose their
+ * seat.
  */
 export default fp<RoomHandlersOptions>(
-  (app, options, done) => {
-    app.io.on('connection', (socket) => {
-      listenToCommands(app.io, socket, app.log.child({ socketId: socket.id }), options);
+  (app, { rooms, clock }, done) => {
+    const { io } = app;
+    const timers = new RoomTimers(clock);
+
+    /**
+     * Removes a room whose TTL ran out and unbinds the sockets still in it, so that a later room drawing the same id
+     * never reaches them.
+     * @param roomId The room to remove.
+     * @param reason The timer that ran out, for the log.
+     */
+    const expire = (roomId: string, reason: string): void => {
+      rooms.remove(roomId);
+      timers.stopRoom(roomId);
+      for (const socketId of io.sockets.adapter.rooms.get(roomId) ?? []) {
+        const peer = io.sockets.sockets.get(socketId);
+        if (peer?.data.binding?.roomId === roomId) {
+          delete peer.data.binding;
+        }
+      }
+      io.in(roomId).socketsLeave(roomId);
+      app.log.info({ roomId, reason, roomCount: rooms.size }, 'Room expired');
+    };
+
+    const reviewLifetime = (roomId: string): void => {
+      const room = rooms.get(roomId);
+      if (room === undefined) {
+        timers.stopRoom(roomId);
+        return;
+      }
+      // The empty-room TTL counts from the moment the last socket left: a later departure does not restart it.
+      const isEmpty = (io.sockets.adapter.rooms.get(roomId)?.size ?? 0) === 0;
+      if (!isEmpty) {
+        timers.stop(roomId, ROOM_TIMER_KINDS.EMPTY_ROOM);
+      } else if (!timers.isRunning(roomId, ROOM_TIMER_KINDS.EMPTY_ROOM)) {
+        timers.start(roomId, ROOM_TIMER_KINDS.EMPTY_ROOM, clock.now() + EMPTY_ROOM_TTL_MS, () => {
+          expire(roomId, ROOM_TIMER_KINDS.EMPTY_ROOM);
+        });
+      }
+      // The game-over TTL counts from the end of the match; leaving `GAME_OVER` (a rematch, #36) stops it.
+      if (room.phase !== ROOM_PHASES.GAME_OVER) {
+        timers.stop(roomId, ROOM_TIMER_KINDS.GAME_OVER);
+      } else if (!timers.isRunning(roomId, ROOM_TIMER_KINDS.GAME_OVER)) {
+        timers.start(roomId, ROOM_TIMER_KINDS.GAME_OVER, clock.now() + GAME_OVER_TTL_MS, () => {
+          expire(roomId, ROOM_TIMER_KINDS.GAME_OVER);
+        });
+      }
+    };
+
+    const context: CommandContext = { rooms, now: () => clock.now(), reviewLifetime };
+    io.on('connection', (socket) => {
+      listenToCommands(io, socket, app.log.child({ socketId: socket.id }), context);
+    });
+    // Pending TTLs must not fire into a closed server; the system clock's timers would not keep it alive anyway.
+    app.addHook('onClose', (_instance, hookDone) => {
+      timers.stopAll();
+      hookDone();
     });
     done();
   },
@@ -78,13 +152,13 @@ export default fp<RoomHandlersOptions>(
  * @param io The server, to reach the other socket of a room.
  * @param socket The new connection.
  * @param log The socket's logger, carrying its `socketId`.
- * @param options The registry and the clock.
+ * @param context The registry, the clock and the TTL review.
  */
 function listenToCommands(
   io: GameServer,
   socket: GameSocket,
   log: FastifyBaseLogger,
-  { rooms, now }: RoomHandlersOptions,
+  { rooms, now, reviewLifetime }: CommandContext,
 ): void {
   /**
    * Logs a refused command and sends the error back. The violation of `INVALID_PLACEMENT` and `INVALID_TARGETS` is
@@ -104,7 +178,8 @@ function listenToCommands(
 
   /**
    * Binds the socket to a seat and moves it into the room's Socket.io room, leaving the room it sat in before, if any
-   * (ADR-0045). The seat it leaves stays taken: freeing seats arrives with #23.
+   * (ADR-0045). The seat it leaves stays taken: freeing seats arrives with #23. Both rooms' TTLs are reviewed: the
+   * one left may now be empty.
    * @param roomId The room the socket now plays in.
    * @param seat Its seat there.
    */
@@ -112,9 +187,11 @@ function listenToCommands(
     const previous = socket.data.binding;
     if (previous !== undefined) {
       void socket.leave(previous.roomId);
+      reviewLifetime(previous.roomId);
     }
     socket.data.binding = { roomId, seat };
     void socket.join(roomId);
+    reviewLifetime(roomId);
   };
 
   /**
@@ -146,6 +223,7 @@ function listenToCommands(
     }
     if (result.state.phase !== before?.phase) {
       log.info({ roomId: binding.roomId, phase: result.state.phase }, 'Room phase changed');
+      reviewLifetime(binding.roomId);
     }
     sendState(io, result.state, at);
   };
@@ -241,6 +319,19 @@ function listenToCommands(
     }
     handlers[event](parsed, reply);
   };
+
+  // A session resumed at the handshake has already put the socket in its room (ADR-0063): the room is no longer empty.
+  if (socket.data.binding !== undefined) {
+    reviewLifetime(socket.data.binding.roomId);
+  }
+
+  // Socket.io has already taken the socket out of its rooms here, so a room it leaves empty starts its TTL.
+  socket.on('disconnect', () => {
+    const binding = socket.data.binding;
+    if (binding !== undefined) {
+      reviewLifetime(binding.roomId);
+    }
+  });
 
   // The socket is widened to Socket.io's untyped event map: its typed `on` cannot take an event name held in a
   // variable. Inbound arguments are untrusted anyway, so the listener takes `unknown`.

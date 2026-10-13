@@ -11,6 +11,7 @@ describe('loadConfig', () => {
       allowedOrigins: [ORIGIN],
       logFormat: LOG_FORMATS.JSON,
       logLevel: 'info',
+      trustProxyHops: 0,
     });
   });
 
@@ -64,5 +65,19 @@ describe('loadConfig', () => {
 
   it.each(['DEBUG', 'verbose', '20'])('rejects LOG_LEVEL=%s', (level) => {
     expect(() => loadConfig({ ALLOWED_ORIGINS: ORIGIN, LOG_LEVEL: level })).toThrow(/Invalid LOG_LEVEL/);
+  });
+
+  it.each([
+    ['0', 0],
+    ['1', 1],
+    ['5', 5],
+    ['', 0],
+    [' ', 0],
+  ])('reads TRUST_PROXY_HOPS=%j', (hops, expected) => {
+    expect(loadConfig({ ALLOWED_ORIGINS: ORIGIN, TRUST_PROXY_HOPS: hops }).trustProxyHops).toBe(expected);
+  });
+
+  it.each(['6', '-1', '1.5', 'true', ' 1', '0x1'])('rejects TRUST_PROXY_HOPS=%s', (hops) => {
+    expect(() => loadConfig({ ALLOWED_ORIGINS: ORIGIN, TRUST_PROXY_HOPS: hops })).toThrow(/Invalid TRUST_PROXY_HOPS/);
   });
 });

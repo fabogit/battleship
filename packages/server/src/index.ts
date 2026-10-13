@@ -9,6 +9,7 @@ const config = loadConfig(process.env);
 /** The one server instance; closed by the signal handler (ADR-0027). */
 const app = createServer({
   allowedOrigins: config.allowedOrigins,
+  trustProxyHops: config.trustProxyHops,
   logger: {
     level: config.logLevel,
     // pino-pretty is a dev dependency: `LOG_FORMAT=pretty` is meant for local runs only.
@@ -20,4 +21,7 @@ handleShutdownSignals(app);
 
 // 0.0.0.0 is required on Render; the platform routes traffic to the container port.
 await app.listen({ port: config.port, host: '0.0.0.0' });
-app.log.info({ protocolVersion: PROTOCOL_VERSION, allowedOrigins: config.allowedOrigins }, 'Server ready');
+app.log.info(
+  { protocolVersion: PROTOCOL_VERSION, allowedOrigins: config.allowedOrigins, trustProxyHops: config.trustProxyHops },
+  'Server ready',
+);

@@ -1,4 +1,5 @@
 // Registry of the open rooms: ids, secrets, the room cap, and the stored state each transition replaces (ADR-0039).
+// It has no timers: the socket handlers remove expired rooms (ADR-0065).
 
 import { randomUUID } from 'node:crypto';
 
@@ -80,7 +81,8 @@ export function generateRoomId(rng: Rng): string {
 
 /**
  * Keeps every open room in memory, by id (docs/server.md#room-lifecycle), and runs commands against them through
- * `applyCommand`, storing the state an accepted command returns. Rooms are not removed yet: TTL sweeps land with #24.
+ * `applyCommand`, storing the state an accepted command returns. A room stays until `remove`, which the socket handlers
+ * call when one of its TTLs runs out (ADR-0065).
  */
 export class RoomManager {
   /** The open rooms, by id. */
@@ -129,6 +131,15 @@ export class RoomManager {
       (candidate) => players[candidate]?.playerSecret === credentials.playerSecret,
     );
     return seat === undefined ? undefined : { state, seat };
+  }
+
+  /**
+   * Forgets a room, freeing its place under `MAX_ROOMS`; its id may be drawn again for a later room.
+   * @param roomId The room to remove; an unknown id is ignored.
+   * @returns Whether a room was removed.
+   */
+  remove(roomId: string): boolean {
+    return this.#rooms.delete(roomId);
   }
 
   /**

@@ -26,7 +26,7 @@ export interface HealthResponse {
 
 /** Reply to `ECHO`, the production smoke check (ADR-0048). */
 export interface EchoResponse {
-  /** Always true: `ECHO` has no guard, so it cannot be refused. */
+  /** Always true: `ECHO` has no guard; the rate limit refuses it with an `AckFailure` instead (ADR-0066). */
   readonly ok: true;
   /** The payload as received, whatever it was; the smoke check compares it with what it sent. */
   readonly payload: unknown;
@@ -200,9 +200,10 @@ export interface UpdateRulesAckData {
 export interface ClientToServerEvents {
   /**
    * Smoke check, sent by `pnpm --filter @battleship/server echo` after every deploy (ADR-0048), never by the client: the
-   * server acks with the payload it received, which no guard checks. It needs no room, so it never uses up `MAX_ROOMS`.
+   * server acks with the payload it received, which no guard checks, or with `RATE_LIMITED` like any event (ADR-0066).
+   * It needs no room, so it never uses up `MAX_ROOMS`.
    */
-  ECHO: (payload: unknown, ack: Ack<EchoResponse>) => void;
+  ECHO: (payload: unknown, ack: Ack<EchoResponse | AckFailure>) => void;
   /** Opens a room from the home screen; the ack carries the credentials to store (`SERVER_FULL` above `MAX_ROOMS`). */
   CREATE_ROOM: (payload: CreateRoomPayload, ack: Ack<AckResponse<SessionCredentials>>) => void;
   /** Takes the free seat of a room in `WAITING_FOR_OPPONENT` (`ROOM_NOT_FOUND`, `ROOM_FULL`). */

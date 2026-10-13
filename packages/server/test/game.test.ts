@@ -36,6 +36,7 @@ import type { FastifyInstance } from 'fastify';
 import { COMMAND_EVENTS } from '../src/plugins/room-handlers.js';
 import { createPlayerSecret, generateRoomId, RoomManager } from '../src/room/room-manager.js';
 import { createServer } from '../src/server.js';
+import { FakeClock } from './fake-clock.js';
 
 type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -44,8 +45,10 @@ const ROOM_SEED = 7;
 /** Seeds of the two fleets. */
 const P1_FLEET_SEED = 1;
 const P2_FLEET_SEED = 2;
-/** The fixed clock every test runs at. */
+/** The time every test starts at; the clock only moves when a test advances it. */
 const NOW = 1_700_000_000_000;
+/** How long a player takes per turn in the full match, so the rate limit sees real pacing. */
+const TURN_MS = 1_000;
 const ACK_TIMEOUT_MS = 2_000;
 /** Stands for a command's ack among the events of an inbox; lower case, so no server event can take it. */
 const ACK_MARKER = 'ack';
@@ -62,13 +65,15 @@ const NOT_YET_SUPPORTED: readonly { [E in CommandEvent]: readonly [E, CommandPay
 
 let app: FastifyInstance;
 let rooms: RoomManager;
+let clock: FakeClock;
 let baseUrl: string;
 const clients: ClientSocket[] = [];
 
-/** Starts a server with a seeded registry and a fixed clock (ADR-0030). */
+/** Starts a server with a seeded registry (ADR-0030) and a fake clock (ADR-0065). */
 async function start(): Promise<void> {
   rooms = new RoomManager({ rng: createSeededRng(ROOM_SEED) });
-  app = createServer({ allowedOrigins: ['https://battleship.example'], logger: false, rooms, now: () => NOW });
+  clock = new FakeClock(NOW);
+  app = createServer({ allowedOrigins: ['https://battleship.example'], logger: false, rooms, clock });
   baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
 }
 
@@ -406,6 +411,8 @@ describe('a match between two real clients', () => {
     const p2Targets = waterOf(p1Fleet);
     let finalStates: PlayerStateSnapshot[] = [];
     for (const [turn, target] of p1Targets.entries()) {
+      // P1 sends two events a turn, so a clock that never moved would trip the rate limit before victory.
+      clock.advance(TURN_MS);
       expect(await send(p1, CLIENT_EVENTS.UPDATE_TARGETS, { targets: [target] })).toEqual({ ok: true });
       expect((await p1.inbox.state()).battle?.myDraftTargets).toEqual([target]);
       // The draft is the shooter's own: the opponent's snapshot never shows it.
