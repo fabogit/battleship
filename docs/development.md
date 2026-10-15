@@ -76,9 +76,11 @@ battleship/
             │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService,
             │   │                  # ServerWakeService, createSyncedDraft (the draft sync of placement and battle)
             │   ├── features/      # home (nickname, create), room (one view per phase, refused-seat explanation, leave),
-            │   │                  # lobby (waiting screen; rules: #27), placement (+ PlacementStore), battle (+ BattleStore;
-            │   │                  # also the game-over screen, D58), presence (opponent's connection, pause control, D77)
-            │   └── shared/        # board-grid/, nickname-form/, server-status/, connection-screen/ (D75), countdown.ts
+            │   │                  # lobby (waiting screen, share dialog D79; rules: #27), placement (+ PlacementStore),
+            │   │                  # battle (+ BattleStore; also the game-over screen, D58), presence (opponent's connection,
+            │   │                  # pause control, D77)
+            │   └── shared/        # board-grid/, nickname-form/, qr-code/ (D79), server-status/, connection-screen/ (D75),
+            │                      # countdown.ts
             │                      # Not yet: I18nService (#37), dice (#29), timers UI (#31)
             └── testing/           # Test doubles shared by the specs (FakeGameSocket, FakeServerWake), id and secret generators, the setup file; left out of the app build
 ```

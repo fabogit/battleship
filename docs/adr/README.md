@@ -82,5 +82,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0076](0076-refused-seat-explanation.md)      | Explaining a refused seat              | Accepted, 2026-10-15   |
 | [ADR-0077](0077-opponent-presence-banner.md)      | Opponent presence banner               | Accepted, 2026-10-15   |
 | [ADR-0078](0078-leaving-before-the-match.md)      | Leaving before the match               | Accepted, 2026-10-15   |
+| [ADR-0079](0079-share-dialog.md)                  | Share dialog                           | Accepted, 2026-10-16   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
