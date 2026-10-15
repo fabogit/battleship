@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SERVER_URL } from './server-url';
-import { GIVE_UP_AFTER_MS, ServerWakeService, WAKE_STATUSES } from './server-wake';
+import { GIVE_UP_AFTER_MS, STARTED_AT_TIMEOUT_MS, ServerWakeService, WAKE_STATUSES } from './server-wake';
 
 const HEALTH_URL = 'https://server.test/health';
 const HEALTHY = { status: 'ok', uptime: 1 };
@@ -148,5 +148,67 @@ describe('ServerWakeService', () => {
 
     await expect(service.wake()).resolves.toBe(true);
     http.expectNone(HEALTH_URL);
+  });
+
+  it('polls again when forced after the server answered, e.g. after SERVER_SHUTDOWN (#51, F15)', async () => {
+    const first = service.wake();
+    http.expectOne(HEALTH_URL).flush(HEALTHY);
+    await expect(first).resolves.toBe(true);
+
+    const forced = service.wake({ isForced: true });
+
+    expect(service.status()).toBe(WAKE_STATUSES.WAKING);
+    failAsWaking();
+    await vi.advanceTimersToNextTimerAsync();
+    http.expectOne(HEALTH_URL).flush(HEALTHY);
+    await expect(forced).resolves.toBe(true);
+    expect(service.status()).toBe(WAKE_STATUSES.AWAKE);
+  });
+
+  describe('startedAt (ADR-0075)', () => {
+    it("reads the server's start from its uptime, in epoch ms on this device's clock", async () => {
+      const startedAt = service.startedAt();
+
+      const request = http.expectOne(HEALTH_URL);
+      expect(request.request.timeout).toBe(STARTED_AT_TIMEOUT_MS);
+      request.flush({ status: 'ok', uptime: 42.5 });
+
+      await expect(startedAt).resolves.toBe(Date.now() - 42_500);
+      expect(service.status()).toBe(WAKE_STATUSES.IDLE);
+    });
+
+    it.each([
+      [
+        'a failed request',
+        (request: ReturnType<HttpTestingController['expectOne']>) => {
+          request.error(new ProgressEvent('error'), { status: 0 });
+        },
+      ],
+      [
+        'a body without uptime',
+        (request: ReturnType<HttpTestingController['expectOne']>) => {
+          request.flush({ status: 'ok' });
+        },
+      ],
+      [
+        'a negative uptime',
+        (request: ReturnType<HttpTestingController['expectOne']>) => {
+          request.flush({ status: 'ok', uptime: -1 });
+        },
+      ],
+      [
+        "Render's loading page",
+        (request: ReturnType<HttpTestingController['expectOne']>) => {
+          request.flush('<!doctype html><title>Service waking up</title>');
+        },
+      ],
+    ])('resolves null after %s, without retrying', async (_case, answer) => {
+      const startedAt = service.startedAt();
+
+      answer(http.expectOne(HEALTH_URL));
+
+      await expect(startedAt).resolves.toBeNull();
+      http.expectNone(HEALTH_URL);
+    });
   });
 });

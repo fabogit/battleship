@@ -30,12 +30,16 @@ export interface TrackingBoardView extends BoardView {
   readonly draftTargets: readonly Coordinate[];
 }
 
-/** A snapshot with the moment it arrived, which every countdown counts from. */
+/** A snapshot with the moment it arrived, which every countdown counts from, and what changed for the opponent. */
 interface SyncedSnapshot {
   /** The latest `STATE`. */
   readonly snapshot: PlayerStateSnapshot;
   /** `performance.now()` when it arrived, in ms. */
   readonly receivedAt: number;
+  /** The opponent's nickname when this snapshot brought them back from a disconnection, else `null`. */
+  readonly returnedNickname: string | null;
+  /** The nickname of a player whose seat was freed before the match, while the seat stays free; else `null`. */
+  readonly departedNickname: string | null;
 }
 
 /** Where a countdown reads its remaining time in a snapshot. */
@@ -152,6 +156,18 @@ export class GameStateService {
   /** Whether `SET_PAUSED { isPaused: false }` would be accepted: a paused match with the opponent disconnected. */
   readonly canResume = computed(() => this.isOpponentAway() && this.snapshot()?.battle?.isPaused === true);
 
+  /**
+   * The opponent who came back in the latest snapshot: their nickname until the next snapshot, else `null`
+   * (docs/client.md#connection-states).
+   */
+  readonly opponentReturned = computed(() => this.synced()?.returnedNickname ?? null);
+
+  /**
+   * The player whose seat was freed before the match while this client followed the room (ADR-0073): their nickname
+   * until someone takes the seat or another room's snapshot arrives, else `null`.
+   */
+  readonly opponentDeparted = computed(() => this.synced()?.departedNickname ?? null);
+
   /** Whether the receiver won; `null` until game over, `false` for a match without a winner (`ABANDONED`). */
   readonly hasWon = computed(() => {
     const snapshot = this.snapshot();
@@ -188,15 +204,25 @@ export class GameStateService {
   }
 
   /**
-   * Stores a snapshot and re-syncs every countdown to its remaining times. Ticks every `COUNTDOWN_TICK_MS` until the
-   * longest running countdown reaches zero.
+   * Stores a snapshot, compares the opponent with the previous snapshot of the same room, and re-syncs every countdown
+   * to its remaining times. Ticks every `COUNTDOWN_TICK_MS` until the longest running countdown reaches zero.
    * @param snapshot The `STATE` just received.
    */
   private apply(snapshot: PlayerStateSnapshot): void {
     const receivedAt = performance.now();
+    const previous = this.synced();
+    const before = previous?.snapshot.roomId === snapshot.roomId ? previous : null;
+    const opponent = snapshot.opponent;
+    const wasAway = before?.snapshot.opponent?.isConnected === false;
     this.stopTicking();
     this.now.set(receivedAt);
-    this.synced.set({ snapshot, receivedAt });
+    this.synced.set({
+      snapshot,
+      receivedAt,
+      returnedNickname: wasAway && opponent?.isConnected === true ? opponent.nickname : null,
+      departedNickname:
+        opponent === null && before !== null ? (before.snapshot.opponent?.nickname ?? before.departedNickname) : null,
+    });
 
     const longestMs = Math.max(
       0,

@@ -263,4 +263,46 @@ describe('SessionStore', () => {
       expect(store.current()?.roomId).toBe(ROOM_ID);
     });
   });
+  describe('refusal and forget (#25, ADR-0075)', () => {
+    it('remembers when the refused seat was taken', () => {
+      vi.useFakeTimers();
+      store.save({ roomId: ROOM_ID, playerSecret: FIRST_SECRET });
+      const takenAt = Date.now();
+      vi.advanceTimersByTime(60_000);
+
+      store.refuse(ROOM_ID);
+
+      expect(store.refusal(ROOM_ID)).toEqual({ seatTakenAt: takenAt });
+      expect(store.refusal(NEXT_ROOM_ID)).toBeNull();
+    });
+
+    it('remembers a refusal of credentials it no longer held, without a time', () => {
+      store.refuse(ROOM_ID);
+
+      expect(store.refusal(ROOM_ID)).toEqual({ seatTakenAt: null });
+    });
+
+    it('drops the credentials of a room left with LEAVE_ROOM, and leaves the room, without a refusal', () => {
+      store.save({ roomId: NEXT_ROOM_ID, playerSecret: SECOND_SECRET });
+      store.save({ roomId: ROOM_ID, playerSecret: FIRST_SECRET });
+
+      store.forget(ROOM_ID);
+
+      expect(store.get(ROOM_ID)).toBeNull();
+      expect(localStorage.getItem(`${SESSION_KEY_PREFIX}${ROOM_ID}`)).toBeNull();
+      expect(store.current()).toBeNull();
+      expect(sessionStorage.getItem(CURRENT_ROOM_KEY)).toBeNull();
+      expect(store.wasRefused(ROOM_ID)).toBe(false);
+      expect(store.get(NEXT_ROOM_ID)).not.toBeNull();
+    });
+
+    it('keeps the current room when another room is forgotten', () => {
+      store.save({ roomId: NEXT_ROOM_ID, playerSecret: SECOND_SECRET });
+      store.save({ roomId: ROOM_ID, playerSecret: FIRST_SECRET });
+
+      store.forget(NEXT_ROOM_ID);
+
+      expect(store.current()).toEqual({ roomId: ROOM_ID, playerSecret: FIRST_SECRET });
+    });
+  });
 });

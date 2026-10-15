@@ -3,5 +3,9 @@
   <app-server-status />
 </header>
 <main>
-  <router-outlet />
+  @if (screenReason(); as reason) {
+    <app-connection-screen [reason]="reason" />
+  } @else {
+    <router-outlet />
+  }
 </main>

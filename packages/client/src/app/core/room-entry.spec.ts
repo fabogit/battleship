@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
-import { CLIENT_EVENTS, ERROR_CODES } from '@battleship/core';
+import { CLIENT_EVENTS, ERROR_CODES, SERVER_EVENTS } from '@battleship/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { FakeGameSocket, provideFakeGameSocket } from '../../testing/fake-game-socket';
+import { FakeGameSocket, placementSnapshot, provideFakeGameSocket } from '../../testing/fake-game-socket';
 import { TRANSPORT_ERRORS } from './game-socket';
+import { GameStateService } from './game-state';
 import { RoomEntryService } from './room-entry';
 import { ROOM_ENTRY_TEXT, roomEntryErrorMessage } from './room-entry.text';
 import { SessionStore } from './session-store';
@@ -128,5 +129,70 @@ describe('roomEntryErrorMessage', () => {
 
   it('falls back to a generic message', () => {
     expect(roomEntryErrorMessage(ERROR_CODES.INVALID_PAYLOAD)).toBe(ROOM_ENTRY_TEXT.unexpected);
+  });
+  describe('leave (#25)', () => {
+    beforeEach(() => {
+      sessions.save({ roomId: NEXT_ROOM_ID, playerSecret: createPlayerSecret() });
+      sessions.save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      socket.fire(SERVER_EVENTS.STATE, placementSnapshot(ROOM_ID));
+    });
+
+    it('sends LEAVE_ROOM, then forgets the seat and the snapshot', async () => {
+      socket.emitWithAck.mockResolvedValue({ ok: true });
+
+      await expect(service.leave(ROOM_ID)).resolves.toEqual({ ok: true });
+
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.LEAVE_ROOM, {});
+      expect(sessions.get(ROOM_ID)).toBeNull();
+      expect(sessions.current()).toBeNull();
+      expect(sessions.get(NEXT_ROOM_ID)).not.toBeNull();
+      expect(TestBed.inject(GameStateService).snapshot()).toBeNull();
+      expect(socket.reconnect).not.toHaveBeenCalled();
+    });
+
+    it.each([ERROR_CODES.NOT_ALLOWED, TRANSPORT_ERRORS.NOT_CONNECTED])(
+      'keeps the seat and the snapshot after %s',
+      async (error) => {
+        socket.emitWithAck.mockResolvedValue({ ok: false, error });
+
+        await expect(service.leave(ROOM_ID)).resolves.toEqual({ ok: false, error });
+
+        expect(sessions.current()).toEqual({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+        expect(TestBed.inject(GameStateService).snapshot()?.roomId).toBe(ROOM_ID);
+        expect(socket.reconnect).not.toHaveBeenCalled();
+      },
+    );
+
+    it('reconnects after NO_ACK, so the handshake tells whether the seat is still held', async () => {
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+
+      await service.leave(ROOM_ID);
+
+      expect(socket.reconnect).toHaveBeenCalledOnce();
+      expect(sessions.get(ROOM_ID)).not.toBeNull();
+    });
+  });
+
+  it("forgets a refused seat's snapshot of the room before joining it again (ADR-0075)", async () => {
+    const gameState = TestBed.inject(GameStateService);
+    socket.fire(SERVER_EVENTS.STATE, placementSnapshot(ROOM_ID));
+    socket.emitWithAck.mockImplementation(() => {
+      expect(gameState.snapshot()).toBeNull();
+      return Promise.resolve({ ok: true, playerSecret: PLAYER_SECRET });
+    });
+
+    await service.join(ROOM_ID, 'Grace');
+
+    expect(socket.emitWithAck).toHaveBeenCalledOnce();
+  });
+
+  it("keeps another room's snapshot when joining", async () => {
+    const gameState = TestBed.inject(GameStateService);
+    socket.fire(SERVER_EVENTS.STATE, placementSnapshot(NEXT_ROOM_ID));
+    socket.emitWithAck.mockResolvedValue({ ok: false, error: ERROR_CODES.ROOM_FULL });
+
+    await service.join(ROOM_ID, 'Grace');
+
+    expect(gameState.snapshot()?.roomId).toBe(NEXT_ROOM_ID);
   });
 });

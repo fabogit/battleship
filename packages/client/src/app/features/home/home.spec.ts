@@ -5,6 +5,7 @@ import { CLIENT_EVENTS, ERROR_CODES, NICKNAME_MAX_LENGTH } from '@battleship/cor
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FakeGameSocket, provideFakeGameSocket } from '../../../testing/fake-game-socket';
+import { FakeServerWake, provideFakeServerWake } from '../../../testing/fake-server-wake';
 import { routes } from '../../app.routes';
 import { CONNECTION_STATUSES } from '../../core/game-socket';
 import { ROOM_ENTRY_TEXT } from '../../core/room-entry.text';
@@ -23,7 +24,11 @@ let harness: RouterTestingHarness;
 beforeEach(async () => {
   socket = new FakeGameSocket();
   TestBed.configureTestingModule({
-    providers: [provideFakeGameSocket(socket), provideRouter(routes, withComponentInputBinding())],
+    providers: [
+      provideFakeGameSocket(socket),
+      provideFakeServerWake(new FakeServerWake()),
+      provideRouter(routes, withComponentInputBinding()),
+    ],
   });
   harness = await RouterTestingHarness.create();
   await harness.navigateByUrl('/', Home);

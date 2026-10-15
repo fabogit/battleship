@@ -1,3 +1,21 @@
+import { ERROR_CODES } from '@battleship/core';
+
+import type { RoomEntryError } from '../../core/room-entry';
+import { SEAT_LOSSES, type SeatLoss } from './seat-loss';
+
+/** What the room page says about a seat the server refused (`SESSION_INVALID`), for one `SeatLoss`. */
+export interface SeatLossText {
+  /** The heading. */
+  readonly heading: string;
+  /**
+   * What happened and what the player can do.
+   * @param forfeitMinutes `DISCONNECT_FORFEIT_MS` in minutes.
+   * @param gameOverMinutes `GAME_OVER_TTL_MS` in minutes.
+   * @returns The explanation.
+   */
+  readonly reason: (forfeitMinutes: number, gameOverMinutes: number) => string;
+}
+
 /** The words of the room page, apart from the views it hosts. */
 export interface RoomText {
   /** The heading of the join view. */
@@ -28,6 +46,16 @@ export interface RoomText {
   readonly fullReason: string;
   /** The link back to the home screen. */
   readonly createOwn: string;
+  /** For a seat the server refused, by what the page could tell of the cause (ADR-0075). */
+  readonly seatLosses: Readonly<Record<SeatLoss, SeatLossText>>;
+  /** The button giving up the seat before the match. */
+  readonly leave: string;
+  /** The leave button while its command runs. */
+  readonly leaving: string;
+  /** Under the leave button. */
+  readonly leaveHint: string;
+  /** A message for each `LEAVE_ROOM` failure the room page explains itself; the others get the room-entry messages. */
+  readonly leaveErrors: Readonly<Partial<Record<RoomEntryError, string>>>;
 }
 
 /**
@@ -48,4 +76,32 @@ export const ROOM_TEXT: RoomText = {
   fullHeading: 'This room is full',
   fullReason: 'Two players are already in this room.',
   createOwn: 'Create a new room',
+  seatLosses: {
+    [SEAT_LOSSES.RESTARTED]: {
+      heading: 'The server restarted',
+      reason: () =>
+        "Rooms live in the server's memory, so this match was lost in the restart. Create a new room and send the new link to your opponent.",
+    },
+    [SEAT_LOSSES.CLOSED]: {
+      heading: 'This room has closed',
+      reason: (_forfeitMinutes, gameOverMinutes) =>
+        `The match was over, and a room closes ${String(gameOverMinutes)} minutes after its match ends.`,
+    },
+    [SEAT_LOSSES.GIVEN_UP]: {
+      heading: 'You lost your seat',
+      reason: (forfeitMinutes) =>
+        `You were away for more than ${String(forfeitMinutes)} minutes, or you left the room, so your seat was given up. If the room is still waiting for a player, you can join it again.`,
+    },
+    [SEAT_LOSSES.UNKNOWN]: {
+      heading: 'You are no longer in this room',
+      reason: (forfeitMinutes) =>
+        `The server may have restarted, the room may have closed, or your seat was given up after ${String(forfeitMinutes)} minutes away. If the room is still waiting for a player, you can join it again.`,
+    },
+  },
+  leave: 'Leave room',
+  leaving: 'Leaving…',
+  leaveHint: 'Your seat is freed for someone else, and you go back to the home screen.',
+  leaveErrors: {
+    [ERROR_CODES.NOT_ALLOWED]: 'The match has started, so the room can no longer be left.',
+  },
 };

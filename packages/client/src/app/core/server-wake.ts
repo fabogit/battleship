@@ -26,6 +26,23 @@ export const FIRST_RETRY_DELAY_MS = 500;
 export const MAX_RETRY_DELAY_MS = 5_000;
 /** Render's free tier wakes up in ~24 s as measured (docs/deployment.md#hosting-facts-render-free); 90 s leaves room for slow starts. */
 export const GIVE_UP_AFTER_MS = 90_000;
+/**
+ * How long `startedAt` waits for `/health`, in ms. It asks a server the socket has just reached, so an answer is quick;
+ * without one the room page explains a refused seat without telling a restart apart (ADR-0075).
+ */
+export const STARTED_AT_TIMEOUT_MS = 10_000;
+
+/** Milliseconds in a second: `HealthResponse.uptime` is in seconds. */
+const MS_PER_SECOND = 1_000;
+
+/** Options of `ServerWakeService.wake`. */
+export interface WakeOptions {
+  /**
+   * Polls even when the server already answered, e.g. after it announced a restart (`SERVER_SHUTDOWN`, #51 F15): the
+   * instance that answered is gone, and the next one may still be starting.
+   */
+  readonly isForced?: boolean;
+}
 
 /**
  * Polls `GET /health` until the server answers, so the Socket.io connection is only opened on a
@@ -48,18 +65,35 @@ export class ServerWakeService {
   private polling: Promise<boolean> | undefined;
 
   /**
-   * Starts polling, or joins the poll in progress; returns at once when the server already answered. A poll that gave
-   * up does not stop later calls from starting a new one.
+   * Starts polling, or joins the poll in progress; returns at once when the server already answered, unless forced. A
+   * poll that gave up does not stop later calls from starting a new one.
+   * @param options `isForced` polls again after the server answered.
    * @returns Resolves `true` once the server is up, `false` after `GIVE_UP_AFTER_MS` without an answer; never rejects.
    */
-  wake(): Promise<boolean> {
-    if (this.statusSignal() === WAKE_STATUSES.AWAKE) {
+  wake(options: WakeOptions = {}): Promise<boolean> {
+    if (this.statusSignal() === WAKE_STATUSES.AWAKE && options.isForced !== true) {
       return Promise.resolve(true);
     }
     this.polling ??= this.poll().finally(() => {
       this.polling = undefined;
     });
     return this.polling;
+  }
+
+  /**
+   * Asks the server when it started, so the client can tell whether it restarted since a seat was taken: rooms live in
+   * the server's memory, and a restart loses them (ADR-0075). One request, no retries; `status` does not change.
+   * @returns `Date.now()` minus the server's `uptime`, in epoch ms on this device's clock; `null` when `/health` does not
+   * answer with a `HealthResponse` within `STARTED_AT_TIMEOUT_MS`. Never rejects.
+   */
+  async startedAt(): Promise<number | null> {
+    try {
+      const body = await firstValueFrom(this.http.get<unknown>(this.healthUrl, { timeout: STARTED_AT_TIMEOUT_MS }));
+      const uptime = uptimeOf(body);
+      return uptime === null ? null : Date.now() - uptime * MS_PER_SECOND;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -109,6 +143,20 @@ export class ServerWakeService {
  */
 function isHealthResponse(body: unknown): body is HealthResponse {
   return typeof body === 'object' && body !== null && 'status' in body && body.status === 'ok';
+}
+
+/**
+ * Reads the server's uptime from a `/health` body, which `isHealthResponse` accepts without it.
+ * @param body The parsed response body.
+ * @returns The uptime in seconds (`process.uptime()` on the server), or `null` when the body is not a `HealthResponse`
+ * with a finite, non-negative `uptime`.
+ */
+function uptimeOf(body: unknown): number | null {
+  if (!isHealthResponse(body)) {
+    return null;
+  }
+  const uptime: unknown = body.uptime;
+  return typeof uptime === 'number' && Number.isFinite(uptime) && uptime >= 0 ? uptime : null;
 }
 
 /**

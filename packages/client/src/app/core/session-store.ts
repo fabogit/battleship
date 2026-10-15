@@ -13,6 +13,15 @@ interface StoredSession extends SessionCredentials {
   readonly expiresAt: number;
 }
 
+/** What the store remembers of credentials the server refused (`SESSION_INVALID`), for the room page (ADR-0075). */
+export interface RefusedSeat {
+  /**
+   * When the refused credentials were saved, which is when their seat was taken, in epoch ms; `null` when the store no
+   * longer held them. A server that started after it cannot have known the room: it restarted (ADR-0075).
+   */
+  readonly seatTakenAt: number | null;
+}
+
 /**
  * Keeps the credentials of the rooms this browser created or joined, one `localStorage` entry per room with an expiry
  * (ADR-0013), and which of them this tab is in now, in `sessionStorage` (ADR-0069). The socket follows only the room of
@@ -27,8 +36,8 @@ export class SessionStore {
   private readonly sessions = signal<ReadonlyMap<string, StoredSession>>(readSessions());
   /** The room this tab is in now; `null` in a tab that has not created, joined or reopened a room. */
   private readonly currentRoomId = signal<string | null>(readCurrentRoomId());
-  /** Rooms whose credentials the server refused (`SESSION_INVALID`) since the app started. */
-  private readonly refusedRoomIds = signal<ReadonlySet<string>>(new Set());
+  /** Rooms whose credentials the server refused (`SESSION_INVALID`) since the app started, with what is known of them. */
+  private readonly refusedSeats = signal<ReadonlyMap<string, RefusedSeat>>(new Map());
 
   /**
    * Stores the credentials returned by `CREATE_ROOM` or `JOIN_ROOM` for `SESSION_STORE_TTL_MS`, replacing any earlier
@@ -90,10 +99,22 @@ export class SessionStore {
 
   /**
    * Drops the credentials of a room after the server refused them with `SESSION_INVALID`: the room is gone, or no seat
-   * holds the secret. The tab is then in no room.
+   * holds the secret. The tab is then in no room, and `refusal` remembers when the seat had been taken.
    * @param roomId The room of the refused credentials.
    */
   refuse(roomId: string): void {
+    const session = this.sessions().get(roomId);
+    const seatTakenAt = session === undefined ? null : session.expiresAt - SESSION_STORE_TTL_MS;
+    this.forget(roomId);
+    this.refusedSeats.update((seats) => new Map(seats).set(roomId, { seatTakenAt }));
+  }
+
+  /**
+   * Drops the credentials of a room the player left with `LEAVE_ROOM`: the server freed the seat, so its secret is
+   * worthless (docs/server.md#leaving). The tab is then in no room, if it was in this one.
+   * @param roomId The room left.
+   */
+  forget(roomId: string): void {
     removeItem(localStorageOrNull(), sessionKey(roomId));
     this.sessions.update((sessions) => {
       const remaining = new Map(sessions);
@@ -103,7 +124,6 @@ export class SessionStore {
     if (this.currentRoomId() === roomId) {
       this.setCurrentRoomId(null);
     }
-    this.refusedRoomIds.update((roomIds) => new Set(roomIds).add(roomId));
   }
 
   /**
@@ -113,7 +133,17 @@ export class SessionStore {
    * @returns Whether `refuse` was called for the room.
    */
   wasRefused(roomId: string): boolean {
-    return this.refusedRoomIds().has(roomId);
+    return this.refusedSeats().has(roomId);
+  }
+
+  /**
+   * Looks up a refusal of this room's credentials since the app started. Tracked when read inside a `computed` or a
+   * template.
+   * @param roomId Any id, such as the one in the address.
+   * @returns What `refuse` remembered, or `null` when the room's credentials were not refused.
+   */
+  refusal(roomId: string): RefusedSeat | null {
+    return this.refusedSeats().get(roomId) ?? null;
   }
 
   /**
