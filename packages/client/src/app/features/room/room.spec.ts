@@ -481,13 +481,28 @@ describe('Room', () => {
       expect(page().querySelector('button[type="submit"]')?.textContent.trim()).toBe(ROOM_TEXT.join);
     });
 
-    it('says the room closed after a match this tab saw end, without asking the server', async () => {
+    it('says the room closed after a match this tab saw end, while the server has run since', async () => {
+      wake.startedAt.mockImplementation(() => Promise.resolve(Date.now() - 60_000));
+
       await refuseAfter(gameOverSnapshot(ROOM_ID));
 
+      await vi.waitFor(() => {
+        expect(wake.startedAt).toHaveBeenCalledOnce();
+      });
+      await harness.fixture.whenStable();
       expect(heading()).toBe(ROOM_TEXT.seatLosses.closed.heading);
       expect(page().textContent).toContain(`${String(GAME_OVER_MINUTES)} minutes`);
       expect(page().querySelector('input')).toBeNull();
-      expect(wake.startedAt).not.toHaveBeenCalled();
+    });
+
+    it('says the server restarted rather than closed when it restarted after the match ended', async () => {
+      wake.startedAt.mockImplementation(() => Promise.resolve(Date.now() + 1));
+
+      await refuseAfter(gameOverSnapshot(ROOM_ID));
+
+      await vi.waitFor(() => {
+        expect(heading()).toBe(ROOM_TEXT.seatLosses.restarted.heading);
+      });
     });
 
     it('covers every cause when the server does not say when it started', async () => {

@@ -157,13 +157,9 @@ export class Room {
   /** Whether this tab saw the room's match end: a refused seat then belongs to a room that expired. */
   private readonly hasSeenGameOver = computed(() => this.snapshot()?.phase === ROOM_PHASES.GAME_OVER);
 
-  /**
-   * When the server started, asked once the page shows a refused seat that a finished match does not explain;
-   * `undefined` until it answers (ADR-0075).
-   */
+  /** When the server started, asked once the page shows a refused seat; `undefined` until it answers (ADR-0075). */
   private readonly serverStartedAt = resource({
-    params: () =>
-      this.view() === ROOM_VIEWS.SEAT_LOST && !this.hasSeenGameOver() ? { roomId: this.roomId() } : undefined,
+    params: () => (this.view() === ROOM_VIEWS.SEAT_LOST ? { roomId: this.roomId() } : undefined),
     loader: () => this.wake.startedAt(),
   });
 

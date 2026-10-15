@@ -26,9 +26,14 @@ describe('classifySeatLoss (ADR-0075)', () => {
     }
   });
 
-  it('says the room closed after a match this tab saw end, whatever the server says', () => {
+  it('says the room closed after a match this tab saw end, unless the server restarted since', () => {
+    for (const serverStartedAt of [TAKEN_AT - 60_000, null]) {
+      expect(classifySeatLoss({ hasSeenGameOver: true, seatTakenAt: TAKEN_AT, serverStartedAt })).toBe(
+        SEAT_LOSSES.CLOSED,
+      );
+    }
     expect(classifySeatLoss({ hasSeenGameOver: true, seatTakenAt: TAKEN_AT, serverStartedAt: TAKEN_AT + 1 })).toBe(
-      SEAT_LOSSES.CLOSED,
+      SEAT_LOSSES.RESTARTED,
     );
   });
 

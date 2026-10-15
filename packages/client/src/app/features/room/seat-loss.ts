@@ -5,7 +5,10 @@
 export const SEAT_LOSSES = {
   /** The server started after the seat was taken: rooms live in its memory, so a restart lost the room. */
   RESTARTED: 'restarted',
-  /** This tab saw the match end: the room expired `GAME_OVER_TTL_MS` after it. */
+  /**
+   * This tab saw the match end, and the server did not restart since, or cannot say: the room expired
+   * `GAME_OVER_TTL_MS` after the match.
+   */
   CLOSED: 'closed',
   /**
    * The server has run since the seat was taken: the seat was freed by the disconnect forfeit or by `LEAVE_ROOM`, or
@@ -33,16 +36,17 @@ export interface SeatLossClues {
  * Tells why a seat was refused, as far as the clues allow (ADR-0075). Both times are on this device's clock, so its
  * offset from the server's does not matter.
  * @param clues What the room page knows.
- * @returns `CLOSED` after a match this tab saw end; otherwise `RESTARTED` or `GIVEN_UP` by comparing the server's start
- * with the seat's, and `UNKNOWN` when either time is missing.
+ * @returns `RESTARTED` when the server started after the seat was taken; otherwise `CLOSED` after a match this tab saw
+ * end, `GIVEN_UP` when both times are known, and `UNKNOWN` when either is missing.
  */
 export function classifySeatLoss(clues: SeatLossClues): SeatLoss {
   const { hasSeenGameOver, seatTakenAt, serverStartedAt } = clues;
+  const isKnown = seatTakenAt !== null && serverStartedAt !== null;
+  if (isKnown && serverStartedAt > seatTakenAt) {
+    return SEAT_LOSSES.RESTARTED;
+  }
   if (hasSeenGameOver) {
     return SEAT_LOSSES.CLOSED;
   }
-  if (seatTakenAt === null || serverStartedAt === null) {
-    return SEAT_LOSSES.UNKNOWN;
-  }
-  return serverStartedAt > seatTakenAt ? SEAT_LOSSES.RESTARTED : SEAT_LOSSES.GIVEN_UP;
+  return isKnown ? SEAT_LOSSES.GIVEN_UP : SEAT_LOSSES.UNKNOWN;
 }
