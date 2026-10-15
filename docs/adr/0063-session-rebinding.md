@@ -24,6 +24,7 @@ A handshake `session` that passes `parseSessionCredentials` is looked up in the 
 ## Links
 
 - Added on 2026-10-13 for the server handshake ([#22](https://github.com/fabogit/battleship/issues/22)).
+- Amended on 2026-10-15 ([#23](https://github.com/fabogit/battleship/issues/23)): the new socket joins the room before the old ones are disconnected, so a replacement is not a drop, and its `STATE` comes from `room-handlers`; the opponent gets `STATE` when the seat comes back ([ADR-0072](0072-seat-presence.md)).
 - Spec: [Server: Sessions & reconnection](../server.md#sessions--reconnection) · [Protocol: Handshake](../protocol.md#handshake)
 - Related: [ADR-0014](0014-duplicate-sessions.md) (latest connection wins) · [ADR-0045](0045-socket-seat-binding.md) (seat binding) · [ADR-0061](0061-handshake-checks.md) (handshake checks)
 - Issues: [#22](https://github.com/fabogit/battleship/issues/22) · [#21](https://github.com/fabogit/battleship/issues/21) (session restore) · [#23](https://github.com/fabogit/battleship/issues/23) (disconnections) · [#24](https://github.com/fabogit/battleship/issues/24) (TTLs: an expired room is an unknown session)

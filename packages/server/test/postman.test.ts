@@ -6,7 +6,7 @@ import { basename, dirname, join, relative, resolve } from 'node:path';
 
 import { CLIENT_EVENTS, ERROR_CODES, PROTOCOL_VERSION } from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
 import type { FastifyInstance } from 'fastify';
@@ -39,7 +39,8 @@ interface SocketIoMessage {
 /**
  * One step of the replay, in the order the collection's descriptions give (**Seat P1**). A step names a request by its
  * file name without `.request.yaml`, which is the name Postman shows, and, to send one of its saved messages, the
- * message's file name without `.message.yaml`. The connection of a request opens at its first step and stays open.
+ * message's file name without `.message.yaml`. The connection of a request opens at its first step and stays open
+ * until a `disconnect` step closes it, as Postman's Disconnect button does.
  */
 type Step =
   | {
@@ -54,9 +55,15 @@ type Step =
       readonly request: string;
       /** The request's connection must fail, with this `connect_error` message; it sends nothing. */
       readonly connectError: string;
+    }
+  | {
+      readonly request: string;
+      /** Closes the request's open connection; the next step runs once the server has seen it go. */
+      readonly disconnect: true;
     };
 
 const OK = { ok: true };
+const NOT_ALLOWED = { ok: false, error: ERROR_CODES.NOT_ALLOWED };
 const OK_WITH_SECRET = { ok: true, playerSecret: expect.any(String) as unknown };
 
 /**
@@ -93,11 +100,26 @@ const STEPS: readonly Step[] = [
   { request: 'Seat P1', message: CLIENT_EVENTS.FIRE, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.UPDATE_TARGETS, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.FIRE, ack: OK },
+  // Pausing needs the opponent away (ADR-0074); P2's seat is kept while it is (ADR-0072).
+  { request: 'Seat P1', message: CLIENT_EVENTS.SET_PAUSED, ack: NOT_ALLOWED },
+  { request: 'Seat P2', disconnect: true },
+  { request: 'Seat P1', message: `${CLIENT_EVENTS.SET_PAUSED} — resume`, ack: OK },
+  { request: 'Seat P1', message: CLIENT_EVENTS.SET_PAUSED, ack: OK },
+  // Leaving a match is a surrender (#35).
+  { request: 'Seat P1', message: CLIENT_EVENTS.LEAVE_ROOM, ack: NOT_ALLOWED },
   {
     request: 'Seat P1',
     message: `${CLIENT_EVENTS.CREATE_ROOM} — invalid payload`,
     ack: { ok: false, error: ERROR_CODES.INVALID_PAYLOAD },
   },
+  // Before a match, leaving frees the seat at once; the room had no one else, so it closes (ADR-0073).
+  {
+    request: 'Seat P1',
+    message: CLIENT_EVENTS.CREATE_ROOM,
+    ack: { ...OK_WITH_SECRET, roomId: expect.any(String) as unknown },
+    capture: 'roomId',
+  },
+  { request: 'Seat P1', message: CLIENT_EVENTS.LEAVE_ROOM, ack: OK },
 ];
 
 let app: FastifyInstance | undefined;
@@ -239,6 +261,26 @@ function connection(socket: Socket): Promise<string | undefined> {
 }
 
 /**
+ * Closes a request's open connection and waits until the server has dropped the socket, so its seat is away by the
+ * next step.
+ * @param open The open connections, by request name; the closed one is removed.
+ * @param request The request whose connection closes.
+ * @param label The step, for the failure message.
+ */
+async function disconnect(open: Map<string, Socket>, request: string, label: string): Promise<void> {
+  const socket = open.get(request);
+  const socketId = socket?.id;
+  if (socket === undefined || socketId === undefined) {
+    expect.fail(`${label}: the request is not connected`);
+  }
+  socket.close();
+  open.delete(request);
+  await vi.waitFor(() => {
+    expect(app?.io.of('/').sockets.has(socketId), `${label}: the server still has the socket`).toBe(false);
+  });
+}
+
+/**
  * Plays `STEPS` against a fresh test server; the first step that gets another reply than expected fails the replay.
  * @param requests The Socket.IO requests to connect, by name.
  */
@@ -251,6 +293,10 @@ async function replay(requests: ReadonlyMap<string, LoadedRequest>): Promise<voi
 
   for (const [index, step] of STEPS.entries()) {
     const label = `step ${String(index + 1)}: ${step.request}${'message' in step ? ` › ${step.message}` : ''}`;
+    if ('disconnect' in step) {
+      await disconnect(open, step.request, label);
+      continue;
+    }
     clock.advance(STEP_MS);
     const request = requests.get(step.request);
     if (request === undefined) {

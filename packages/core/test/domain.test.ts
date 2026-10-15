@@ -4,8 +4,8 @@ import {
   BOARD_SIZE,
   DEFAULT_RULES,
   DISCONNECT_FORFEIT_MS,
-  EMPTY_ROOM_TTL_MS,
   FLEET,
+  GAME_OVER_TTL_MS,
   SHIP_LENGTH,
   TIMEOUT_ACTIONS,
 } from '../src/index.js';
@@ -24,9 +24,9 @@ describe('fleet', () => {
 });
 
 describe('timeouts', () => {
-  it('keeps an empty room at least as long as a disconnected seat, and below Render spin-down', () => {
-    expect(EMPTY_ROOM_TTL_MS).toBeGreaterThanOrEqual(DISCONNECT_FORFEIT_MS);
-    expect(EMPTY_ROOM_TTL_MS).toBeLessThan(15 * 60_000);
+  // A room nobody sits in lasts at most a forfeit, then the game-over TTL of the match the forfeit ended (ADR-0073).
+  it('closes a room nobody sits in before Render spin-down', () => {
+    expect(DISCONNECT_FORFEIT_MS + GAME_OVER_TTL_MS).toBeLessThan(15 * 60_000);
   });
 });
 

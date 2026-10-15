@@ -14,7 +14,6 @@ import fp from 'fastify-plugin';
 import type { FastifyBaseLogger } from 'fastify';
 
 import type { RoomManager } from '../room/room-manager.js';
-import { projectSnapshot } from '../room/snapshot.js';
 import type { GameServer, GameSocket, SeatBinding } from './socket-io.js';
 
 /**
@@ -23,12 +22,10 @@ import type { GameServer, GameSocket, SeatBinding } from './socket-io.js';
  */
 export const PROTOCOL_VERSION_QUERY_PARAM = 'protocolVersion';
 
-/** What the `handshake` plugin needs; `createServer` passes the same registry and clock as to `room-handlers`. */
+/** What the `handshake` plugin needs; `createServer` passes the same registry as to `room-handlers`. */
 export interface HandshakeOptions {
   /** The open rooms, where a session's seat is looked up. */
   readonly rooms: RoomManager;
-  /** Current time in epoch ms, for the `STATE` sent to a rebound socket. */
-  readonly now: () => number;
 }
 
 /** The handshake as the middleware reads it: Socket.io's own, typed loosely since every field is client input. */
@@ -53,12 +50,13 @@ export type HandshakeVerdict =
  * Checks the handshake of every socket before it connects (ADR-0061): a wrong or missing protocol version is refused
  * with `PROTOCOL_MISMATCH`, then a malformed, unknown or expired session with `SESSION_INVALID`; the refusal reaches
  * the client as a `connect_error` whose message is the code, and Socket.io does not retry it. A socket with a valid
- * session is bound to its seat, any socket that held the seat gets `SESSION_REPLACED` and is disconnected, and the
- * rebound socket gets a `STATE` at once (ADR-0063). Registered before the commands, so they read the binding.
+ * session is bound to its seat and joins the room's Socket.io room, then any socket that held the seat gets
+ * `SESSION_REPLACED` and is disconnected (ADR-0063). Registered before `room-handlers`, whose `connection` listener
+ * runs after this one: it records the seat as connected again and sends the `STATE` (ADR-0072).
  */
 export default fp<HandshakeOptions>(
   (app, options, done) => {
-    const { rooms, now } = options;
+    const { rooms } = options;
 
     app.io.use((socket, next) => {
       const verdict = checkHandshake(socket.handshake, rooms);
@@ -76,15 +74,15 @@ export default fp<HandshakeOptions>(
     app.io.on('connection', (socket) => {
       const binding = socket.data.binding;
       // Middleware and `connection` run in the same tick, with no I/O in between, so the room is still there.
-      const state = binding === undefined ? undefined : rooms.get(binding.roomId);
-      if (binding === undefined || state === undefined) {
+      if (binding === undefined || rooms.get(binding.roomId) === undefined) {
         return;
       }
       const log = app.log.child({ socketId: socket.id });
-      replacePreviousSockets(app.io, socket, binding, log);
+      // Joined before the old sockets go: when a replaced socket disconnects, the seat still has this one, so the
+      // replacement never counts as the seat dropping (ADR-0072).
       void socket.join(binding.roomId);
+      replacePreviousSockets(app.io, socket, binding, log);
       log.info({ roomId: binding.roomId, seat: binding.seat }, 'Session resumed');
-      socket.emit(SERVER_EVENTS.STATE, projectSnapshot(state, binding.seat, now()));
     });
 
     done();

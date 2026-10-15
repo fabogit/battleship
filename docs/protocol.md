@@ -32,7 +32,8 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 - A command sent without an ack callback is ignored: not applied, not answered.
 - A refused command gets only its ack. An accepted one gets its ack, then any effect (`SHOT_RESOLVED`) and then `STATE` reach both players ([ADR-0047](adr/0047-reply-order.md)).
 - The commands after `JOIN_ROOM` come from the socket that created or joined the room; from any other socket they are `NOT_ALLOWED` ([ADR-0045](adr/0045-socket-seat-binding.md)). A socket that reconnects with its stored `session` gets its seat back at the [handshake](#handshake); without one it has no seat.
-- `UPDATE_RULES`, `CONFIRM_RULES`, `SET_PAUSED`, `SURRENDER`, `REMATCH_CHOICE` and `LEAVE_ROOM` pass their guard, then are `NOT_ALLOWED` until their room logic lands ([ADR-0046](adr/0046-commands-ahead-of-room-logic.md)).
+- `UPDATE_RULES`, `CONFIRM_RULES`, `SURRENDER` and `REMATCH_CHOICE` pass their guard, then are `NOT_ALLOWED` until their room logic lands ([ADR-0046](adr/0046-commands-ahead-of-room-logic.md)). So is `LEAVE_ROOM` in `IN_PROGRESS` (surrender, #35) and `GAME_OVER` (rematch, #36); before the match it frees the seat ([Server: Leaving](server.md#leaving)).
+- `JOIN_ROOM` takes the free seat: `P2`, or `P1` when the creator left before the match ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)), so a client reads its seat from `STATE` (`me.seat`).
 - Until rules negotiation lands (#26), `JOIN_ROOM` moves the room straight to `PLACEMENT`.
 - `JOIN_ROOM` outside `WAITING_FOR_OPPONENT` finds both seats taken, so it is `ROOM_FULL`, never `WRONG_PHASE` ([Server: Room creation & joining](server.md#room-creation--joining)).
 
@@ -96,7 +97,7 @@ export interface PlayerView {
   readonly seat: Seat;
   readonly nickname: string;
   readonly isConnected: boolean;
-  readonly forfeitRemainingMs: number | null; // set while disconnected
+  readonly forfeitRemainingMs: number | null; // set while disconnected, except in GAME_OVER
 }
 
 export interface PlacementSnapshot {

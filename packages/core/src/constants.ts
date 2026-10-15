@@ -21,14 +21,12 @@ export const DICE_ANIMATION_MS = 3_000;
 /** Turns a player may time out in a row before forfeiting (ADR-0009). Fixed, not negotiable. */
 export const MAX_CONSECUTIVE_AFK_TURNS = 3;
 
-/** Maximum absence of a seated player, in any phase, before they forfeit (ADR-0008). */
-export const DISCONNECT_FORFEIT_MS = 180_000;
-
 /**
- * Lifetime of a room with no connected player. Must stay ≥ DISCONNECT_FORFEIT_MS (a lone creator sharing the link
- * leaves the room empty) and below Render's 15 min spin-down.
+ * Maximum absence of a seated player, in any phase but `GAME_OVER`, before they forfeit (ADR-0008, ADR-0072). With
+ * `GAME_OVER_TTL_MS` it bounds how long a room nobody sits in stays open (ADR-0073), which must stay below Render's
+ * 15 min spin-down.
  */
-export const EMPTY_ROOM_TTL_MS = 300_000;
+export const DISCONNECT_FORFEIT_MS = 180_000;
 
 /** Lifetime of a room idle in `GAME_OVER` without a rematch agreement. */
 export const GAME_OVER_TTL_MS = 120_000;

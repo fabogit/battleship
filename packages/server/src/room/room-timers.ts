@@ -2,13 +2,13 @@
 
 import type { Clock, Timer } from '../clock.js';
 
-/**
- * What a room timer is for. The disconnect forfeit (#23), the placement timer (#28) and the turn timer (#30) join this
- * set as they land.
- */
+/** What a room timer is for. The placement timer (#28) and the turn timer (#30) join this set as they land. */
 export const ROOM_TIMER_KINDS = {
-  /** Removes a room no socket sits in, `EMPTY_ROOM_TTL_MS` after the last one left (docs/server.md#room-lifecycle). */
-  EMPTY_ROOM: 'EMPTY_ROOM',
+  /**
+   * Forfeits the seat away longest, `DISCONNECT_FORFEIT_MS` after it lost its last socket; one timer per room, at the
+   * earliest deadline of its two seats (docs/server.md#seat-presence, ADR-0072).
+   */
+  DISCONNECT_FORFEIT: 'DISCONNECT_FORFEIT',
   /** Removes a room `GAME_OVER_TTL_MS` after its match ended (docs/server.md#room-lifecycle). */
   GAME_OVER: 'GAME_OVER',
 } as const;
