@@ -3,8 +3,10 @@ import {
   CLIENT_EVENTS,
   createSeededRng,
   DEFAULT_RULES,
+  DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_REASONS,
+  GAME_OVER_TTL_MS,
   generateRandomFleet,
   MAX_ROOMS,
   parseSessionCredentials,
@@ -29,7 +31,7 @@ import {
   type ShotResolvedPayload,
 } from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -57,10 +59,8 @@ const ACK_MARKER = 'ack';
 const NOT_YET_SUPPORTED: readonly { [E in CommandEvent]: readonly [E, CommandPayload<E>] }[CommandEvent][] = [
   [CLIENT_EVENTS.UPDATE_RULES, { rules: DEFAULT_RULES }],
   [CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 }],
-  [CLIENT_EVENTS.SET_PAUSED, { isPaused: true }],
   [CLIENT_EVENTS.SURRENDER, {}],
   [CLIENT_EVENTS.REMATCH_CHOICE, { choice: REMATCH_CHOICES.LEAVE }],
-  [CLIENT_EVENTS.LEAVE_ROOM, {}],
 ];
 
 let app: FastifyInstance;
@@ -315,13 +315,15 @@ async function startedMatch(): Promise<SeatedPlayers> {
 
 /**
  * Plays a started match to its end without reading the inboxes: P1 fires at every cell of P2's fleet, P2 at water in
- * between, so P1 wins with its last shot.
+ * between, so P1 wins with its last shot. The clock moves `TURN_MS` per round.
  * @returns The cells each player fired at, in order.
  */
 async function playToVictory(p1: Player, p2: Player): Promise<Record<Seat, Coordinate[]>> {
   const p1Targets = placedFleet(P2_FLEET_SEED).flatMap((ship) => ship.coordinates);
   const p2Targets = waterOf(placedFleet(P1_FLEET_SEED)).slice(0, p1Targets.length - 1);
   for (const [turn, target] of p1Targets.entries()) {
+    // One turn per second for each player, under the rate limit whatever the test sent before.
+    clock.advance(TURN_MS);
     expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [target] })).toEqual({ ok: true });
     const p2Target = p2Targets[turn];
     if (p2Target !== undefined) {
@@ -338,6 +340,39 @@ async function playToVictory(p1: Player, p2: Player): Promise<Record<Seat, Coord
 function disconnection(target: Player): Promise<string> {
   return new Promise((resolve) => {
     target.socket.once('disconnect', resolve);
+  });
+}
+
+/**
+ * Reads a client's events up to the first `STATE` that matches, skipping everything before it.
+ * @param inbox The client's inbox.
+ * @param isWanted Tells the snapshot to stop at.
+ * @returns That snapshot.
+ */
+async function skipToState(
+  inbox: Inbox,
+  isWanted: (snapshot: PlayerStateSnapshot) => boolean,
+): Promise<PlayerStateSnapshot> {
+  for (;;) {
+    const message = await inbox.next();
+    const snapshot = message.payload as PlayerStateSnapshot;
+    if (message.event === SERVER_EVENTS.STATE && isWanted(snapshot)) {
+      return snapshot;
+    }
+  }
+}
+
+/**
+ * Closes a client, as a tab that is closed or loses its network, and waits until the server has recorded its seat as
+ * away, which no other client may be there to see.
+ * @param target The client to close; it must be its seat's only socket.
+ * @param roomId Its room.
+ * @param seat Its seat.
+ */
+async function drop(target: Player, roomId: string, seat: Seat): Promise<void> {
+  target.socket.close();
+  await vi.waitFor(() => {
+    expect(rooms.get(roomId)?.disconnectedAt[seat]).not.toBeNull();
   });
 }
 
@@ -667,7 +702,8 @@ describe('room isolation', () => {
     const { roomId } = (await send(p2, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Bob' })) as { roomId: string };
     expect((await p2.inbox.state()).roomId).toBe(roomId);
 
-    // P2's seat stays taken until #23, so P1 still fires in the first room.
+    // P2's seat stays taken, away like after a disconnection (ADR-0072), so P1 still fires in the first room.
+    expect((await p1.inbox.state()).opponent).toMatchObject({ isConnected: false });
     expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
     expect((await p1.inbox.shot()).shooter).toBe(SEATS.P1);
     await p1.inbox.state();
@@ -713,7 +749,7 @@ describe('handshake', () => {
   });
 
   it.each(Object.values(SEATS))(
-    'rebinds a reconnecting %s to its seat and sends it STATE at once, and nothing to the opponent',
+    'rebinds a reconnecting %s to its seat and resumes the match, the opponent seeing the drop and the return',
     async (seat) => {
       await start();
       const { p1, p2, roomId, sessions } = await startedMatch();
@@ -721,13 +757,23 @@ describe('handshake', () => {
       const left = disconnection(leaving);
       leaving.socket.close();
       expect(await left).toBe('io client disconnect');
+      expect(await staying.inbox.state()).toMatchObject({
+        opponent: { seat, isConnected: false, forfeitRemainingMs: DISCONNECT_FORFEIT_MS },
+        battle: { isPaused: true },
+      });
 
+      clock.advance(60_000);
       const back = await player(sessions[seat]);
       expect(await back.inbox.state()).toMatchObject({
         roomId,
         phase: ROOM_PHASES.IN_PROGRESS,
-        me: { seat },
-        battle: { currentTurn: SEATS.P1, incomingShots: [], outgoingShots: [] },
+        me: { seat, isConnected: true, forfeitRemainingMs: null },
+        opponent: { isConnected: true },
+        battle: { currentTurn: SEATS.P1, incomingShots: [], outgoingShots: [], isPaused: false },
+      });
+      expect(await staying.inbox.state()).toMatchObject({
+        opponent: { seat, isConnected: true, forfeitRemainingMs: null },
+        battle: { isPaused: false },
       });
 
       // The rebound socket plays the seat, and gets the room's events again.
@@ -745,17 +791,20 @@ describe('handshake', () => {
     'lets the latest connection win: a zombie %s socket gets SESSION_REPLACED and is disconnected',
     async (seat) => {
       await start();
-      const { p1, p2, sessions } = await startedMatch();
+      const { p1, p2, roomId, sessions } = await startedMatch();
       const [zombie, opponent] = seat === SEATS.P1 ? [p1, p2] : [p2, p1];
       const replaced = disconnection(zombie);
 
       // The zombie never left: a backgrounded tab whose socket the server still thinks is alive (ADR-0014).
       const fresh = await player(sessions[seat]);
-      expect((await fresh.inbox.state()).me.seat).toBe(seat);
+      expect(await fresh.inbox.state()).toMatchObject({ me: { seat, isConnected: true }, battle: { isPaused: false } });
       expect(await zombie.inbox.next()).toEqual({ event: SERVER_EVENTS.SESSION_REPLACED, payload: {} });
       expect(await replaced).toBe('io server disconnect');
+      // The replaced socket was not the seat's last one, so the seat never dropped (ADR-0072): no pause, no clock.
+      expect(rooms.get(roomId)).toMatchObject({ disconnectedAt: { P1: null, P2: null }, isPaused: false });
 
-      // The seat is the fresh socket's now: the room's events reach it, and the zombie gets nothing more.
+      // The seat is the fresh socket's now: the room's events reach it, and the zombie gets nothing more. The opponent's
+      // next events are the shot's: no STATE told it of a drop.
       const shooter = seat === SEATS.P1 ? fresh : opponent;
       expect(await send(shooter, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
       for (const { inbox } of [fresh, opponent]) {
@@ -789,5 +838,295 @@ describe('handshake', () => {
       expect(winnerShots?.at(-1)?.sunkShip).toBeDefined();
       expect(loserShots?.every((shot) => shot.outcome === SHOT_OUTCOMES.MISS)).toBe(true);
     }
+  });
+});
+
+describe('seat presence', () => {
+  // The common mobile case (docs/server.md#room-creation--joining): the creator switches app to share the link.
+  it('lets a friend join while the creator is away, and both end up in PLACEMENT once the creator is back', async () => {
+    await start();
+    const alice = await player();
+    const created = (await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as SessionCredentials;
+    await alice.inbox.state();
+    await drop(alice, created.roomId, SEATS.P1);
+
+    clock.advance(30_000);
+    const bob = await player();
+    expect(await send(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId: created.roomId, nickname: 'Bob' })).toMatchObject({
+      ok: true,
+    });
+    expect(await bob.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.PLACEMENT,
+      me: { seat: SEATS.P2, isConnected: true },
+      opponent: {
+        seat: SEATS.P1,
+        nickname: 'Alice',
+        isConnected: false,
+        forfeitRemainingMs: DISCONNECT_FORFEIT_MS - 30_000,
+      },
+    });
+
+    clock.advance(30_000);
+    const back = await player({ roomId: created.roomId, playerSecret: created.playerSecret });
+    expect(await back.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.PLACEMENT,
+      me: { seat: SEATS.P1, isConnected: true, forfeitRemainingMs: null },
+      opponent: { seat: SEATS.P2, nickname: 'Bob', isConnected: true },
+    });
+    expect(await bob.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.PLACEMENT,
+      opponent: { seat: SEATS.P1, isConnected: true, forfeitRemainingMs: null },
+    });
+
+    // The seat is kept for good: the old deadline passes without a forfeit, and both place their fleets.
+    clock.advance(DISCONNECT_FORFEIT_MS);
+    expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
+    for (const [from, seed] of [
+      [back, P1_FLEET_SEED],
+      [bob, P2_FLEET_SEED],
+    ] as const) {
+      expect(await send(from, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements(placedFleet(seed)) })).toEqual({
+        ok: true,
+      });
+    }
+  });
+
+  it('tells the opponent when a seat drops in placement and when it comes back, with the forfeit time left', async () => {
+    await start();
+    const { p1, p2, sessions } = await seatedPlayers();
+    p2.socket.close();
+    expect((await p1.inbox.state()).opponent).toEqual({
+      seat: SEATS.P2,
+      nickname: 'Bob',
+      isConnected: false,
+      forfeitRemainingMs: DISCONNECT_FORFEIT_MS,
+    });
+
+    clock.advance(DISCONNECT_FORFEIT_MS - 1);
+    const back = await player(sessions.P2);
+    expect((await back.inbox.state()).me).toMatchObject({ seat: SEATS.P2, isConnected: true });
+    expect((await p1.inbox.state()).opponent).toMatchObject({ isConnected: true, forfeitRemainingMs: null });
+    clock.advance(10 * DISCONNECT_FORFEIT_MS);
+    expect(await send(back, CLIENT_EVENTS.CONFIRM_PLACEMENT, {})).toEqual({
+      ok: false,
+      error: ERROR_CODES.INVALID_PLACEMENT,
+    });
+  });
+
+  it('starts the match paused when a player is away at the second confirmation', async () => {
+    await start();
+    const { p1, p2, roomId } = await seatedPlayers();
+    for (const [from, seed] of [
+      [p1, P1_FLEET_SEED],
+      [p2, P2_FLEET_SEED],
+    ] as const) {
+      await send(from, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements(placedFleet(seed)) });
+    }
+    await send(p1, CLIENT_EVENTS.CONFIRM_PLACEMENT, {});
+    await p2.inbox.states(3);
+    await drop(p1, roomId, SEATS.P1);
+    await p2.inbox.state();
+
+    await send(p2, CLIENT_EVENTS.CONFIRM_PLACEMENT, {});
+    expect(await p2.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.IN_PROGRESS,
+      opponent: { isConnected: false, forfeitRemainingMs: DISCONNECT_FORFEIT_MS },
+      battle: { isPaused: true },
+    });
+  });
+
+  it('shows a player away at game over without a forfeit clock, and keeps their seat until the TTL', async () => {
+    await start();
+    const { p1, p2, roomId, sessions } = await startedMatch();
+    await playToVictory(p1, p2);
+    await skipToState(p1.inbox, (snapshot) => snapshot.phase === ROOM_PHASES.GAME_OVER);
+    p2.socket.close();
+    expect(await p1.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.GAME_OVER,
+      opponent: { isConnected: false, forfeitRemainingMs: null },
+    });
+
+    // Past the forfeit time, but the game-over TTL is shorter: the seat is still P2's until the room expires.
+    clock.advance(GAME_OVER_TTL_MS - 1);
+    expect(rooms.get(roomId)?.disconnectedAt.P2).not.toBeNull();
+    const back = await player(sessions.P2);
+    expect((await back.inbox.state()).gameOver?.reason).toBe(GAME_OVER_REASONS.FLEET_DESTROYED);
+    expect((await p1.inbox.state()).opponent).toMatchObject({ isConnected: true });
+  });
+});
+
+describe('SET_PAUSED', () => {
+  it('is refused with NOT_ALLOWED while the opponent is connected, and WRONG_PHASE outside a match', async () => {
+    await start();
+    const { p1 } = await seatedPlayers();
+    expect(await send(p1, CLIENT_EVENTS.SET_PAUSED, { isPaused: true })).toEqual({
+      ok: false,
+      error: ERROR_CODES.WRONG_PHASE,
+    });
+    await start();
+    const match = await startedMatch();
+    for (const isPaused of [true, false]) {
+      expect(await send(match.p1, CLIENT_EVENTS.SET_PAUSED, { isPaused })).toEqual({
+        ok: false,
+        error: ERROR_CODES.NOT_ALLOWED,
+      });
+    }
+  });
+
+  it('lets the connected player resume and pause again while the opponent is away', async () => {
+    await start();
+    const { p1, p2 } = await startedMatch();
+    p2.socket.close();
+    expect((await p1.inbox.state()).battle?.isPaused).toBe(true);
+
+    for (const isPaused of [false, true]) {
+      await sendOnTimeline(p1, CLIENT_EVENTS.SET_PAUSED, { isPaused });
+      expect(await p1.inbox.ack()).toEqual({ ok: true });
+      expect(await p1.inbox.state()).toMatchObject({ battle: { isPaused }, opponent: { isConnected: false } });
+    }
+    // A resumed match still plays: the turn is P1's, and only the turn timer (#30) would stop while paused.
+    await send(p1, CLIENT_EVENTS.SET_PAUSED, { isPaused: false });
+    await p1.inbox.state();
+    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
+  });
+});
+
+describe('disconnect forfeit', () => {
+  it.each([
+    ['paused', false],
+    ['resumed by the connected player', true],
+  ] as const)(
+    'ends a match %s with DISCONNECT_FORFEIT DISCONNECT_FORFEIT_MS after the drop',
+    async (_label, isResumed) => {
+      await start();
+      const { p1, p2, roomId, sessions } = await startedMatch();
+      p2.socket.close();
+      await p1.inbox.state();
+      if (isResumed) {
+        clock.advance(10_000);
+        await send(p1, CLIENT_EVENTS.SET_PAUSED, { isPaused: false });
+        expect((await p1.inbox.state()).opponent?.forfeitRemainingMs).toBe(DISCONNECT_FORFEIT_MS - 10_000);
+      }
+
+      clock.advance(DISCONNECT_FORFEIT_MS - (isResumed ? 10_000 : 0) - 1);
+      expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.IN_PROGRESS);
+      clock.advance(1);
+      expect(await p1.inbox.state()).toMatchObject({
+        phase: ROOM_PHASES.GAME_OVER,
+        gameOver: { winner: SEATS.P1, reason: GAME_OVER_REASONS.DISCONNECT_FORFEIT },
+        opponent: { isConnected: false, forfeitRemainingMs: null },
+      });
+
+      // The loser can still come back to see the result until the room expires.
+      const back = await player(sessions.P2);
+      expect((await back.inbox.state()).gameOver).toMatchObject({
+        winner: SEATS.P1,
+        reason: GAME_OVER_REASONS.DISCONNECT_FORFEIT,
+      });
+      await expectNothingPending(back);
+    },
+  );
+
+  it('stops when the player comes back in time', async () => {
+    await start();
+    const { p1, p2, roomId, sessions } = await startedMatch();
+    p2.socket.close();
+    await p1.inbox.state();
+    clock.advance(DISCONNECT_FORFEIT_MS - 1);
+    await player(sessions.P2);
+    await p1.inbox.state();
+    clock.advance(10 * DISCONNECT_FORFEIT_MS);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.IN_PROGRESS);
+  });
+
+  it('sends the other player back to WAITING_FOR_OPPONENT when a seat is forfeited before the match', async () => {
+    await start();
+    const { p1, p2, roomId, sessions } = await seatedPlayers();
+    await send(p2, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements(placedFleet(P2_FLEET_SEED)) });
+    await p2.inbox.state();
+    await p1.inbox.state();
+    p1.socket.close();
+    await p2.inbox.state();
+
+    clock.advance(DISCONNECT_FORFEIT_MS);
+    expect(await p2.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
+      me: { seat: SEATS.P2, nickname: 'Bob', isConnected: true },
+      opponent: null,
+      rules: DEFAULT_RULES,
+      placement: null,
+    });
+    expect(await refusedHandshake({ protocolVersion: PROTOCOL_VERSION, session: sessions.P1 })).toBe(
+      ERROR_CODES.SESSION_INVALID,
+    );
+
+    // The free seat is P1's: the next joiner takes it, and placement starts over.
+    const carol = await player();
+    expect(await send(carol, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Carol' })).toMatchObject({ ok: true });
+    expect(await carol.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.PLACEMENT,
+      me: { seat: SEATS.P1, nickname: 'Carol' },
+      opponent: { seat: SEATS.P2, nickname: 'Bob' },
+      placement: { myShips: [] },
+    });
+    expect(await p2.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.PLACEMENT,
+      opponent: { seat: SEATS.P1, nickname: 'Carol' },
+      placement: { myShips: [] },
+    });
+  });
+});
+
+describe('LEAVE_ROOM', () => {
+  it('frees the seat at once before the match: the other player waits again, and the session is gone', async () => {
+    await start();
+    const { p1, p2, sessions } = await seatedPlayers();
+    await sendOnTimeline(p2, CLIENT_EVENTS.LEAVE_ROOM, {});
+    expect(await p2.inbox.ack()).toEqual({ ok: true });
+    expect(await p1.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
+      me: { seat: SEATS.P1 },
+      opponent: null,
+    });
+
+    // The leaver's socket has no seat any more, and its session no longer opens one.
+    expect(await send(p2, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [] })).toEqual({
+      ok: false,
+      error: ERROR_CODES.NOT_ALLOWED,
+    });
+    expect(await refusedHandshake({ protocolVersion: PROTOCOL_VERSION, session: sessions.P2 })).toBe(
+      ERROR_CODES.SESSION_INVALID,
+    );
+    await expectNothingPending(p2);
+    await expectNothingPending(p1);
+  });
+
+  it('closes a waiting room its creator leaves', async () => {
+    await start();
+    const alice = await player();
+    const { roomId } = (await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
+    await alice.inbox.state();
+    expect(await send(alice, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: true });
+    expect(rooms.get(roomId)).toBeUndefined();
+    expect(rooms.size).toBe(0);
+    const bob = await player();
+    expect(await send(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' })).toEqual({
+      ok: false,
+      error: ERROR_CODES.ROOM_NOT_FOUND,
+    });
+    await expectNothingPending(alice);
+  });
+
+  it('is refused with NOT_ALLOWED without a seat, during the match and at game over', async () => {
+    await start();
+    expect(await send(await player(), CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({
+      ok: false,
+      error: ERROR_CODES.NOT_ALLOWED,
+    });
+    const { p1, p2, roomId } = await startedMatch();
+    expect(await send(p1, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
+    await playToVictory(p1, p2);
+    expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.GAME_OVER);
   });
 });

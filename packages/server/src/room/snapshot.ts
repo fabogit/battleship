@@ -12,6 +12,7 @@ import {
   type Seat,
 } from '@battleship/core';
 
+import { forfeitDeadline } from './presence.js';
 import { type BattleRoom, type GameOverRoom, type PlacementRoom, type RoomPlayer, type RoomState } from './room.js';
 
 /**
@@ -36,8 +37,8 @@ export function projectSnapshot(state: RoomState, seat: Seat, now: number): Play
   return {
     roomId: state.roomId,
     phase: state.phase,
-    me: toPlayerView(seat, me),
-    opponent: opponent === null ? null : toPlayerView(opponentSeat, opponent),
+    me: toPlayerView(state, seat, me, now),
+    opponent: opponent === null ? null : toPlayerView(state, opponentSeat, opponent, now),
     rules: state.rules,
     rulesVersion: state.rulesVersion,
     hasConfirmedRules: { me: haveRulesBeenAgreed, opponent: haveRulesBeenAgreed },
@@ -48,13 +49,22 @@ export function projectSnapshot(state: RoomState, seat: Seat, now: number): Play
 }
 
 /**
- * Shows a seated player without their secret.
+ * Shows a seated player without their secret, with their presence (docs/server.md#seat-presence).
+ * @param state The room, for the seat's presence and the phase.
  * @param seat Where the player sits: `RoomPlayer` does not store it, `players` is keyed by it.
  * @param player The server's record of the player, secret included.
- * @returns The public view. Every seated player counts as connected until disconnections are tracked (#23).
+ * @param now Current time in epoch ms.
+ * @returns The public view. `forfeitRemainingMs` is set while the player is away, except in `GAME_OVER`, where nothing
+ * is forfeited any more.
  */
-function toPlayerView(seat: Seat, player: RoomPlayer): PlayerView {
-  return { seat, nickname: player.nickname, isConnected: true, forfeitRemainingMs: null };
+function toPlayerView(state: RoomState, seat: Seat, player: RoomPlayer, now: number): PlayerView {
+  const deadline = forfeitDeadline(state, seat);
+  return {
+    seat,
+    nickname: player.nickname,
+    isConnected: state.disconnectedAt[seat] === null,
+    forfeitRemainingMs: deadline === null ? null : Math.max(0, deadline - now),
+  };
 }
 
 /**
@@ -78,7 +88,8 @@ function toPlacementSnapshot(state: PlacementRoom, seat: Seat, now: number): Pla
  * opponent's board (ADR-0034), never the opponent's ships.
  * @param state The room in `IN_PROGRESS`.
  * @param seat The receiver.
- * @returns The battle part. `turnRemainingMs` stays `null` and `afkCount` zero until the turn timer lands (#30).
+ * @returns The battle part. `turnRemainingMs` stays `null` and `afkCount` zero until the turn timer lands (#30); `isPaused`
+ * is the room's, though no timer is frozen yet.
  */
 function toBattleSnapshot(state: BattleRoom, seat: Seat): BattleSnapshot {
   const { boards, currentTurn } = state.battle;
@@ -90,7 +101,7 @@ function toBattleSnapshot(state: BattleRoom, seat: Seat): BattleSnapshot {
     shotsAllowed: shotsAllowed(state.battle, state.rules),
     myDraftTargets: seat === currentTurn ? state.draftTargets : [],
     turnRemainingMs: null,
-    isPaused: false,
+    isPaused: state.isPaused,
     afkCount: { me: 0, opponent: 0 },
   };
 }

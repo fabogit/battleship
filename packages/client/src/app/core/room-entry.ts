@@ -49,7 +49,7 @@ export class RoomEntryService {
   }
 
   /**
-   * Takes the free seat of a waiting room as `P2`.
+   * Takes the free seat of a waiting room: `P2`, or `P1` when the creator left before the match (ADR-0073).
    * @param roomId The id from the room link, already checked with core's `isRoomId`.
    * @param nickname The player's nickname, already trimmed and checked with core's `parseNickname`.
    * @returns The room's id, or why the seat was refused (`ROOM_NOT_FOUND`, `ROOM_FULL`).

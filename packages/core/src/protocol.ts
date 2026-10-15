@@ -134,7 +134,7 @@ export interface CreateRoomPayload {
   readonly nickname: string;
 }
 
-/** `JOIN_ROOM`: seats the sender as `P2` in a waiting room. */
+/** `JOIN_ROOM`: seats the sender in the free seat of a waiting room, `P2` unless the creator left (ADR-0073). */
 export interface JoinRoomPayload {
   /** The id from the shared `/r/<roomId>` link. */
   readonly roomId: string;
@@ -275,13 +275,16 @@ export interface PerPlayer<T> {
 
 /** What a snapshot shows about one seated player. */
 export interface PlayerView {
-  /** `P1` for the creator, `P2` for the joiner. */
+  /** `P1` for the creator, `P2` for the joiner; a joiner takes `P1` when the creator left before the match (ADR-0073). */
   readonly seat: Seat;
   /** Trimmed by the guard; rendered as text only. */
   readonly nickname: string;
-  /** Whether a socket is bound to the seat right now. */
+  /** Whether a socket is bound to the seat right now (ADR-0072). */
   readonly isConnected: boolean;
-  /** Time left before the seat is forfeited (`DISCONNECT_FORFEIT_MS` from the disconnection); `null` while connected. */
+  /**
+   * Time left before the seat is forfeited (`DISCONNECT_FORFEIT_MS` from the disconnection); `null` while connected, and
+   * in `GAME_OVER`, where nothing is forfeited.
+   */
   readonly forfeitRemainingMs: number | null;
 }
 
@@ -313,7 +316,10 @@ export interface BattleSnapshot {
   readonly myDraftTargets: readonly Coordinate[];
   /** Time left in the current turn; `null` before the first turn starts, while the dice animation plays. */
   readonly turnRemainingMs: number | null;
-  /** Whether the turn timer is frozen because a player is disconnected (ADR-0008). */
+  /**
+   * Whether the turn timer is frozen: set when a player disconnects, cleared when both are back, switched by
+   * `SET_PAUSED` in between (ADR-0008, ADR-0074). Shots are still allowed while paused.
+   */
   readonly isPaused: boolean;
   /** Turns each player timed out in a row; `MAX_CONSECUTIVE_AFK_TURNS` forfeits (ADR-0009). */
   readonly afkCount: PerPlayer<number>;

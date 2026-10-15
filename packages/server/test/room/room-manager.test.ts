@@ -1,6 +1,7 @@
 import {
   CLIENT_EVENTS,
   createSeededRng,
+  DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   MAX_ROOMS,
   parseSessionCredentials,
@@ -91,7 +92,7 @@ describe('RoomManager', () => {
       expect.fail(created.error);
     }
     const joined = rooms.joinRoom({ roomId: created.roomId, nickname: 'Bob' }, NOW);
-    expect(joined).toMatchObject({ ok: true, state: { phase: ROOM_PHASES.PLACEMENT } });
+    expect(joined).toMatchObject({ ok: true, seat: SEATS.P2, state: { phase: ROOM_PHASES.PLACEMENT } });
     if (!joined.ok) {
       expect.fail(joined.error);
     }
@@ -141,5 +142,56 @@ describe('RoomManager', () => {
     );
     expect(refused).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
     expect(rooms.get(created.roomId)).toBe(stored);
+  });
+
+  it('records presence changes and reports only real ones', () => {
+    const rooms = manager();
+    const created = rooms.createRoom({ nickname: 'Alice' });
+    if (!created.ok) {
+      expect.fail(created.error);
+    }
+    const { roomId } = created;
+    expect(rooms.setPresence(roomId, SEATS.P1, true, NOW)).toBeUndefined();
+    expect(rooms.setPresence(roomId, SEATS.P1, false, NOW)?.disconnectedAt.P1).toBe(NOW);
+    expect(rooms.setPresence(roomId, SEATS.P1, false, NOW + 1)).toBeUndefined();
+    expect(rooms.get(roomId)?.disconnectedAt.P1).toBe(NOW);
+    expect(rooms.nextForfeit(roomId)).toEqual({ seat: SEATS.P1, at: NOW + DISCONNECT_FORFEIT_MS });
+    expect(rooms.setPresence(roomId, SEATS.P1, true, NOW + 2)?.disconnectedAt.P1).toBeNull();
+    expect(rooms.nextForfeit(roomId)).toBeUndefined();
+    expect(rooms.setPresence(UNKNOWN_ROOM_ID, SEATS.P1, false, NOW)).toBeUndefined();
+  });
+
+  it('runs a forfeit only once it is due, and removes a room nobody is left in', () => {
+    const rooms = manager();
+    const created = rooms.createRoom({ nickname: 'Alice' });
+    if (!created.ok) {
+      expect.fail(created.error);
+    }
+    const { roomId } = created;
+    rooms.setPresence(roomId, SEATS.P1, false, NOW);
+    expect(rooms.forfeitDue(roomId, NOW + DISCONNECT_FORFEIT_MS - 1)).toBeUndefined();
+    expect(rooms.forfeitDue(roomId, NOW + DISCONNECT_FORFEIT_MS)).toEqual({ seat: SEATS.P1, state: null });
+    expect(rooms.get(roomId)).toBeUndefined();
+    expect(rooms.size).toBe(0);
+  });
+
+  it('frees a seat on leave, seats the next joiner there, and removes the room once empty', () => {
+    const rooms = manager();
+    const created = rooms.createRoom({ nickname: 'Alice' });
+    if (!created.ok) {
+      expect.fail(created.error);
+    }
+    const { roomId } = created;
+    rooms.joinRoom({ roomId, nickname: 'Bob' }, NOW);
+    expect(rooms.leave(roomId, SEATS.P1)).toMatchObject({
+      ok: true,
+      state: { phase: ROOM_PHASES.WAITING_FOR_OPPONENT, players: { P1: null } },
+    });
+    expect(rooms.findSeat({ roomId, playerSecret: created.playerSecret })).toBeUndefined();
+    expect(rooms.joinRoom({ roomId, nickname: 'Carol' }, NOW)).toMatchObject({ ok: true, seat: SEATS.P1 });
+    expect(rooms.leave(roomId, SEATS.P1)).toMatchObject({ ok: true });
+    expect(rooms.leave(roomId, SEATS.P2)).toEqual({ ok: true, state: null });
+    expect(rooms.get(roomId)).toBeUndefined();
+    expect(rooms.leave(roomId, SEATS.P2)).toEqual({ ok: false, error: ERROR_CODES.ROOM_NOT_FOUND });
   });
 });

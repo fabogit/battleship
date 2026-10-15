@@ -82,6 +82,7 @@ describe('createRoom', () => {
       rules: DEFAULT_RULES,
       rulesVersion: 0,
       players: { P1: { nickname: 'Alice', playerSecret: P1_SECRET }, P2: null },
+      disconnectedAt: { P1: null, P2: null },
     });
   });
 });
@@ -334,6 +335,7 @@ describe('refusals', () => {
     { type: CLIENT_EVENTS.UNLOCK_PLACEMENT, seat: SEATS.P1, payload: {} },
     { type: CLIENT_EVENTS.UPDATE_TARGETS, seat: SEATS.P1, payload: { targets: [] } },
     { type: CLIENT_EVENTS.FIRE, seat: SEATS.P1, payload: { targets: [cell(0, 0)] } },
+    { type: CLIENT_EVENTS.SET_PAUSED, seat: SEATS.P1, payload: { isPaused: true } },
   ];
   const placementCommands = new Set<string>([
     CLIENT_EVENTS.UPDATE_PLACEMENT,

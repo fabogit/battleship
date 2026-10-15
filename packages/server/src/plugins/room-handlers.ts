@@ -2,7 +2,6 @@
 
 import {
   CLIENT_EVENTS,
-  EMPTY_ROOM_TTL_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
   PAYLOAD_PARSERS,
@@ -58,7 +57,10 @@ export const COMMAND_EVENTS: readonly CommandEvent[] = Object.values(CLIENT_EVEN
 export interface RoomHandlersOptions {
   /** The open rooms; one registry per server. */
   readonly rooms: RoomManager;
-  /** The time of each command, passed to room logic and the snapshot projection, and the room TTLs (ADR-0065). */
+  /**
+   * The time of each command, passed to room logic and the snapshot projection, and the room timers: the disconnect
+   * forfeit and the game-over TTL (ADR-0065).
+   */
   readonly clock: Clock;
 }
 
@@ -69,20 +71,34 @@ interface CommandContext {
   /** Current time in epoch ms. */
   readonly now: () => number;
   /**
-   * Brings a room's TTL timers in line with its phase and its sockets; called after every change to either, a session
-   * resumed at the handshake included.
-   * @param roomId The room that changed; an id no room has is ignored.
+   * Brings a room's timers in line with its stored state: the forfeit of the seat away longest, and the game-over TTL;
+   * called after every change to its phase or its seats' presence.
+   * @param roomId The room that changed; an id no room has stops whatever timers it had left.
    */
-  readonly reviewLifetime: (roomId: string) => void;
+  readonly reviewTimers: (roomId: string) => void;
+  /**
+   * Compares each seat of a room with the sockets bound to it and records every seat that dropped or came back
+   * (ADR-0072); when one did, every socket of the room gets `STATE` and the timers are reviewed.
+   * @param roomId The room whose sockets changed; an id no room has is ignored.
+   * @returns Whether a seat's presence changed, so `STATE` went out.
+   */
+  readonly syncPresence: (roomId: string) => boolean;
+  /**
+   * Removes a room nobody is left in (ADR-0073) and logs it as "Room closed".
+   * @param roomId The room to remove.
+   * @param reason What freed its last seat, for the log: `LEAVE_ROOM` or `DISCONNECT_FORFEIT`.
+   */
+  readonly closeRoom: (roomId: string, reason: string) => void;
 }
 
 /**
  * Listens to every command on every socket (docs/server.md#socket-handlers). A payload that fails its core guard is
  * refused with `INVALID_PAYLOAD` before room logic sees it; a command sent without an ack callback is ignored. An
  * accepted command is acked first, then its effects (`SHOT_RESOLVED`) go to the room and each seated socket gets its
- * own `STATE` projection (ADR-0047). Rooms expire here too (docs/server.md#room-lifecycle, ADR-0065): one no socket
- * sits in after `EMPTY_ROOM_TTL_MS`, one in `GAME_OVER` after `GAME_OVER_TTL_MS`; the sockets still in it lose their
- * seat.
+ * own `STATE` projection (ADR-0047). Seat presence is tracked here too (docs/server.md#seat-presence, ADR-0072): a
+ * seat with no socket bound to it is away, its forfeit clock runs as a room timer, and every socket of the room gets
+ * `STATE` when a seat drops or comes back. A room in `GAME_OVER` expires after `GAME_OVER_TTL_MS`, and one nobody is
+ * left in closes (docs/server.md#room-lifecycle); the sockets still in it lose their seat.
  */
 export default fp<RoomHandlersOptions>(
   (app, { rooms, clock }, done) => {
@@ -90,37 +106,72 @@ export default fp<RoomHandlersOptions>(
     const timers = new RoomTimers(clock);
 
     /**
-     * Removes a room whose TTL ran out and unbinds the sockets still in it, so that a later room drawing the same id
-     * never reaches them.
+     * Removes a room and unbinds the sockets still in it, so that a later room drawing the same id never reaches them.
      * @param roomId The room to remove.
-     * @param reason The timer that ran out, for the log.
      */
-    const expire = (roomId: string, reason: string): void => {
+    const removeRoom = (roomId: string): void => {
       rooms.remove(roomId);
       timers.stopRoom(roomId);
-      for (const socketId of io.sockets.adapter.rooms.get(roomId) ?? []) {
-        const peer = io.sockets.sockets.get(socketId);
-        if (peer?.data.binding?.roomId === roomId) {
+      for (const peer of socketsIn(io, roomId)) {
+        if (peer.data.binding?.roomId === roomId) {
           delete peer.data.binding;
         }
       }
       io.in(roomId).socketsLeave(roomId);
+    };
+
+    /**
+     * Removes a room whose TTL ran out.
+     * @param roomId The room to remove.
+     * @param reason The timer that ran out, for the log.
+     */
+    const expire = (roomId: string, reason: string): void => {
+      removeRoom(roomId);
       app.log.info({ roomId, reason, roomCount: rooms.size }, 'Room expired');
     };
 
-    const reviewLifetime = (roomId: string): void => {
+    const closeRoom = (roomId: string, reason: string): void => {
+      removeRoom(roomId);
+      app.log.info({ roomId, reason, roomCount: rooms.size }, 'Room closed');
+    };
+
+    /**
+     * Runs a room's forfeit when its timer fires: the seat is freed before the match, or loses it (ADR-0072).
+     * @param roomId The room whose `DISCONNECT_FORFEIT` timer ran out.
+     */
+    const forfeit = (roomId: string): void => {
+      const at = clock.now();
+      const before = rooms.get(roomId);
+      const forfeited = rooms.forfeitDue(roomId, at);
+      if (forfeited === undefined) {
+        reviewTimers(roomId);
+        return;
+      }
+      app.log.info({ roomId, seat: forfeited.seat }, 'Seat forfeited');
+      if (forfeited.state === null) {
+        closeRoom(roomId, ROOM_TIMER_KINDS.DISCONNECT_FORFEIT);
+        return;
+      }
+      if (forfeited.state.phase !== before?.phase) {
+        app.log.info({ roomId, phase: forfeited.state.phase }, 'Room phase changed');
+      }
+      sendState(io, forfeited.state, at);
+      reviewTimers(roomId);
+    };
+
+    const reviewTimers = (roomId: string): void => {
       const room = rooms.get(roomId);
       if (room === undefined) {
         timers.stopRoom(roomId);
         return;
       }
-      // The empty-room TTL counts from the moment the last socket left: a later departure does not restart it.
-      const isEmpty = (io.sockets.adapter.rooms.get(roomId)?.size ?? 0) === 0;
-      if (!isEmpty) {
-        timers.stop(roomId, ROOM_TIMER_KINDS.EMPTY_ROOM);
-      } else if (!timers.isRunning(roomId, ROOM_TIMER_KINDS.EMPTY_ROOM)) {
-        timers.start(roomId, ROOM_TIMER_KINDS.EMPTY_ROOM, clock.now() + EMPTY_ROOM_TTL_MS, () => {
-          expire(roomId, ROOM_TIMER_KINDS.EMPTY_ROOM);
+      // The deadline is stored with the room, so starting it again on every review lands on the same time.
+      const pending = rooms.nextForfeit(roomId);
+      if (pending === undefined) {
+        timers.stop(roomId, ROOM_TIMER_KINDS.DISCONNECT_FORFEIT);
+      } else {
+        timers.start(roomId, ROOM_TIMER_KINDS.DISCONNECT_FORFEIT, pending.at, () => {
+          forfeit(roomId);
         });
       }
       // The game-over TTL counts from the end of the match; leaving `GAME_OVER` (a rematch, #36) stops it.
@@ -133,7 +184,26 @@ export default fp<RoomHandlersOptions>(
       }
     };
 
-    const context: CommandContext = { rooms, now: () => clock.now(), reviewLifetime };
+    const syncPresence = (roomId: string): boolean => {
+      const at = clock.now();
+      let changed: RoomState | undefined;
+      for (const seat of Object.values(SEATS)) {
+        const isConnected = isSeatConnected(io, roomId, seat);
+        const next = rooms.setPresence(roomId, seat, isConnected, at);
+        if (next !== undefined) {
+          changed = next;
+          app.log.info({ roomId, seat }, isConnected ? 'Seat reconnected' : 'Seat disconnected');
+        }
+      }
+      if (changed === undefined) {
+        return false;
+      }
+      sendState(io, changed, at);
+      reviewTimers(roomId);
+      return true;
+    };
+
+    const context: CommandContext = { rooms, now: () => clock.now(), reviewTimers, syncPresence, closeRoom };
     io.on('connection', (socket) => {
       listenToCommands(io, socket, app.log.child({ socketId: socket.id }), context);
     });
@@ -152,13 +222,13 @@ export default fp<RoomHandlersOptions>(
  * @param io The server, to reach the other socket of a room.
  * @param socket The new connection.
  * @param log The socket's logger, carrying its `socketId`.
- * @param context The registry, the clock and the TTL review.
+ * @param context The registry, the clock, the timer review, seat presence and room closing.
  */
 function listenToCommands(
   io: GameServer,
   socket: GameSocket,
   log: FastifyBaseLogger,
-  { rooms, now, reviewLifetime }: CommandContext,
+  { rooms, now, reviewTimers, syncPresence, closeRoom }: CommandContext,
 ): void {
   /**
    * Logs a refused command and sends the error back. The violation of `INVALID_PLACEMENT` and `INVALID_TARGETS` is
@@ -178,8 +248,8 @@ function listenToCommands(
 
   /**
    * Binds the socket to a seat and moves it into the room's Socket.io room, leaving the room it sat in before, if any
-   * (ADR-0045). The seat it leaves stays taken: freeing seats arrives with #23. Both rooms' TTLs are reviewed: the
-   * one left may now be empty.
+   * (ADR-0045). The seat it leaves stays taken, and is away once no other socket is bound to it, as after a
+   * disconnection (ADR-0072): its stored session can still bring it back.
    * @param roomId The room the socket now plays in.
    * @param seat Its seat there.
    */
@@ -187,11 +257,10 @@ function listenToCommands(
     const previous = socket.data.binding;
     if (previous !== undefined) {
       void socket.leave(previous.roomId);
-      reviewLifetime(previous.roomId);
+      syncPresence(previous.roomId);
     }
     socket.data.binding = { roomId, seat };
     void socket.join(roomId);
-    reviewLifetime(roomId);
   };
 
   /**
@@ -223,9 +292,47 @@ function listenToCommands(
     }
     if (result.state.phase !== before?.phase) {
       log.info({ roomId: binding.roomId, phase: result.state.phase }, 'Room phase changed');
-      reviewLifetime(binding.roomId);
+      reviewTimers(binding.roomId);
     }
     sendState(io, result.state, at);
+  };
+
+  /**
+   * Frees the sender's seat (`LEAVE_ROOM`, docs/server.md#leaving): every socket bound to it loses it, since the
+   * secret that could bring it back is gone. The ack comes first, then the other player gets `STATE`; the leaver gets
+   * none. A room nobody is left in closes.
+   * @param reply The ack.
+   */
+  const leave = (reply: (response: AckResponse) => void): void => {
+    const binding = socket.data.binding;
+    if (binding === undefined) {
+      refuse(CLIENT_EVENTS.LEAVE_ROOM, reply, { error: ERROR_CODES.NOT_ALLOWED });
+      return;
+    }
+    const { roomId, seat } = binding;
+    const before = rooms.get(roomId);
+    const result = rooms.leave(roomId, seat);
+    if (!result.ok) {
+      refuse(CLIENT_EVENTS.LEAVE_ROOM, reply, result);
+      return;
+    }
+    for (const peer of socketsIn(io, roomId)) {
+      if (peer.data.binding?.roomId === roomId && peer.data.binding.seat === seat) {
+        delete peer.data.binding;
+        void peer.leave(roomId);
+      }
+    }
+    log.info({ roomId, seat }, 'Seat left');
+    reply({ ok: true });
+    if (result.state === null) {
+      closeRoom(roomId, CLIENT_EVENTS.LEAVE_ROOM);
+      return;
+    }
+    if (result.state.phase !== before?.phase) {
+      log.info({ roomId, phase: result.state.phase }, 'Room phase changed');
+    }
+    sendState(io, result.state, now());
+    reviewTimers(roomId);
   };
 
   /**
@@ -265,8 +372,8 @@ function listenToCommands(
         refuse(CLIENT_EVENTS.JOIN_ROOM, reply, result);
         return;
       }
-      bind(payload.roomId, SEATS.P2);
-      log.info({ roomId: payload.roomId, seat: SEATS.P2, phase: result.state.phase }, 'Room joined');
+      bind(payload.roomId, result.seat);
+      log.info({ roomId: payload.roomId, seat: result.seat, phase: result.state.phase }, 'Room joined');
       reply({ ok: true, playerSecret: result.playerSecret });
       sendState(io, result.state, at);
     },
@@ -299,10 +406,14 @@ function listenToCommands(
     FIRE: (payload, reply) => {
       dispatch(CLIENT_EVENTS.FIRE, reply, (seat) => ({ type: CLIENT_EVENTS.FIRE, seat, payload }));
     },
-    SET_PAUSED: notYetSupported(CLIENT_EVENTS.SET_PAUSED),
+    SET_PAUSED: (payload, reply) => {
+      dispatch(CLIENT_EVENTS.SET_PAUSED, reply, (seat) => ({ type: CLIENT_EVENTS.SET_PAUSED, seat, payload }));
+    },
     SURRENDER: notYetSupported(CLIENT_EVENTS.SURRENDER),
     REMATCH_CHOICE: notYetSupported(CLIENT_EVENTS.REMATCH_CHOICE),
-    LEAVE_ROOM: notYetSupported(CLIENT_EVENTS.LEAVE_ROOM),
+    LEAVE_ROOM: (_payload, reply) => {
+      leave(reply);
+    },
   };
 
   /**
@@ -320,16 +431,22 @@ function listenToCommands(
     handlers[event](parsed, reply);
   };
 
-  // A session resumed at the handshake has already put the socket in its room (ADR-0063): the room is no longer empty.
-  if (socket.data.binding !== undefined) {
-    reviewLifetime(socket.data.binding.roomId);
+  // The handshake's own `connection` listener ran first: a resumed session has put the socket in its room and
+  // replaced the sockets it took the seat from (ADR-0063). A seat coming back sends `STATE` to the whole room; a seat
+  // that never dropped (a zombie replaced) only needs one for the new socket.
+  const resumed = socket.data.binding;
+  if (resumed !== undefined && !syncPresence(resumed.roomId)) {
+    const state = rooms.get(resumed.roomId);
+    if (state !== undefined) {
+      socket.emit(SERVER_EVENTS.STATE, projectSnapshot(state, resumed.seat, now()));
+    }
   }
 
-  // Socket.io has already taken the socket out of its rooms here, so a room it leaves empty starts its TTL.
+  // Socket.io has already taken the socket out of its rooms here, so a seat it was the last socket of is away.
   socket.on('disconnect', () => {
     const binding = socket.data.binding;
     if (binding !== undefined) {
-      reviewLifetime(binding.roomId);
+      syncPresence(binding.roomId);
     }
   });
 
@@ -353,11 +470,33 @@ function listenToCommands(
  * @param sentAt Current time in epoch ms, for the remaining times.
  */
 function sendState(io: GameServer, state: RoomState, sentAt: number): void {
-  for (const socketId of io.sockets.adapter.rooms.get(state.roomId) ?? []) {
-    const peer = io.sockets.sockets.get(socketId);
-    const binding = peer?.data.binding;
-    if (peer !== undefined && binding?.roomId === state.roomId) {
+  for (const peer of socketsIn(io, state.roomId)) {
+    const binding = peer.data.binding;
+    if (binding?.roomId === state.roomId) {
       peer.emit(SERVER_EVENTS.STATE, projectSnapshot(state, binding.seat, sentAt));
     }
   }
+}
+
+/**
+ * Whether a seat is connected (ADR-0072): at least one socket in the room's Socket.io room is bound to it.
+ * @param io The server.
+ * @param roomId The room holding the seat, whose Socket.io room has the same name.
+ * @param seat Which of its two seats.
+ * @returns `false` for a seat whose last socket disconnected or moved to another room.
+ */
+function isSeatConnected(io: GameServer, roomId: string, seat: Seat): boolean {
+  return socketsIn(io, roomId).some((peer) => peer.data.binding?.roomId === roomId && peer.data.binding.seat === seat);
+}
+
+/**
+ * The sockets in a room's Socket.io room, copied, so the caller may move them out while walking the list.
+ * @param io The server.
+ * @param roomId The room, whose Socket.io room has the same name.
+ * @returns The connected sockets in it, in joining order.
+ */
+function socketsIn(io: GameServer, roomId: string): GameSocket[] {
+  return [...(io.sockets.adapter.rooms.get(roomId) ?? [])].flatMap(
+    (socketId) => io.sockets.sockets.get(socketId) ?? [],
+  );
 }

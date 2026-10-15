@@ -19,6 +19,15 @@ import {
 } from '@battleship/core';
 
 import {
+  disconnectSeat,
+  forfeitSeat,
+  leaveRoom,
+  nextForfeit,
+  reconnectSeat,
+  type LeftRoom,
+  type PendingForfeit,
+} from './presence.js';
+import {
   applyCommand,
   createRoom,
   type RejectedTransition,
@@ -54,8 +63,18 @@ export interface JoinedRoom {
   readonly ok: true;
   /** The joiner's secret, for the ack only. */
   readonly playerSecret: string;
+  /** The seat the joiner took: `P2`, or `P1` when the creator left before (ADR-0073). */
+  readonly seat: Seat;
   /** The room after the join, already stored. */
   readonly state: RoomState;
+}
+
+/** A forfeit that ran: which seat lost it, and the room after it. */
+export interface ForfeitedSeat {
+  /** The seat that stayed away for `DISCONNECT_FORFEIT_MS`. */
+  readonly seat: Seat;
+  /** The room after the forfeit, already stored, or `null` when nobody was left and the room was removed. */
+  readonly state: RoomState | null;
 }
 
 /**
@@ -126,10 +145,7 @@ export class RoomManager {
     if (state === undefined) {
       return undefined;
     }
-    const players: Readonly<Record<Seat, RoomPlayer | null>> = state.players;
-    const seat = Object.values(SEATS).find(
-      (candidate) => players[candidate]?.playerSecret === credentials.playerSecret,
-    );
+    const seat = seatOf(state, credentials.playerSecret);
     return seat === undefined ? undefined : { state, seat };
   }
 
@@ -177,8 +193,12 @@ export class RoomManager {
     if (!result.ok) {
       return result;
     }
+    const seat = seatOf(result.state, playerSecret);
+    if (seat === undefined) {
+      throw new Error(`The joiner of room ${payload.roomId} has no seat`);
+    }
     this.#rooms.set(payload.roomId, result.state);
-    return { ok: true, playerSecret, state: result.state };
+    return { ok: true, playerSecret, seat, state: result.state };
   }
 
   /**
@@ -200,4 +220,95 @@ export class RoomManager {
     }
     return result;
   }
+
+  /**
+   * Records whether a seat has a socket bound to it, as the socket layer counts them (ADR-0072).
+   * @param roomId The seat's room.
+   * @param seat The seat whose sockets changed.
+   * @param isConnected Whether at least one socket is bound to the seat now.
+   * @param now Current time in epoch ms; a drop starts the forfeit clock from it.
+   * @returns The stored room after the change, or `undefined` when the room is gone or its presence did not change.
+   */
+  setPresence(roomId: string, seat: Seat, isConnected: boolean, now: number): RoomState | undefined {
+    const room = this.#rooms.get(roomId);
+    if (room === undefined) {
+      return undefined;
+    }
+    const next = isConnected ? reconnectSeat(room, seat) : disconnectSeat(room, seat, now);
+    if (next === room) {
+      return undefined;
+    }
+    this.#rooms.set(roomId, next);
+    return next;
+  }
+
+  /**
+   * The forfeit a room waits for, which the socket layer schedules as a room timer (ADR-0072).
+   * @param roomId The room to look at; an unknown id has none.
+   * @returns The seat away longest with its deadline, or `undefined` when no forfeit clock runs.
+   */
+  nextForfeit(roomId: string): PendingForfeit | undefined {
+    const room = this.#rooms.get(roomId);
+    return (room === undefined ? null : nextForfeit(room)) ?? undefined;
+  }
+
+  /**
+   * Runs a room's next forfeit if it is due, storing the room after it or removing a room nobody is left in.
+   * @param roomId The room whose forfeit timer ran out.
+   * @param now Current time in epoch ms.
+   * @returns The forfeited seat and the room after it, or `undefined` when the room is gone or nothing is due.
+   */
+  forfeitDue(roomId: string, now: number): ForfeitedSeat | undefined {
+    const room = this.#rooms.get(roomId);
+    const due = room === undefined ? null : nextForfeit(room);
+    if (room === undefined || due === null || due.at > now) {
+      return undefined;
+    }
+    const state = forfeitSeat(room, due.seat);
+    this.#store(roomId, state);
+    return { seat: due.seat, state };
+  }
+
+  /**
+   * Frees a seated player's seat (`LEAVE_ROOM`), removing the room when nobody is left in it.
+   * @param roomId The sender's room, as the caller bound it to the socket.
+   * @param seat The sender's seat.
+   * @returns The room after the seat was freed (`null` once removed), `NOT_ALLOWED` once the match has started, or
+   * `ROOM_NOT_FOUND` when the room is gone.
+   */
+  leave(roomId: string, seat: Seat): LeftRoom | RejectedTransition {
+    const room = this.#rooms.get(roomId);
+    if (room === undefined) {
+      return { ok: false, error: ERROR_CODES.ROOM_NOT_FOUND };
+    }
+    const result = leaveRoom(room, seat);
+    if (result.ok) {
+      this.#store(roomId, result.state);
+    }
+    return result;
+  }
+
+  /**
+   * Stores a room's new state, or removes the room when a transition left nobody in it.
+   * @param roomId The room that changed.
+   * @param state Its new state, or `null` to remove it.
+   */
+  #store(roomId: string, state: RoomState | null): void {
+    if (state === null) {
+      this.#rooms.delete(roomId);
+    } else {
+      this.#rooms.set(roomId, state);
+    }
+  }
+}
+
+/**
+ * Finds the seat holding a secret.
+ * @param state The room, in any phase.
+ * @param playerSecret The secret to look for.
+ * @returns The seat, or `undefined` when no seated player holds it.
+ */
+function seatOf(state: RoomState, playerSecret: string): Seat | undefined {
+  const players: Readonly<Record<Seat, RoomPlayer | null>> = state.players;
+  return Object.values(SEATS).find((candidate) => players[candidate]?.playerSecret === playerSecret);
 }

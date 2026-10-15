@@ -53,19 +53,35 @@ interface RoomBase {
   readonly rules: GameRules;
   /** Bumped by every `UPDATE_RULES` once negotiation lands (#26); `0` until then. */
   readonly rulesVersion: number;
+  /**
+   * When each seat lost its last socket, in epoch ms; `null` while a socket is bound to it, and for an empty seat
+   * (docs/server.md#seat-presence, ADR-0072). The forfeit clock counts `DISCONNECT_FORFEIT_MS` from it in every phase
+   * but `GAME_OVER`. Room logic never sees sockets: the socket layer reports each change (`presence.ts`).
+   */
+  readonly disconnectedAt: Readonly<Record<Seat, number | null>>;
 }
 
-/** A room with only its creator seated. */
+/**
+ * A room with one seat taken: by its creator after `CREATE_ROOM`, or by the player left behind when the other freed
+ * their seat before the match (ADR-0073), who keeps the seat they had.
+ */
 export interface WaitingRoom extends RoomBase {
   /** Discriminant: one seat taken. */
   readonly phase: typeof ROOM_PHASES.WAITING_FOR_OPPONENT;
-  /** The seats, in the shape of the other phases' `players`. */
-  readonly players: {
-    /** The creator. */
-    readonly P1: RoomPlayer;
-    /** Empty until `JOIN_ROOM`. */
-    readonly P2: null;
-  };
+  /** The seats, in the shape of the other phases' `players`: exactly one is empty, and `JOIN_ROOM` fills it. */
+  readonly players:
+    | {
+        /** The creator, or a joiner whose opponent left. */
+        readonly P1: RoomPlayer;
+        /** Empty until `JOIN_ROOM`. */
+        readonly P2: null;
+      }
+    | {
+        /** Freed by a creator who left or forfeited; the next `JOIN_ROOM` takes it. */
+        readonly P1: null;
+        /** A joiner whose opponent left before the match. */
+        readonly P2: RoomPlayer;
+      };
 }
 
 /** A room where both players place their fleets. */
@@ -93,6 +109,12 @@ export interface BattleRoom extends RoomBase {
   readonly battle: Battle;
   /** The current turn's draft from `UPDATE_TARGETS`; cleared whenever the turn is fired. */
   readonly draftTargets: readonly Coordinate[];
+  /**
+   * Whether the turn timer is frozen (ADR-0008, ADR-0074): set when a seat loses its last socket, cleared when both
+   * are connected again, and switched by `SET_PAUSED` from the connected player while the opponent is away. Nothing
+   * else stops while paused: the forfeit clock runs and the active player may still fire.
+   */
+  readonly isPaused: boolean;
 }
 
 /** A room whose match has ended. */
@@ -105,9 +127,12 @@ export interface GameOverRoom extends RoomBase {
   readonly battle: Battle;
   /** The seat that sank the opponent's last ship. */
   readonly winner: Seat;
-  /** How the match ended; only `FLEET_DESTROYED` until surrender (#35), AFK (#30) and forfeit (#23) land. */
-  readonly reason: typeof GAME_OVER_REASONS.FLEET_DESTROYED;
+  /** How the match ended; surrender (#35) and AFK (#30) add their reasons when they land. */
+  readonly reason: GameOverRoomReason;
 }
+
+/** The ways a match can end so far: the last ship sunk, or a seat away for `DISCONNECT_FORFEIT_MS` (ADR-0072). */
+export type GameOverRoomReason = typeof GAME_OVER_REASONS.FLEET_DESTROYED | typeof GAME_OVER_REASONS.DISCONNECT_FORFEIT;
 
 /**
  * Everything the server keeps about one room, one variant per phase it can be in (ADR-0037). `RULES_NEGOTIATION`
@@ -121,7 +146,8 @@ export type SeatCommandEvent =
   | typeof CLIENT_EVENTS.CONFIRM_PLACEMENT
   | typeof CLIENT_EVENTS.UNLOCK_PLACEMENT
   | typeof CLIENT_EVENTS.UPDATE_TARGETS
-  | typeof CLIENT_EVENTS.FIRE;
+  | typeof CLIENT_EVENTS.FIRE
+  | typeof CLIENT_EVENTS.SET_PAUSED;
 
 /** The placement commands, handled by `applyPlacementCommand`. */
 type PlacementCommandEvent =
@@ -203,6 +229,9 @@ const EMPTY_FLEET: PlacementFleet = { ships: [], hasConfirmed: false };
 /** The seat that starts every match until the dice roll lands (#29). */
 const FIRST_SEAT: Seat = SEATS.P1;
 
+/** Both seats connected, or empty: no forfeit clock running. */
+const ALL_CONNECTED: Readonly<Record<Seat, number | null>> = { P1: null, P2: null };
+
 /**
  * Opens a room in `WAITING_FOR_OPPONENT` with `DEFAULT_RULES` and seats the creator as `P1` (`CREATE_ROOM`).
  * @param roomId A fresh id, unique among the open rooms; the caller generates it.
@@ -216,6 +245,7 @@ export function createRoom(roomId: string, creator: RoomPlayer): WaitingRoom {
     rules: DEFAULT_RULES,
     rulesVersion: 0,
     players: { P1: creator, P2: null },
+    disconnectedAt: ALL_CONNECTED,
   };
 }
 
@@ -242,28 +272,54 @@ export function applyCommand(state: RoomState, command: RoomCommand, now: number
       return state.phase === ROOM_PHASES.IN_PROGRESS
         ? applyBattleCommand(state, command)
         : reject(ERROR_CODES.WRONG_PHASE);
+    case CLIENT_EVENTS.SET_PAUSED:
+      return state.phase === ROOM_PHASES.IN_PROGRESS ? setPaused(state, command) : reject(ERROR_CODES.WRONG_PHASE);
   }
 }
 
 /**
- * Seats the joiner as `P2` and starts placement. A room with both seats taken is `ROOM_FULL` in every phase, so
- * `JOIN_ROOM` never answers `WRONG_PHASE`.
+ * Builds the room at the end of a match: both fleets are revealed from here on (docs/server.md#game-over--rematch).
+ * @param state The room in `IN_PROGRESS`.
+ * @param battle The final boards.
+ * @param winner The seat that won.
+ * @param reason How the match ended.
+ * @returns The room in `GAME_OVER`; seat presence carries over, but no forfeit clock runs in it.
+ */
+export function endMatch(state: BattleRoom, battle: Battle, winner: Seat, reason: GameOverRoomReason): GameOverRoom {
+  return {
+    phase: ROOM_PHASES.GAME_OVER,
+    roomId: state.roomId,
+    rules: state.rules,
+    rulesVersion: state.rulesVersion,
+    players: state.players,
+    disconnectedAt: state.disconnectedAt,
+    battle,
+    winner,
+    reason,
+  };
+}
+
+/**
+ * Seats the joiner in the free seat, `P2` unless the creator has left (ADR-0073), and starts placement. A room with
+ * both seats taken is `ROOM_FULL` in every phase, so `JOIN_ROOM` never answers `WRONG_PHASE`.
  * @param state The room the payload's `roomId` named, in any phase.
  * @param command The join, with the joiner's nickname and secret.
  * @param now Current time in epoch ms; the placement deadline counts from it.
- * @returns The room in `PLACEMENT`, or `ROOM_FULL`.
+ * @returns The room in `PLACEMENT`, or `ROOM_FULL`. A seated player who is away stays away, with their forfeit clock.
  */
 function joinRoom(state: RoomState, command: JoinRoomCommand, now: number): TransitionResult {
   if (state.phase !== ROOM_PHASES.WAITING_FOR_OPPONENT) {
     return reject(ERROR_CODES.ROOM_FULL);
   }
   const joiner: RoomPlayer = { nickname: command.payload.nickname, playerSecret: command.playerSecret };
+  const seated = state.players;
   return accept({
     phase: ROOM_PHASES.PLACEMENT,
     roomId: state.roomId,
     rules: state.rules,
     rulesVersion: state.rulesVersion,
-    players: { P1: state.players.P1, P2: joiner },
+    players: seated.P1 === null ? { P1: joiner, P2: seated.P2 } : { P1: seated.P1, P2: joiner },
+    disconnectedAt: state.disconnectedAt,
     fleets: { P1: EMPTY_FLEET, P2: EMPTY_FLEET },
     deadline: now + PLACEMENT_TIME_LIMIT_MS,
   });
@@ -346,25 +402,33 @@ function applyBattleCommand(
     { type: SERVER_EVENTS.SHOT_RESOLVED, payload: { shooter: command.seat, results: resolution.results } },
   ];
   if (resolution.winner !== null) {
-    return accept(
-      {
-        phase: ROOM_PHASES.GAME_OVER,
-        roomId: state.roomId,
-        rules: state.rules,
-        rulesVersion: state.rulesVersion,
-        players: state.players,
-        battle: resolution.battle,
-        winner: resolution.winner,
-        reason: GAME_OVER_REASONS.FLEET_DESTROYED,
-      },
-      effects,
-    );
+    return accept(endMatch(state, resolution.battle, resolution.winner, GAME_OVER_REASONS.FLEET_DESTROYED), effects);
   }
   return accept({ ...state, battle: resolution.battle, draftTargets: [] }, effects);
 }
 
 /**
- * Moves a room whose fleets are both confirmed into battle, with empty shot lists and `FIRST_SEAT` to fire.
+ * Pauses or resumes the match (`SET_PAUSED`, docs/server.md#disconnection--pause-in_progress): only while the sender's
+ * opponent is away, and the sender is connected since it sends. Asking for the state the match is already in is
+ * accepted and changes nothing, like a repeated confirm.
+ * @param state The room in `IN_PROGRESS`.
+ * @param command `SET_PAUSED`, with the wanted state.
+ * @returns The room with the new pause state, or `NOT_ALLOWED` while the opponent is connected.
+ */
+function setPaused(
+  state: BattleRoom,
+  command: Extract<SeatCommand, { type: typeof CLIENT_EVENTS.SET_PAUSED }>,
+): TransitionResult {
+  if (state.disconnectedAt[otherSeat(command.seat)] === null) {
+    return reject(ERROR_CODES.NOT_ALLOWED);
+  }
+  const { isPaused } = command.payload;
+  return accept(state.isPaused === isPaused ? state : { ...state, isPaused });
+}
+
+/**
+ * Moves a room whose fleets are both confirmed into battle, with empty shot lists and `FIRST_SEAT` to fire. A player
+ * who is away at that moment finds the match paused (docs/server.md#placement).
  * @param state The room in `PLACEMENT`, both fleets confirmed.
  * @returns The room in `IN_PROGRESS`.
  */
@@ -375,6 +439,7 @@ function startBattle(state: PlacementRoom): BattleRoom {
     rules: state.rules,
     rulesVersion: state.rulesVersion,
     players: state.players,
+    disconnectedAt: state.disconnectedAt,
     battle: {
       boards: {
         P1: { ships: state.fleets.P1.ships, shots: [] },
@@ -383,6 +448,7 @@ function startBattle(state: PlacementRoom): BattleRoom {
       currentTurn: FIRST_SEAT,
     },
     draftTargets: [],
+    isPaused: state.disconnectedAt.P1 !== null || state.disconnectedAt.P2 !== null,
   };
 }
 

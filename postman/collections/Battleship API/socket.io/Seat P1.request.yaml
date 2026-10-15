@@ -11,13 +11,20 @@ description: |-
      The second confirmation starts the match (`IN_PROGRESS`), `P1` first.
   4. `UPDATE_TARGETS` (optional draft) and `FIRE` from the seat whose turn it is; each `FIRE` sends `SHOT_RESOLVED`,
      then `STATE`, to both. Edit the target before firing again: a cell already shot is `INVALID_TARGETS`.
+  5. `SET_PAUSED` (P1) while P2 is connected: `NOT_ALLOWED`. Disconnect **Seat P2**: P1 gets a `STATE` with the
+     opponent away (`isConnected: false`, `forfeitRemainingMs`) and the match paused. Now `SET_PAUSED — resume`
+     and `SET_PAUSED` are accepted, each followed by a `STATE`. After 3 minutes P2's seat is forfeited:
+     `GAME_OVER` with reason `DISCONNECT_FORFEIT`.
+  6. `LEAVE_ROOM` (P1) during the match: `NOT_ALLOWED` (leaving a match is a surrender, #35).
+  7. `CREATE_ROOM` (P1) again: P1 moves to a new room. `LEAVE_ROOM` there frees the seat at once and closes
+     the room; before the match it sends the other player, if any, back to `WAITING_FOR_OPPONENT`.
 
   Every accepted command acks `{ "ok": true }` (plus credentials for `CREATE_ROOM` / `JOIN_ROOM`); a refused one
   `{ "ok": false, "error": "<ErrorCode>" }` and nothing else. `CREATE_ROOM — invalid payload` shows `INVALID_PAYLOAD`.
   The URL carries `protocolVersion` as a query parameter: Postman cannot send the handshake `auth` (ADR-0062).
   It cannot send a `session` either, so a reconnected Postman socket has no seat: reconnect means starting a new room.
-  The server answers `SERVER_FULL` while 50 rooms are open; a room nobody sits in closes after 5 minutes, a finished
-  one 2 minutes after game over. More than 20 messages in one second from one connection are refused with `RATE_LIMITED`.
+  A seat whose socket is gone is kept for 3 minutes, then forfeited; a room closes when its last player leaves or
+  forfeits, a finished one 2 minutes after game over. The server answers `SERVER_FULL` while 50 rooms are open. More than 20 messages in one second from one connection are refused with `RATE_LIMITED`.
   `packages/server/test/postman.test.ts` replays every saved message in this order inside `pnpm test`.
 url: '{{baseUrl}}?protocolVersion={{protocolVersion}}'
 events:

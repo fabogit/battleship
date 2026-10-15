@@ -1,0 +1,10 @@
+$kind: socket.io-message
+eventName: SET_PAUSED
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "isPaused": false
+      }
+    contentType: json
+order: 9000

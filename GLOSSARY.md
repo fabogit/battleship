@@ -11,8 +11,12 @@ A private space for exactly two players, shared via link (`/r/<roomId>`). It out
 _Avoid_: lobby (for the room itself), game
 
 **Seat**:
-One of the two public positions in a room: `P1` for the creator, `P2` for the joiner. A disconnected player keeps their seat for `DISCONNECT_FORFEIT_MS`.
+One of the two public positions in a room: `P1` for the creator, `P2` for the joiner. A player keeps their seat until they leave or forfeit it; a joiner takes whichever seat is free.
 _Avoid_: host, slot
+
+**Away**:
+A seat no connection is bound to: its player closed the tab, lost the network or moved to another room. An away seat is kept for `DISCONNECT_FORFEIT_MS`, then forfeited; a connection replaced by a newer one leaves its seat connected.
+_Avoid_: offline, absent
 
 **Nickname**:
 The name a player chooses before creating or joining a room; trimmed, non-empty, at most `NICKNAME_MAX_LENGTH` characters, rendered as text only.

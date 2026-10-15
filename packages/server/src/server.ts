@@ -67,7 +67,7 @@ export function createServer(options: ServerOptions): FastifyInstance {
   const rooms = options.rooms ?? new RoomManager();
   void app.register(socketIo, { isOriginAllowed, trustProxyHops });
   // Before every event plugin: the handshake middleware refuses outdated clients and binds sessions (ADR-0061).
-  void app.register(handshake, { rooms, now: () => clock.now() });
+  void app.register(handshake, { rooms });
   // Ahead of every event listener: Socket.io middlewares run before any of them sees a packet.
   void app.register(rateLimit, { clock });
   void app.register(echo);

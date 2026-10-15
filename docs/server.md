@@ -43,9 +43,10 @@ Behaviour of the game server, `packages/server`.
 ### Room creation & joining
 
 - `CREATE_ROOM` creates the room in `WAITING_FOR_OPPONENT` with `DEFAULT_RULES` and seats the creator as `P1`.
-- `JOIN_ROOM` seats the joiner as `P2` and moves to `RULES_NEGOTIATION`. Until rules negotiation lands (#26), it moves straight to `PLACEMENT` with `DEFAULT_RULES`.
+- `JOIN_ROOM` seats the joiner in the free seat and moves to `RULES_NEGOTIATION`. Until rules negotiation lands (#26), it moves straight to `PLACEMENT` with `DEFAULT_RULES`.
+  - The free seat is `P2`, unless the creator left or forfeited before the match: then the player left behind keeps `P2` and the joiner takes `P1` ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)).
   - Joining a full room → `ROOM_FULL`, in any phase (never `WRONG_PHASE`); unknown room (or lost after a restart) → `ROOM_NOT_FOUND`.
-- A seated player who disconnected keeps the seat for `DISCONNECT_FORFEIT_MS`. This covers the common mobile case: the creator switches app to share the link and the friend joins meanwhile.
+- A seated player who disconnected keeps the seat for `DISCONNECT_FORFEIT_MS` ([Seat presence](#seat-presence)). This covers the common mobile case: the creator switches app to share the link, the friend joins meanwhile and sees the creator away, and both carry on in `PLACEMENT` once the creator is back.
 
 ### Rules negotiation
 
@@ -62,7 +63,7 @@ Behaviour of the game server, `packages/server`.
 - When both are confirmed, a start countdown runs for `min(START_COUNTDOWN_MS, time to deadline)`. An unlock cancels it; a new double confirmation restarts it, still capped by the deadline.
 - At the deadline, every unconfirmed fleet is completed with `completeFleet` and locked.
 - On phase end: server dice roll → `DICE_ROLLED` → `IN_PROGRESS`. The first turn timer starts after `DICE_ANIMATION_MS`.
-- If a player is disconnected at that moment, the match starts paused (see below).
+- If a player is disconnected at that moment, the match starts paused (see below). Until the countdown lands, "that moment" is the second confirmation: a player can confirm, drop, and find the match started and paused.
 - Until the placement timer and the dice roll land (#28, #29), the deadline is only shown, never enforced, and the second confirmation starts the match at once with `P1` first.
 
 ### Turns
@@ -81,22 +82,27 @@ Behaviour of the game server, `packages/server`.
 
 ### Disconnection & pause (`IN_PROGRESS`)
 
-- When a player's socket drops, the match auto-pauses. A paused match freezes the turn timer with its remaining time.
-- `SET_PAUSED { isPaused }` is accepted **only from the connected player while the opponent is disconnected**.
+Decisions: [ADR-0008](adr/0008-disconnection-in-battle.md), [ADR-0072](adr/0072-seat-presence.md), [ADR-0074](adr/0074-pause.md).
+
+- When a seat loses its last socket, the match auto-pauses. A paused match freezes the turn timer with its remaining time, and nothing else: the active player may still update targets and fire.
+- `SET_PAUSED { isPaused }` is accepted **only from the connected player while the opponent is disconnected**; otherwise `NOT_ALLOWED` (the player who is away included), and `WRONG_PHASE` outside `IN_PROGRESS`. Asking for the state the match is already in is accepted and changes nothing.
 - While unpaused, timers run normally: the absent player's turns time out and count as AFK.
-- The forfeit clock (`DISCONNECT_FORFEIT_MS`, from the moment of disconnection) runs regardless of pause. On expiry → `GAME_OVER`, reason `DISCONNECT_FORFEIT`.
-- On reconnection the match resumes automatically with the remaining turn time.
+- The forfeit clock (`DISCONNECT_FORFEIT_MS`, from the moment of disconnection) runs regardless of pause. On expiry → `GAME_OVER`, reason `DISCONNECT_FORFEIT`, the opponent winning.
+- On reconnection the match resumes automatically with the remaining turn time, once both seats are connected; if the opponent is away too, it stays paused and the returning player may resume it.
+- Both players away: each seat has its own clock, so the first to have dropped forfeits and the other wins, connected or not ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)).
+- Until the turn timer lands (#30) no turn times out and `turnRemainingMs` is `null`: the pause is stored and projected (`isPaused`), but has no timer to freeze. #30 adds the turn timer as a room timer that pausing stops with its remaining time and resuming starts again ([ADR-0074](adr/0074-pause.md)).
 
 ### Disconnection in other phases
 
 - The seat is kept for `DISCONNECT_FORFEIT_MS`.
 - Placement timers keep running; auto-completion handles the absent player.
-- On seat expiry, the player is removed and the other player returns to `WAITING_FOR_OPPONENT`. Rules are kept; confirmations and fleets are cleared.
+- On seat expiry, the player is removed and the other player returns to `WAITING_FOR_OPPONENT`, in the seat they had. Rules are kept; confirmations and fleets are cleared. When nobody is left, the room closes ([Room lifecycle](#room-lifecycle)).
+- In `GAME_OVER` nothing is forfeited: the opponent still sees `isConnected`, `forfeitRemainingMs` is `null`, and the room lives by `GAME_OVER_TTL_MS`.
 
 ### Leaving
 
-- `LEAVE_ROOM` in a pre-game phase frees the seat immediately (same effect as seat expiry).
-- In `IN_PROGRESS`, `SURRENDER` and `LEAVE_ROOM` both end the match as `SURRENDER`.
+- `LEAVE_ROOM` in a pre-game phase frees the seat immediately (same effect as seat expiry): the leaver gets the ack and nothing more, every socket bound to the seat loses it, the session is no longer valid, and the other player gets `STATE`.
+- In `IN_PROGRESS`, `SURRENDER` and `LEAVE_ROOM` both end the match as `SURRENDER`. Until surrender lands (#35), `LEAVE_ROOM` there is `NOT_ALLOWED`; in `GAME_OVER` it is `NOT_ALLOWED` until the rematch flow (#36), where leaving is the `LEAVE` choice.
 
 ### Game over & rematch
 
@@ -108,22 +114,33 @@ Behaviour of the game server, `packages/server`.
 
 ### Room lifecycle
 
-Decision: [ADR-0065](adr/0065-clock-and-room-timers.md).
+Decisions: [ADR-0065](adr/0065-clock-and-room-timers.md), [ADR-0073](adr/0073-room-lifecycle-with-forfeits.md).
 
-- A room with no connected player is destroyed after `EMPTY_ROOM_TTL_MS`, counted from the moment its last socket left (disconnected, or moved to another room); a socket sitting in it again stops the count.
-- A room in `GAME_OVER` is destroyed after `GAME_OVER_TTL_MS`, counted from the end of the match, unless it leaves `GAME_OVER` first (a resolved rematch, #36). Connected players do not keep it.
-- Each TTL is a room timer (`RoomTimers`, one per room and kind) on the server's `Clock`. `room-handlers` reviews a room's timers after every change to its sockets (bind, move, session resumed at the handshake, disconnection) or its phase; when one runs out, the room leaves `RoomManager`, its other timers stop and the sockets still in it lose their seat, so a seated command gets `NOT_ALLOWED` and a later room with the same id never reaches them. Logged as "Room expired" with the `reason` (`EMPTY_ROOM`, `GAME_OVER`).
+- A room closes as soon as no seat holds a player: its last seat was freed by `LEAVE_ROOM` or by a forfeit. Logged as "Room closed" with the `reason` (`LEAVE_ROOM`, `DISCONNECT_FORFEIT`).
+- A room in `GAME_OVER` is destroyed after `GAME_OVER_TTL_MS`, counted from the end of the match, unless it leaves `GAME_OVER` first (a resolved rematch, #36). Connected players do not keep it. Logged as "Room expired" with the `reason` `GAME_OVER`.
+- A room nobody sits in has every seat away, so the forfeits resolve it: before the match it closes `DISCONNECT_FORFEIT_MS` after the last player dropped; during the match the first to have dropped forfeits within `DISCONNECT_FORFEIT_MS`, and the finished room expires `GAME_OVER_TTL_MS` later. There is no empty-room TTL: it could never fire first.
+- The forfeit and the TTL are room timers (`RoomTimers`, one per room and kind) on the server's `Clock`. `room-handlers` reviews a room's timers after every change to its phase or its seats' presence; when a room is removed, it leaves `RoomManager`, its other timers stop and the sockets still in it lose their seat, so a seated command gets `NOT_ALLOWED` and a later room with the same id never reaches them.
+
+### Seat presence
+
+Decision: [ADR-0072](adr/0072-seat-presence.md).
+
+- A seat is **connected** while at least one socket is bound to it and sits in the room's Socket.io room; it is **away** from the moment its last socket leaves: disconnected, or moved to another room by `CREATE_ROOM` or `JOIN_ROOM`. A socket replaced by a newer one (`SESSION_REPLACED`) is not its seat leaving: the new socket is already in the room when the old one is disconnected.
+- The room stores when each seat went away (`disconnectedAt`). The forfeit clock counts `DISCONNECT_FORFEIT_MS` from it, in every phase but `GAME_OVER`, as one `DISCONNECT_FORFEIT` room timer at the earliest deadline of the two seats.
+- A session resumed at the handshake brings the seat back: its forfeit clock stops and a paused match resumes once both seats are connected.
+- Every seat drop and return sends `STATE` to every socket of the room: the opponent sees `isConnected` and `forfeitRemainingMs` (`PlayerView`), and in battle `isPaused`. A rebound socket whose seat never dropped gets its own `STATE` only.
 
 ## Room logic
 
 `packages/server/src/room/`, without timers, sockets or I/O. Decisions: [ADR-0037](adr/0037-room-transition-shape.md), [ADR-0038](adr/0038-snapshot-projection.md), [ADR-0039](adr/0039-room-registry.md).
 
-| Module            | Role                                                                                                                                                   |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `room.ts`         | `RoomState`, one variant per phase; `createRoom` for `CREATE_ROOM`; `applyCommand(state, command, now)` for every other command                        |
-| `snapshot.ts`     | `projectSnapshot(state, seat, now)`: one player's `PlayerStateSnapshot`, with fog-of-war                                                               |
-| `room-manager.ts` | `RoomManager`: the open rooms by id, room ids and player secrets, `MAX_ROOMS`, `remove`                                                                |
-| `room-timers.ts`  | `RoomTimers`: the pending timers of every room by kind (`ROOM_TIMER_KINDS`), over the injected `Clock` ([ADR-0065](adr/0065-clock-and-room-timers.md)) |
+| Module            | Role                                                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `room.ts`         | `RoomState`, one variant per phase; `createRoom` for `CREATE_ROOM`; `applyCommand(state, command, now)` for every other command                         |
+| `snapshot.ts`     | `projectSnapshot(state, seat, now)`: one player's `PlayerStateSnapshot`, with fog-of-war                                                                |
+| `room-manager.ts` | `RoomManager`: the open rooms by id, room ids and player secrets, `MAX_ROOMS`, `remove`                                                                 |
+| `presence.ts`     | Seat presence as pure transitions: `disconnectSeat`, `reconnectSeat`, `nextForfeit`, `forfeitSeat`, `leaveRoom` ([ADR-0072](adr/0072-seat-presence.md)) |
+| `room-timers.ts`  | `RoomTimers`: the pending timers of every room by kind (`ROOM_TIMER_KINDS`), over the injected `Clock` ([ADR-0065](adr/0065-clock-and-room-timers.md))  |
 
 - **Commands** are the event name, the sender's `seat` and the payload as its guard returned it. `JOIN_ROOM` has no seat yet; it carries the joiner's new secret instead.
 - **Results:** `{ ok: true, state, effects }` or `{ ok: false, error }`. A refused command returns no state and mutates nothing; `INVALID_PLACEMENT` and `INVALID_TARGETS` add the core `violation`, for the log only.
@@ -131,7 +148,7 @@ Decision: [ADR-0065](adr/0065-clock-and-room-timers.md).
 - **Time:** `now` is epoch ms. Deadlines are stored as timestamps (`PlacementRoom.deadline`) and projected as remaining milliseconds.
 - **Phase checks:** a placement command outside `PLACEMENT` and a turn command outside `IN_PROGRESS` → `WRONG_PHASE`; the phase is checked before the seat or the payload.
 - **Projection:** the receiver's own fleet and both shot lists, in battle and at game over; the opponent's fleet only in `GAME_OVER`; never a secret. Fields whose feature is not built yet hold neutral values ([ADR-0038](adr/0038-snapshot-projection.md)).
-- **Registry:** `createRoom` → `SERVER_FULL` at `MAX_ROOMS` open rooms; `joinRoom` → `ROOM_NOT_FOUND` for an unknown id; `dispatch` runs a seated player's command; `remove` forgets a room whose TTL ran out ([Room lifecycle](#room-lifecycle)). The registry has no timers.
+- **Registry:** `createRoom` → `SERVER_FULL` at `MAX_ROOMS` open rooms; `joinRoom` → `ROOM_NOT_FOUND` for an unknown id, and the seat the joiner took; `dispatch` runs a seated player's command; `setPresence`, `nextForfeit`, `forfeitDue` and `leave` run the presence transitions, and the last two remove a room nobody is left in; `remove` forgets a room whose TTL ran out ([Room lifecycle](#room-lifecycle)). The registry has no timers.
 
 ## Plugins
 
@@ -144,7 +161,7 @@ Decision: [ADR-0065](adr/0065-clock-and-room-timers.md).
 | `handshake`     | `handshake.ts`     | Handshake middleware: protocol version, session lookup and rebinding, latest connection wins ([Sessions & reconnection](#sessions--reconnection))         |
 | `rate-limit`    | `rate-limit.ts`    | The per-socket rate limit, a Socket.io middleware ahead of every listener ([Hardening](#hardening))                                                       |
 | `echo`          | `echo.ts`          | The `ECHO` smoke check, sent after every deploy ([ADR-0048](adr/0048-echo-smoke-check.md))                                                                |
-| `room-handlers` | `room-handlers.ts` | Every command, wired to room logic ([Socket handlers](#socket-handlers)); the room TTLs ([Room lifecycle](#room-lifecycle))                               |
+| `room-handlers` | `room-handlers.ts` | Every command, wired to room logic ([Socket handlers](#socket-handlers)); seat presence and the room timers ([Seat presence](#seat-presence))             |
 
 - `handshake`, `rate-limit`, `echo` and `room-handlers` declare `dependencies: ['socket-io']`. `handshake` is registered first: its namespace middleware runs before any socket connects, and `handshake` and `room-handlers` share the registry and the clock. `rate-limit` comes next, so its per-socket middleware runs before any event listener.
 - `createServer` takes the room registry and the clock as options (`rooms`, `clock`), so tests pass a seeded `RoomManager` and a `FakeClock`; production gets a `RoomManager` with crypto randomness and `systemClock`. It also takes `trustProxyHops` from `TRUST_PROXY_HOPS` ([Logging](#logging)).
@@ -159,13 +176,15 @@ Decision: [ADR-0065](adr/0065-clock-and-room-timers.md).
 3. **Dispatch:**
    - `CREATE_ROOM` → `RoomManager.createRoom` (`SERVER_FULL` at `MAX_ROOMS`); the socket is bound to `P1`.
    - `JOIN_ROOM` → `RoomManager.joinRoom` (`ROOM_NOT_FOUND`, `ROOM_FULL`); the socket is bound to `P2`. Joining the room the socket already sits in → `NOT_ALLOWED`.
-   - `UPDATE_PLACEMENT`, `CONFIRM_PLACEMENT`, `UNLOCK_PLACEMENT`, `UPDATE_TARGETS`, `FIRE` → `RoomManager.dispatch` with the sender's bound seat; a socket without a seat → `NOT_ALLOWED`.
-   - `UPDATE_RULES`, `CONFIRM_RULES`, `SET_PAUSED`, `SURRENDER`, `REMATCH_CHOICE`, `LEAVE_ROOM` → `NOT_ALLOWED` until their room logic lands (#23, #26, #35, #36).
+   - `JOIN_ROOM` binds the socket to the seat the joiner took: `P2`, or `P1` after the creator left ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)).
+   - `UPDATE_PLACEMENT`, `CONFIRM_PLACEMENT`, `UNLOCK_PLACEMENT`, `UPDATE_TARGETS`, `FIRE`, `SET_PAUSED` → `RoomManager.dispatch` with the sender's bound seat; a socket without a seat → `NOT_ALLOWED`.
+   - `LEAVE_ROOM` → `RoomManager.leave` with the sender's bound seat ([Leaving](#leaving)); a socket without a seat → `NOT_ALLOWED`.
+   - `UPDATE_RULES`, `CONFIRM_RULES`, `SURRENDER`, `REMATCH_CHOICE` → `NOT_ALLOWED` until their room logic lands (#26, #35, #36).
 4. **Replies:** a refused command gets `{ ok: false, error }` and nothing else. An accepted one gets the ack (`{ ok: true }`, plus the credentials for `CREATE_ROOM` / `JOIN_ROOM`), then each effect goes to both players (`SHOT_RESOLVED`), then every seated socket gets `STATE` with its own projection.
 
-- **Seat binding:** `socket.data.binding` holds `{ roomId, seat }`, and the socket joins the Socket.io room named after the room id; `STATE` goes to each socket of that room. The binding goes away with the socket; a reconnecting socket gets it back from its handshake `session` ([Sessions & reconnection](#sessions--reconnection)). Creating or joining another room moves the socket there; the seat it leaves stays taken until #23.
+- **Seat binding:** `socket.data.binding` holds `{ roomId, seat }`, and the socket joins the Socket.io room named after the room id; `STATE` goes to each socket of that room. The binding goes away with the socket; a reconnecting socket gets it back from its handshake `session` ([Sessions & reconnection](#sessions--reconnection)). Creating or joining another room moves the socket there; the seat it leaves stays taken, and is away once no other socket is bound to it ([Seat presence](#seat-presence)).
 - **Time:** one `now()` per command, shared by the transition and the projections it triggers.
-- **Room cap:** `SERVER_FULL` counts the rooms open at once; the TTLs free their places ([Room lifecycle](#room-lifecycle), [ADR-0039](adr/0039-room-registry.md)).
+- **Room cap:** `SERVER_FULL` counts the rooms open at once; closed and expired rooms free their places ([Room lifecycle](#room-lifecycle), [ADR-0039](adr/0039-room-registry.md)).
 
 ## Sessions & reconnection
 
@@ -174,9 +193,9 @@ Decision: [ADR-0065](adr/0065-clock-and-room-timers.md).
 - **Client storage:** `SessionStore` writes `{ roomId, playerSecret, expiresAt }` under a per-room key in `localStorage`, and the tab's current room in `sessionStorage` ([ADR-0069](adr/0069-session-storage-layout.md), [Client: Routes & lobby flow](client.md#routes--lobby-flow)).
 - **Handshake:** the Socket.io client passes `auth` as a callback, re-evaluated on every reconnect attempt: `{ protocolVersion, session?: { roomId, playerSecret } }`. The client adds the session of the tab's current room, and leaves the field out when the tab is in no room ([Client: Socket service](client.md#socket-service)). The `handshake` plugin checks it in a namespace middleware, before the socket connects ([ADR-0061](adr/0061-handshake-checks.md)); a refusal is a `connect_error` whose message is the error code, and Socket.io does not retry it.
   - Version mismatch, a missing `protocolVersion` included → `PROTOCOL_MISMATCH`; the client shows "please reload" (#25). Checked before the session. Tools that cannot send `auth` pass `?protocolVersion=<n>` in the URL instead ([ADR-0062](adr/0062-protocol-version-query.md), [Handshake](protocol.md#handshake)).
-  - Valid session → `RoomManager.findSeat` finds the open room and the seat holding the secret; the socket is bound to it (`socket.data.binding`) before it connects, joins the room's Socket.io room and receives a `STATE` snapshot immediately. The opponent gets nothing until #23 tracks disconnections ([ADR-0063](adr/0063-session-rebinding.md)).
+  - Valid session → `RoomManager.findSeat` finds the open room and the seat holding the secret; the socket is bound to it (`socket.data.binding`) before it connects, joins the room's Socket.io room and receives a `STATE` snapshot immediately ([ADR-0063](adr/0063-session-rebinding.md)). A seat that was away is connected again: its forfeit clock stops, and the opponent gets `STATE` too ([Seat presence](#seat-presence)).
   - Malformed (`parseSessionCredentials` fails), unknown or expired session (the room is gone, or no seat holds the secret) → `SESSION_INVALID`; the client drops the stored credentials, connects again without them and shows "Room not found" for that room ([ADR-0070](adr/0070-client-handshake-refusals.md)); a screen that explains the refusal is #25.
-- **Latest connection wins:** binding a new socket to a seat emits `SESSION_REPLACED` to every other socket bound to that seat and disconnects it from the namespace, so the client reads the event, then `io server disconnect`, and does not reconnect on its own ([ADR-0014](adr/0014-duplicate-sessions.md), [ADR-0063](adr/0063-session-rebinding.md)).
+- **Latest connection wins:** binding a new socket to a seat emits `SESSION_REPLACED` to every other socket bound to that seat and disconnects it from the namespace, so the client reads the event, then `io server disconnect`, and does not reconnect on its own ([ADR-0014](adr/0014-duplicate-sessions.md), [ADR-0063](adr/0063-session-rebinding.md)). The new socket joins the room first, so the seat never counts as away, and the opponent gets nothing ([ADR-0072](adr/0072-seat-presence.md)).
 - **Mobile:** app switching kills sockets frequently. Reconnection is a primary flow and must be covered by integration tests.
 
 ## Hardening
@@ -192,10 +211,10 @@ Decision: [ADR-0065](adr/0065-clock-and-room-timers.md).
 
 Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `LOG_FORMAT` how it is written ([Backend (Render)](deployment.md#backend-render)).
 
-| Level                    | Logged                                                                                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `info` (default, Render) | HTTP requests except `/health`; socket connections (transport, origin, client address) and disconnections (reason); handshakes refused by the origin policy or by the handshake check (error code); sessions resumed and replaced (room, seat, replaced socket); rooms created, joined and expired, room phase changes and refused commands; the first refused event of each rate-limited run; startup and shutdown |
-| `debug` (local `.env`)   | Also `/health` requests, every socket event received or sent with its payload (broadcasts included, ack callbacks left out), transport upgrades, and each connection's raw `X-Forwarded-For` chain and peer address                                                                                                                                                                                                 |
+| Level                    | Logged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `info` (default, Render) | HTTP requests except `/health`; socket connections (transport, origin, client address) and disconnections (reason); handshakes refused by the origin policy or by the handshake check (error code); sessions resumed and replaced (room, seat, replaced socket); seats disconnected, reconnected, forfeited and left (room, seat); rooms created, joined, closed and expired (reason), room phase changes and refused commands; the first refused event of each rate-limited run; startup and shutdown |
+| `debug` (local `.env`)   | Also `/health` requests, every socket event received or sent with its payload (broadcasts included, ack callbacks left out), transport upgrades, and each connection's raw `X-Forwarded-For` chain and peer address                                                                                                                                                                                                                                                                                    |
 
 - Every socket line carries the `socketId`, so one client's history can be followed.
 - **Client address** ([ADR-0067](adr/0067-client-address.md)): the `address` of "Socket connected" and the `req.remoteAddress` of Fastify's request lines are read from `X-Forwarded-For`, `TRUST_PROXY_HOPS` entries from the right (Fastify `trustProxy` for HTTP, `clientAddress` for Socket.io, the same rule). With the default `0` the header is ignored and the TCP peer is logged, which behind Render's proxy is the proxy. With hops set, the logs hold each client's public IP address, which is personal data; see [Deployment: Render](deployment.md#render-service-battleship-server) for calibrating the count.
@@ -206,7 +225,7 @@ Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `L
 
 ## Testability
 
-- Room logic is a pure transition function `(state, command, now) → { state, effects }`. Time comes from `createServer`'s `clock` option ([ADR-0065](adr/0065-clock-and-room-timers.md)): `now()`, read once per command ([Socket handlers](#socket-handlers)), and `scheduleAt(at, task)` for timers at absolute deadlines. Production uses `systemClock`; tests use `FakeClock` (`test/fake-clock.ts`), which moves only on `advance(ms)` and runs the tasks that fall due, so a TTL or a deadline is tested without waiting. Room timers (`RoomTimers`) hold one timer per room and kind; the disconnect forfeit (#23), the placement timer (#28) and the turn timer (#30) join them as new kinds.
+- Room logic is a pure transition function `(state, command, now) → { state, effects }`. Time comes from `createServer`'s `clock` option ([ADR-0065](adr/0065-clock-and-room-timers.md)): `now()`, read once per command ([Socket handlers](#socket-handlers)), and `scheduleAt(at, task)` for timers at absolute deadlines. Production uses `systemClock`; tests use `FakeClock` (`test/fake-clock.ts`), which moves only on `advance(ms)` and runs the tasks that fall due, so a TTL or a deadline is tested without waiting. Room timers (`RoomTimers`) hold one timer per room and kind: the disconnect forfeit and the game-over TTL; the placement timer (#28) and the turn timer (#30) join them as new kinds.
 - The rate limit reads the same clock: a test that sends more than `RATE_LIMIT_EVENTS_PER_SECOND` events from one socket advances it between them, as the full match does one second per turn.
 - The `Rng` is injected (dice, auto shots, auto placement); production uses `createCryptoRng()`, tests `createSeededRng(seed)` ([Randomness](domain.md#randomness)).
-- Unit tests drive rooms with a fake clock and a fixed seed. Integration tests use real `socket.io-client` instances against an in-process server on an ephemeral port: `test/game.test.ts` plays a whole match (create → join → place → play to victory) with seeded fleets, a seeded registry and a `FakeClock`, reading every event each client receives in order; it also covers the handshake: refusals, a reconnecting socket rebound to its seat, a zombie socket replaced by a newer one, and a rebind at game over. `test/hardening.test.ts` covers the TTLs, the rate limit and the message size over real sockets, and `test/postman.test.ts` replays the saved Postman messages ([Local tooling](development.md#local-tooling)).
+- Unit tests drive rooms with a fake clock and a fixed seed. Integration tests use real `socket.io-client` instances against an in-process server on an ephemeral port: `test/game.test.ts` plays a whole match (create → join → place → play to victory) with seeded fleets, a seeded registry and a `FakeClock`, reading every event each client receives in order; it also covers the handshake (refusals, a reconnecting socket rebound to its seat, a zombie socket replaced by a newer one without its seat dropping, a rebind at game over) and the disconnection rules: seat presence, the creator away while a friend joins, `SET_PAUSED`, the disconnect forfeit in and before a match, and `LEAVE_ROOM`. Their pure rules are unit-tested in `test/room/presence.test.ts`. `test/hardening.test.ts` covers room closing and the game-over TTL, the rate limit and the message size over real sockets, and `test/postman.test.ts` replays the saved Postman messages ([Local tooling](development.md#local-tooling)).

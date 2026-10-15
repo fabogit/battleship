@@ -4,13 +4,14 @@ import {
   CLIENT_EVENTS,
   createSeededRng,
   DEFAULT_RULES,
-  EMPTY_ROOM_TTL_MS,
+  DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
   generateRandomFleet,
   PROTOCOL_VERSION,
   RATE_LIMIT_EVENTS_PER_SECOND,
   ROOM_PHASES,
+  SEATS,
   type ClientToServerEvents,
   type Coordinate,
   type PlacedShip,
@@ -96,8 +97,8 @@ function fleet(seed: number): PlacedShip[] {
   return generateRandomFleet(DEFAULT_RULES, createSeededRng(seed));
 }
 
-/** Plays a match to `GAME_OVER`: P1 fires at every cell of P2's fleet, P2 at water in between. */
-async function playToGameOver(p1: ClientSocket, p2: ClientSocket): Promise<void> {
+/** Both players place and confirm the fleets of seeds 1 and 2, which starts the match. */
+async function placeFleets(p1: ClientSocket, p2: ClientSocket): Promise<readonly [PlacedShip[], PlacedShip[]]> {
   const fleets = [fleet(1), fleet(2)] as const;
   for (const [socket, ships] of [
     [p1, fleets[0]],
@@ -107,6 +108,12 @@ async function playToGameOver(p1: ClientSocket, p2: ClientSocket): Promise<void>
     expect(await send(socket, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements })).toEqual({ ok: true });
     expect(await send(socket, CLIENT_EVENTS.CONFIRM_PLACEMENT, {})).toEqual({ ok: true });
   }
+  return fleets;
+}
+
+/** Plays a match to `GAME_OVER`: P1 fires at every cell of P2's fleet, P2 at water in between. */
+async function playToGameOver(p1: ClientSocket, p2: ClientSocket): Promise<void> {
+  const fleets = await placeFleets(p1, p2);
   const occupied = new Set(
     fleets[0].flatMap((ship) => ship.coordinates.map(({ x, y }) => `${String(x)},${String(y)}`)),
   );
@@ -128,14 +135,15 @@ async function playToGameOver(p1: ClientSocket, p2: ClientSocket): Promise<void>
   }
 }
 
-describe('empty-room TTL', () => {
-  it('removes a room EMPTY_ROOM_TTL_MS after its last socket left, not before', async () => {
+// A room nobody sits in is closed by its seats' forfeits, not by a TTL of its own (ADR-0073).
+describe('room closing', () => {
+  it('closes a waiting room DISCONNECT_FORFEIT_MS after its creator left, not before', async () => {
     await start();
     const alice = await player();
     const roomId = await createRoom(alice);
     await leave(alice);
 
-    clock.advance(EMPTY_ROOM_TTL_MS - 1);
+    clock.advance(DISCONNECT_FORFEIT_MS - 1);
     expect(rooms.get(roomId)).toBeDefined();
     clock.advance(1);
     expect(rooms.get(roomId)).toBeUndefined();
@@ -148,20 +156,7 @@ describe('empty-room TTL', () => {
     });
   });
 
-  it('stops counting when a socket sits in the room again', async () => {
-    await start();
-    const alice = await player();
-    const roomId = await createRoom(alice);
-    await leave(alice);
-    clock.advance(EMPTY_ROOM_TTL_MS - 1);
-
-    const bob = await player();
-    expect(await send(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' })).toMatchObject({ ok: true });
-    clock.advance(10 * EMPTY_ROOM_TTL_MS);
-    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
-  });
-
-  it('stops counting when a player resumes the session at the handshake', async () => {
+  it('keeps the room when the creator resumes the session at the handshake', async () => {
     await start();
     const alice = await player();
     const created = (await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as {
@@ -169,35 +164,37 @@ describe('empty-room TTL', () => {
       playerSecret: string;
     };
     await leave(alice);
-    clock.advance(EMPTY_ROOM_TTL_MS - 1);
+    clock.advance(DISCONNECT_FORFEIT_MS - 1);
 
     await player('websocket', { roomId: created.roomId, playerSecret: created.playerSecret });
-    clock.advance(10 * EMPTY_ROOM_TTL_MS);
+    clock.advance(10 * DISCONNECT_FORFEIT_MS);
     expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
   });
 
-  it('counts from the moment the last socket left, not the first', async () => {
+  it('closes a room DISCONNECT_FORFEIT_MS after its last player left, not the first', async () => {
     await start();
     const [alice, bob] = await Promise.all([player(), player()]);
     const roomId = await createRoom(alice);
     await send(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
     await leave(alice);
-    clock.advance(EMPTY_ROOM_TTL_MS);
-    expect(rooms.get(roomId)).toBeDefined();
-
+    clock.advance(DISCONNECT_FORFEIT_MS / 2);
     await leave(bob);
-    clock.advance(EMPTY_ROOM_TTL_MS - 1);
+
+    // Alice's seat goes first, and Bob, still away, waits alone for a new opponent.
+    clock.advance(DISCONNECT_FORFEIT_MS / 2);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
+    clock.advance(DISCONNECT_FORFEIT_MS / 2 - 1);
     expect(rooms.get(roomId)).toBeDefined();
     clock.advance(1);
     expect(rooms.get(roomId)).toBeUndefined();
   });
 
-  it('starts when a socket moves to another room', async () => {
+  it('starts counting when a socket moves to another room', async () => {
     await start();
     const alice = await player();
     const first = await createRoom(alice);
     const second = await createRoom(alice);
-    clock.advance(EMPTY_ROOM_TTL_MS);
+    clock.advance(DISCONNECT_FORFEIT_MS);
     expect(rooms.get(first)).toBeUndefined();
     expect(rooms.get(second)).toBeDefined();
   });
@@ -208,8 +205,27 @@ describe('empty-room TTL', () => {
     await createRoom(alice);
     await leave(alice);
     expect(rooms.size).toBe(1);
-    clock.advance(EMPTY_ROOM_TTL_MS);
+    clock.advance(DISCONNECT_FORFEIT_MS);
     expect(rooms.size).toBe(0);
+  });
+
+  // Both players gone mid-match: the first to leave forfeits, then the finished room lives out its game-over TTL.
+  it('closes a match both players left within DISCONNECT_FORFEIT_MS + GAME_OVER_TTL_MS of the first drop', async () => {
+    await start();
+    const [p1, p2] = await Promise.all([player(), player()]);
+    const roomId = await createRoom(p1);
+    await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
+    await placeFleets(p1, p2);
+    await leave(p1);
+    clock.advance(1_000);
+    await leave(p2);
+
+    clock.advance(DISCONNECT_FORFEIT_MS - 1_000);
+    expect(rooms.get(roomId)).toMatchObject({ phase: ROOM_PHASES.GAME_OVER, winner: SEATS.P2 });
+    clock.advance(GAME_OVER_TTL_MS - 1);
+    expect(rooms.get(roomId)).toBeDefined();
+    clock.advance(1);
+    expect(rooms.get(roomId)).toBeUndefined();
   });
 });
 

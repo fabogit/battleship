@@ -1,6 +1,6 @@
 import {
   CLIENT_EVENTS,
-  EMPTY_ROOM_TTL_MS,
+  DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   ORIENTATIONS,
   PLACEMENT_VIOLATIONS,
@@ -249,7 +249,7 @@ describe('room logs', () => {
     );
   });
 
-  it('record an expired room at info, with the timer that ran out', async () => {
+  it('record a seat that dropped and was forfeited, and the room it closed, at info', async () => {
     const clock = new FakeClock(1_700_000_000_000);
     const { baseUrl, lines } = await start('info', { clock });
     const socket = client(baseUrl);
@@ -259,11 +259,28 @@ describe('room logs', () => {
     await vi.waitFor(() => {
       expect(messages(lines)).toContain('Socket disconnected');
     });
-    clock.advance(EMPTY_ROOM_TTL_MS);
+    clock.advance(DISCONNECT_FORFEIT_MS);
 
     expect(lines).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ msg: 'Room expired', roomId, reason: 'EMPTY_ROOM', roomCount: 0 }),
+        expect.objectContaining({ msg: 'Seat disconnected', roomId, seat: SEATS.P1 }),
+        expect.objectContaining({ msg: 'Seat forfeited', roomId, seat: SEATS.P1 }),
+        expect.objectContaining({ msg: 'Room closed', roomId, reason: 'DISCONNECT_FORFEIT', roomCount: 0 }),
+      ]),
+    );
+  });
+
+  it('record a seat left and the room it closed at info', async () => {
+    const { baseUrl, lines } = await start('info');
+    const socket = client(baseUrl);
+    const created: unknown = await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const { roomId } = created as { roomId: string };
+    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.LEAVE_ROOM, {});
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Seat left', roomId, seat: SEATS.P1 }),
+        expect.objectContaining({ msg: 'Room closed', roomId, reason: CLIENT_EVENTS.LEAVE_ROOM, roomCount: 0 }),
       ]),
     );
   });
@@ -324,6 +341,8 @@ describe('session logs', () => {
         expect.objectContaining({ msg: 'Socket disconnected', reason: 'server namespace disconnect' }),
       ]),
     );
+    // The replaced socket was not the seat's last one: the seat never dropped (ADR-0072).
+    expect(messages(lines)).not.toContain('Seat disconnected');
     expect(JSON.stringify(lines)).not.toContain(playerSecret);
   });
 });
