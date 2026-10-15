@@ -1,8 +1,15 @@
 import { DOCUMENT, Location } from '@angular/common';
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal, viewChild, type ElementRef } from '@angular/core';
 import { Router } from '@angular/router';
 
+import { QrCode } from '../../shared/qr-code/qr-code';
 import { LOBBY_TEXT } from './lobby.text';
+
+/**
+ * An `AbortError` from `navigator.share` sooner than this after the call means no sheet opened, as on desktop Linux
+ * Chromium; a person needs longer to see a sheet slide in and close it (ADR-0079).
+ */
+export const NATIVE_SHEET_FAILURE_MS = 500;
 
 /** The outcomes of sharing the room link, as `Lobby` reports them. */
 export const SHARE_OUTCOMES = {
@@ -10,18 +17,22 @@ export const SHARE_OUTCOMES = {
   COPIED: 'copied',
   /** The clipboard refused it; the player copies the link from the field. */
   COPY_FAILED: 'copy-failed',
+  /** The system share sheet did not open; the share dialog offers the code and the link instead. */
+  SHEET_FAILED: 'sheet-failed',
 } as const;
 
 /** One of the `SHARE_OUTCOMES`. */
 export type ShareOutcome = (typeof SHARE_OUTCOMES)[keyof typeof SHARE_OUTCOMES];
 
 /**
- * The waiting screen of a room in `WAITING_FOR_OPPONENT` (docs/client.md#routes--lobby-flow): the room link, shared
- * with the Web Share API where the browser has it, copied to the clipboard otherwise. The rules part of the lobby comes
- * with #27.
+ * The waiting screen of a room in `WAITING_FOR_OPPONENT` (docs/client.md#routes--lobby-flow): the room link, with
+ * "Share link" and "Copy link". "Share link" opens the system share sheet on phones and tablets, and the share dialog
+ * (a QR code of the link, the link and "Copy link") everywhere else or when the sheet fails (ADR-0079). The rules part
+ * of the lobby comes with #27.
  */
 @Component({
   selector: 'app-lobby',
+  imports: [QrCode],
   templateUrl: './lobby.html',
   styleUrl: './lobby.css',
 })
@@ -44,10 +55,23 @@ export class Lobby {
   protected readonly text = LOBBY_TEXT;
   /** The outcomes, for the template. */
   protected readonly shareOutcomes = SHARE_OUTCOMES;
-  /** Whether the browser offers the Web Share API (most phones; few desktop browsers). */
+  /** Whether the browser offers the Web Share API (most phones; some desktop browsers, not all of them working). */
   protected readonly canShare = typeof this.navigator?.share === 'function';
-  /** What the last share or copy did; `null` before the first one. */
+  /** Whether the main pointer is a finger: phones and tablets, whose share sheet "Share link" opens. */
+  private readonly hasCoarsePointer =
+    typeof this.document.defaultView?.matchMedia === 'function' &&
+    this.document.defaultView.matchMedia('(pointer: coarse)').matches;
+  /** Whether the share sheet failed to open in this lobby; "Share link" then goes straight to the dialog. */
+  protected readonly hasSheetFailed = signal(false);
+  /** Whether the share dialog is open; the QR code is drawn only while it is. */
+  protected readonly isDialogOpen = signal(false);
+  /** What the last share or copy did, on the page or in the dialog; `null` before the first one and across the dialog. */
   protected readonly shareOutcome = signal<ShareOutcome | null>(null);
+
+  /** The share dialog. */
+  private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('shareDialog');
+  /** "Share link", which gets focus back when the dialog closes. */
+  private readonly shareButton = viewChild.required<ElementRef<HTMLButtonElement>>('shareButton');
 
   /** The absolute address of this room's page, `/r/<roomId>` under the app's base href (ADR-0049). */
   protected readonly roomUrl = computed(() => {
@@ -56,16 +80,42 @@ export class Lobby {
   });
 
   /**
-   * Opens the system share sheet. Closing the sheet is not an error; a sheet that fails to open falls back to copying.
+   * Opens the system share sheet on a phone or tablet, and the share dialog elsewhere. A sheet the player closes is not
+   * an error; a sheet that fails to open falls back to the dialog, which says so.
    */
   protected async share(): Promise<void> {
-    try {
-      await this.navigator?.share({ title: this.text.shareTitle, text: this.text.shareMessage, url: this.roomUrl() });
-    } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        await this.copy();
-      }
+    if (!this.canShare || !this.hasCoarsePointer || this.hasSheetFailed()) {
+      this.openDialog();
+    } else if (!(await this.openSheet())) {
+      this.openDialog();
+      this.shareOutcome.set(SHARE_OUTCOMES.SHEET_FAILED);
     }
+  }
+
+  /** "Other apps…" in the dialog: the system share sheet, or a message when it does not open. */
+  protected async shareWithOtherApps(): Promise<void> {
+    if (this.hasSheetFailed()) {
+      return;
+    }
+    this.shareOutcome.set(null);
+    if (!(await this.openSheet())) {
+      this.shareOutcome.set(SHARE_OUTCOMES.SHEET_FAILED);
+    }
+  }
+
+  /** Closes the share dialog, as Esc does. */
+  protected closeDialog(): void {
+    this.dialog().nativeElement.close();
+  }
+
+  /**
+   * Runs whenever the dialog closes, by Esc included: focus goes back to "Share link", and the dialog's last message
+   * goes with it rather than showing up again on the page.
+   */
+  protected onDialogClosed(): void {
+    this.isDialogOpen.set(false);
+    this.shareOutcome.set(null);
+    this.shareButton().nativeElement.focus();
   }
 
   /** Copies the room link to the clipboard; without clipboard access the player copies it from the field. */
@@ -78,6 +128,34 @@ export class Lobby {
       this.shareOutcome.set(SHARE_OUTCOMES.COPIED);
     } catch {
       this.shareOutcome.set(SHARE_OUTCOMES.COPY_FAILED);
+    }
+  }
+
+  /** Opens the share dialog, modal, with focus on its "Copy link". */
+  private openDialog(): void {
+    this.shareOutcome.set(null);
+    this.isDialogOpen.set(true);
+    this.dialog().nativeElement.showModal();
+  }
+
+  /**
+   * Opens the system share sheet with the room link.
+   * @returns Whether the sheet opened: shared, or closed by the player. `false` marks the sheet as failed.
+   */
+  private async openSheet(): Promise<boolean> {
+    const startedAt = Date.now();
+    try {
+      await this.navigator?.share({ title: this.text.shareTitle, text: this.text.shareMessage, url: this.roomUrl() });
+      return true;
+    } catch (error) {
+      const wasClosed =
+        error instanceof DOMException &&
+        error.name === 'AbortError' &&
+        Date.now() - startedAt >= NATIVE_SHEET_FAILURE_MS;
+      if (!wasClosed) {
+        this.hasSheetFailed.set(true);
+      }
+      return wasClosed;
     }
   }
 

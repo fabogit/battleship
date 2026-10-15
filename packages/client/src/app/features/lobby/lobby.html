@@ -8,19 +8,61 @@
 </div>
 
 <div class="actions">
-  @if (canShare) {
-    <button type="button" (click)="share()">{{ text.share }}</button>
-  }
+  <button #shareButton type="button" (click)="share()">{{ text.share }}</button>
   <button type="button" (click)="copy()">{{ text.copy }}</button>
 </div>
 
 <p class="outcome" aria-live="polite">
-  @switch (shareOutcome()) {
-    @case (shareOutcomes.COPIED) {
-      <span class="ok">{{ text.copied }}</span>
-    }
-    @case (shareOutcomes.COPY_FAILED) {
-      <span class="error">{{ text.copyFailed }}</span>
+  @if (!isDialogOpen()) {
+    @switch (shareOutcome()) {
+      @case (shareOutcomes.COPIED) {
+        <span class="ok">{{ text.copied }}</span>
+      }
+      @case (shareOutcomes.COPY_FAILED) {
+        <span class="error">{{ text.copyFailed }}</span>
+      }
     }
   }
 </p>
+
+<dialog #shareDialog aria-labelledby="share-heading" (close)="onDialogClosed()">
+  <h2 id="share-heading">{{ text.dialogHeading }}</h2>
+  <p>{{ text.dialogIntro }}</p>
+
+  <div class="code">
+    @if (isDialogOpen()) {
+      <app-qr-code [value]="roomUrl()" [label]="text.codeLabel(roomUrl())" />
+    }
+  </div>
+
+  <div class="link">
+    <label for="share-link">{{ text.linkLabel }}</label>
+    <input id="share-link" type="url" readonly [value]="roomUrl()" (focus)="selectAll($event)" />
+  </div>
+
+  <div class="actions">
+    <button type="button" autofocus (click)="copy()">{{ text.copy }}</button>
+    @if (canShare) {
+      <button type="button" [attr.aria-disabled]="hasSheetFailed() ? 'true' : null" (click)="shareWithOtherApps()">
+        {{ text.otherApps }}
+      </button>
+    }
+    <button type="button" (click)="closeDialog()">{{ text.close }}</button>
+  </div>
+
+  <p class="outcome" aria-live="polite">
+    @if (isDialogOpen()) {
+      @switch (shareOutcome()) {
+        @case (shareOutcomes.COPIED) {
+          <span class="ok">{{ text.copied }}</span>
+        }
+        @case (shareOutcomes.COPY_FAILED) {
+          <span class="error">{{ text.copyFailed }}</span>
+        }
+        @case (shareOutcomes.SHEET_FAILED) {
+          <span class="error">{{ text.sheetFailed }}</span>
+        }
+      }
+    }
+  </p>
+</dialog>

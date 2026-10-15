@@ -78,5 +78,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0072](0072-seat-presence.md)                 | Seat presence and disconnect forfeit   | Accepted, 2026-10-15   |
 | [ADR-0073](0073-room-lifecycle-with-forfeits.md)  | Room lifecycle with forfeits           | Accepted, 2026-10-15   |
 | [ADR-0074](0074-pause.md)                         | Pause                                  | Accepted, 2026-10-15   |
+| [ADR-0079](0079-share-dialog.md)                  | Share dialog                           | Accepted, 2026-10-16   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
