@@ -15,3 +15,21 @@ p {
 .error {
   color: var(--color-error);
 }
+
+/* The presence banner is zero high while the opponent is connected: no gap for it then. */
+app-presence:not(:has(p:not(:empty))) {
+  margin-bottom: -1rem;
+}
+
+.leave {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: start;
+  padding-top: 1rem;
+  border-top: 0.0625rem solid var(--color-border);
+}
+
+.hint {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}

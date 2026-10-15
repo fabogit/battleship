@@ -5,9 +5,6 @@
   @if (timeLeft(); as time) {
     <p role="timer">{{ text.timeLeft(time) }}</p>
   }
-  @if (isOpponentAway()) {
-    <p class="pending">{{ text.opponentAway(opponentNickname()) }}</p>
-  }
   @if (gameOver()) {
     <p>{{ text.revealed(opponentNickname()) }}</p>
     <p>

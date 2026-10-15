@@ -29,6 +29,7 @@ The client does nothing else on a refusal. `PROTOCOL_MISMATCH` and `SESSION_REPL
 ## Links
 
 - Added on 2026-10-13 for the client session store ([#21](https://github.com/fabogit/battleship/issues/21)).
+- Amended on 2026-10-15 ([#25](https://github.com/fabogit/battleship/issues/25)): `PROTOCOL_MISMATCH` and `SESSION_REPLACED` get their screens ([ADR-0075](0075-client-connection-states.md)), and a refused seat is explained instead of "Room not found" ([ADR-0076](0076-refused-seat-explanation.md)).
 - Spec: [Client: Socket service](../client.md#socket-service) · [Client: Routes & lobby flow](../client.md#routes--lobby-flow) · [Server: Sessions & reconnection](../server.md#sessions--reconnection)
 - Related: [ADR-0014](0014-duplicate-sessions.md) (latest connection wins) · [ADR-0035](0035-command-acks.md) (command acks) · [ADR-0045](0045-socket-seat-binding.md) (seat binding) · [ADR-0061](0061-handshake-checks.md) (handshake checks) · [ADR-0063](0063-session-rebinding.md) (session rebinding) · [ADR-0069](0069-session-storage-layout.md) (session storage layout)
 - Issues: [#21](https://github.com/fabogit/battleship/issues/21) · [#52](https://github.com/fabogit/battleship/issues/52) (M1 review, F1) · [#23](https://github.com/fabogit/battleship/issues/23) (disconnections) · [#24](https://github.com/fabogit/battleship/issues/24) (TTLs) · [#25](https://github.com/fabogit/battleship/issues/25) (connection-state UX)

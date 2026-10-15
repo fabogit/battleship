@@ -20,7 +20,7 @@ Pause freezes the turn timer and nothing else ([ADR-0008](0008-disconnection-in-
 
 ## Links
 
-- Added on 2026-10-15 for disconnection rules ([#23](https://github.com/fabogit/battleship/issues/23)).
+- Added on 2026-10-15 for disconnection rules ([#23](https://github.com/fabogit/battleship/issues/23)); the client's pause control is [ADR-0077](0077-opponent-presence-banner.md) (#25).
 - Spec: [Server: Disconnection & pause](../server.md#disconnection--pause-in_progress)
 - Implements: [ADR-0008](0008-disconnection-in-battle.md) (disconnection in battle)
 - Related: [ADR-0072](0072-seat-presence.md) (seat presence) · [ADR-0065](0065-clock-and-room-timers.md) (room timers)

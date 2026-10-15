@@ -292,17 +292,6 @@ describe('Battle', () => {
 
       expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
     });
-
-    it('says when the opponent is disconnected', async () => {
-      const snapshot = battleSnapshot(ROOM_ID, { currentTurn: SEATS.P2 });
-      socket.fire(SERVER_EVENTS.STATE, {
-        ...snapshot,
-        opponent: { seat: SEATS.P2, nickname: 'Grace', isConnected: false, forfeitRemainingMs: 60_000 },
-      });
-      await fixture.whenStable();
-
-      expect(view().textContent).toContain(BATTLE_TEXT.opponentAway('Grace'));
-    });
   });
 
   it('announces a sinking shot with the ship', async () => {

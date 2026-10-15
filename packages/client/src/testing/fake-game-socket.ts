@@ -15,7 +15,12 @@ import {
 } from '@battleship/core';
 import { vi } from 'vitest';
 
-import { CONNECTION_STATUSES, GameSocketService, type ConnectionStatus } from '../app/core/game-socket';
+import {
+  CONNECTION_STATUSES,
+  GameSocketService,
+  type CloseReason,
+  type ConnectionStatus,
+} from '../app/core/game-socket';
 
 /** A server-event listener, widened so one map can hold every event's listeners. */
 type AnyListener = (payload: never) => void;
@@ -27,6 +32,12 @@ type AnyListener = (payload: never) => void;
 export class FakeGameSocket {
   /** Connected by default; tests set it to see the waiting states. */
   readonly status = signal<ConnectionStatus>(CONNECTION_STATUSES.CONNECTED);
+  /** `null` by default; tests set it to see the screens and status lines of a closed connection. */
+  readonly closeReason = signal<CloseReason | null>(null);
+  /** `null` by default; tests set it to see a retried connection. */
+  readonly retryError = signal<string | null>(null);
+  /** `false` by default; tests set it to see a reconnection after a drop. */
+  readonly isReconnecting = signal(false);
   /** Records calls; does not change `status`. */
   readonly connect = vi.fn<() => void>();
   /** Records calls; does not change `status`. */

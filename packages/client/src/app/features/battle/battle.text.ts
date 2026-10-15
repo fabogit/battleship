@@ -44,12 +44,6 @@ export interface BattleText {
    * @returns The sentence.
    */
   readonly timeLeft: (time: string) => string;
-  /**
-   * While the opponent's socket is gone.
-   * @param nickname The opponent's nickname.
-   * @returns The sentence.
-   */
-  readonly opponentAway: (nickname: string) => string;
   /** The button firing the turn. */
   readonly fire: string;
   /** The fire button while its command runs. */
@@ -133,7 +127,6 @@ export const BATTLE_TEXT: BattleText = {
   myTurnHint: 'Pick a target in Enemy waters, then fire.',
   opponentTurnHint: (nickname) => `Wait for ${nickname} to fire.`,
   timeLeft: (time) => `Time left: ${time}`,
-  opponentAway: (nickname) => `${nickname} is disconnected.`,
   fire: 'Fire',
   firing: 'Firing…',
   pickTarget: 'Tap a cell to aim.',
