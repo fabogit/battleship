@@ -75,9 +75,9 @@ battleship/
             │   ├── app.routes.ts  # `/` home, `/r/:roomId` room (D49)
             │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService,
             │   │                  # ServerWakeService, createSyncedDraft (the draft sync of placement and battle)
-            │   ├── features/      # home (nickname, create), room (one view per phase), lobby (waiting screen; rules: #27),
+            │   ├── features/      # home (nickname, create), room (one view per phase), lobby (waiting screen, share dialog; rules: #27),
             │   │                  # placement (+ PlacementStore), battle (+ BattleStore; also the game-over screen, D58)
-            │   └── shared/        # board-grid/, nickname-form/, server-status/, countdown.ts
+            │   └── shared/        # board-grid/, nickname-form/, qr-code/, server-status/, countdown.ts
             │                      # Not yet: I18nService (#37), dice (#29), timers UI (#31)
             └── testing/           # Test doubles shared by the specs (FakeGameSocket), id and secret generators, the setup file; left out of the app build
 ```
