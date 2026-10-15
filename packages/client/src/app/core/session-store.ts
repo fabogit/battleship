@@ -13,11 +13,11 @@ interface StoredSession extends SessionCredentials {
   readonly expiresAt: number;
 }
 
-/** What the store remembers of credentials the server refused (`SESSION_INVALID`), for the room page (ADR-0075). */
+/** What the store remembers of credentials the server refused (`SESSION_INVALID`), for the room page (ADR-0076). */
 export interface RefusedSeat {
   /**
    * When the refused credentials were saved, which is when their seat was taken, in epoch ms; `null` when the store no
-   * longer held them. A server that started after it cannot have known the room: it restarted (ADR-0075).
+   * longer held them. A server that started after it cannot have known the room: it restarted (ADR-0076).
    */
   readonly seatTakenAt: number | null;
 }
@@ -36,7 +36,7 @@ export class SessionStore {
   private readonly sessions = signal<ReadonlyMap<string, StoredSession>>(readSessions());
   /** The room this tab is in now; `null` in a tab that has not created, joined or reopened a room. */
   private readonly currentRoomId = signal<string | null>(readCurrentRoomId());
-  /** Rooms whose credentials the server refused (`SESSION_INVALID`) since the app started, with what is known of them. */
+  /** Rooms whose credentials the server refused (`SESSION_INVALID`) since the app started, with what is known. */
   private readonly refusedSeats = signal<ReadonlyMap<string, RefusedSeat>>(new Map());
 
   /**

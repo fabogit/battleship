@@ -28,7 +28,7 @@ export const MAX_RETRY_DELAY_MS = 5_000;
 export const GIVE_UP_AFTER_MS = 90_000;
 /**
  * How long `startedAt` waits for `/health`, in ms. It asks a server the socket has just reached, so an answer is quick;
- * without one the room page explains a refused seat without telling a restart apart (ADR-0075).
+ * without one the room page explains a refused seat without telling a restart apart (ADR-0076).
  */
 export const STARTED_AT_TIMEOUT_MS = 10_000;
 
@@ -82,9 +82,9 @@ export class ServerWakeService {
 
   /**
    * Asks the server when it started, so the client can tell whether it restarted since a seat was taken: rooms live in
-   * the server's memory, and a restart loses them (ADR-0075). One request, no retries; `status` does not change.
-   * @returns `Date.now()` minus the server's `uptime`, in epoch ms on this device's clock; `null` when `/health` does not
-   * answer with a `HealthResponse` within `STARTED_AT_TIMEOUT_MS`. Never rejects.
+   * the server's memory, and a restart loses them (ADR-0076). One request, no retries; `status` does not change.
+   * @returns `Date.now()` minus the server's `uptime`, in epoch ms on this device's clock; `null` when `/health` does
+   * not answer with a `HealthResponse` within `STARTED_AT_TIMEOUT_MS`. Never rejects.
    */
   async startedAt(): Promise<number | null> {
     try {

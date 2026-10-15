@@ -173,7 +173,7 @@ describe('roomEntryErrorMessage', () => {
     });
   });
 
-  it("forgets a refused seat's snapshot of the room before joining it again (ADR-0075)", async () => {
+  it("forgets a refused seat's snapshot of the room before joining it again (ADR-0076)", async () => {
     const gameState = TestBed.inject(GameStateService);
     socket.fire(SERVER_EVENTS.STATE, placementSnapshot(ROOM_ID));
     socket.emitWithAck.mockImplementation(() => {

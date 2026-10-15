@@ -46,7 +46,7 @@ export interface RoomText {
   readonly fullReason: string;
   /** The link back to the home screen. */
   readonly createOwn: string;
-  /** For a seat the server refused, by what the page could tell of the cause (ADR-0075). */
+  /** For a seat the server refused, by what the page could tell of the cause (ADR-0076). */
   readonly seatLosses: Readonly<Record<SeatLoss, SeatLossText>>;
   /** The button giving up the seat before the match. */
   readonly leave: string;

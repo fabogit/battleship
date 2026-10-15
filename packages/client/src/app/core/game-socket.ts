@@ -33,11 +33,11 @@ export type ConnectionStatus = (typeof CONNECTION_STATUSES)[keyof typeof CONNECT
  * that Socket.io retries on its own has no reason: it is `isReconnecting`.
  */
 export const CLOSE_REASONS = {
-  /** The handshake was refused with `PROTOCOL_MISMATCH`: this page speaks another protocol than the server (ADR-0061). */
+  /** The handshake was refused with `PROTOCOL_MISMATCH`: this page speaks another protocol (ADR-0061). */
   PROTOCOL_MISMATCH: 'protocol-mismatch',
   /** `SESSION_REPLACED`: a newer connection took this tab's seat, and the server disconnected this one (ADR-0063). */
   SESSION_REPLACED: 'session-replaced',
-  /** `SERVER_SHUTDOWN`: the server is restarting, and the rooms it held are lost (docs/deployment.md#backend-render). */
+  /** `SERVER_SHUTDOWN`: the server is restarting, and its rooms are lost (docs/deployment.md#backend-render). */
   SERVER_SHUTDOWN: 'server-shutdown',
   /** The handshake was refused with another code, e.g. `SESSION_INVALID` for a handshake that sent no session. */
   REFUSED: 'refused',

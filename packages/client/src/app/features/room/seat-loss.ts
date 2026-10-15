@@ -1,5 +1,5 @@
 /**
- * What the room page can tell about a seat the server refused with `SESSION_INVALID` (ADR-0075). The code says only
+ * What the room page can tell about a seat the server refused with `SESSION_INVALID` (ADR-0076). The code says only
  * that the room is gone or no seat holds the secret; the page tells more from what it knows.
  */
 export const SEAT_LOSSES = {
@@ -33,7 +33,7 @@ export interface SeatLossClues {
 }
 
 /**
- * Tells why a seat was refused, as far as the clues allow (ADR-0075). Both times are on this device's clock, so its
+ * Tells why a seat was refused, as far as the clues allow (ADR-0076). Both times are on this device's clock, so its
  * offset from the server's does not matter.
  * @param clues What the room page knows.
  * @returns `RESTARTED` when the server started after the seat was taken; otherwise `CLOSED` after a match this tab saw

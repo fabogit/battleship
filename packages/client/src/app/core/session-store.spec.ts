@@ -263,7 +263,7 @@ describe('SessionStore', () => {
       expect(store.current()?.roomId).toBe(ROOM_ID);
     });
   });
-  describe('refusal and forget (#25, ADR-0075)', () => {
+  describe('refusal and forget (#25, ADR-0076)', () => {
     it('remembers when the refused seat was taken', () => {
       vi.useFakeTimers();
       store.save({ roomId: ROOM_ID, playerSecret: FIRST_SECRET });

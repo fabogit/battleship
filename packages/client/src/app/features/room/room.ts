@@ -35,7 +35,7 @@ export const ROOM_VIEWS = {
   BATTLE: 'battle',
   /** A malformed link, or `ROOM_NOT_FOUND` after a join attempt. */
   NOT_FOUND: 'not-found',
-  /** Stored credentials the server refused (`SESSION_INVALID`), explained by `SeatLoss` (ADR-0075). */
+  /** Stored credentials the server refused (`SESSION_INVALID`), explained by `SeatLoss` (ADR-0076). */
   SEAT_LOST: 'seat-lost',
   /** `ROOM_FULL`: both seats were taken when the player tried to join. */
   FULL: 'full',
@@ -76,7 +76,7 @@ export class Room {
   private readonly sessions = inject(SessionStore);
   /** Sends `JOIN_ROOM` for the join form and `LEAVE_ROOM` for "Leave room", and takes back a stored seat. */
   private readonly roomEntry = inject(RoomEntryService);
-  /** Asked when the server started, to explain a refused seat (ADR-0075). */
+  /** Asked when the server started, to explain a refused seat (ADR-0076). */
   private readonly wake = inject(ServerWakeService);
   /** Goes home after "Leave room". */
   private readonly router = inject(Router);
@@ -157,7 +157,7 @@ export class Room {
   /** Whether this tab saw the room's match end: a refused seat then belongs to a room that expired. */
   private readonly hasSeenGameOver = computed(() => this.snapshot()?.phase === ROOM_PHASES.GAME_OVER);
 
-  /** When the server started, asked once the page shows a refused seat; `undefined` until it answers (ADR-0075). */
+  /** When the server started, asked once the page shows a refused seat; `undefined` until it answers (ADR-0076). */
   private readonly serverStartedAt = resource({
     params: () => (this.view() === ROOM_VIEWS.SEAT_LOST ? { roomId: this.roomId() } : undefined),
     loader: () => this.wake.startedAt(),
@@ -224,7 +224,7 @@ export class Room {
   };
 
   /**
-   * Gives up the seat before the match, then goes home (docs/server.md#leaving); a failure stays on the page with its
+   * Gives up the seat before the match, then goes home (ADR-0078); a failure stays on the page with its
    * message. Ignored while a leave is under way.
    */
   protected async leave(): Promise<void> {

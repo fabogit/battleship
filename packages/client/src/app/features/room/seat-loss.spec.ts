@@ -11,7 +11,7 @@ describe('SEAT_LOSSES', () => {
   });
 });
 
-describe('classifySeatLoss (ADR-0075)', () => {
+describe('classifySeatLoss (ADR-0076)', () => {
   it('blames a restart when the server started after the seat was taken', () => {
     expect(classifySeatLoss({ hasSeenGameOver: false, seatTakenAt: TAKEN_AT, serverStartedAt: TAKEN_AT + 1 })).toBe(
       SEAT_LOSSES.RESTARTED,

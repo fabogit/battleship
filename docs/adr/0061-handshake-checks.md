@@ -23,6 +23,7 @@ The server checks every Socket.io handshake in a namespace middleware (`io.use`)
 ## Links
 
 - Added on 2026-10-13 for the server handshake ([#22](https://github.com/fabogit/battleship/issues/22)).
+- The client screens for both codes arrived on 2026-10-15 with #25 ([ADR-0075](0075-client-connection-states.md), [ADR-0076](0076-refused-seat-explanation.md)).
 - Spec: [Protocol: Handshake](../protocol.md#handshake) · [Server: Sessions & reconnection](../server.md#sessions--reconnection)
 - Related: [ADR-0017](0017-protocol-versioning.md) (protocol versioning) · [ADR-0021](0021-origin-policy.md) (origin policy) · [ADR-0062](0062-protocol-version-query.md) (version in the query) · [ADR-0063](0063-session-rebinding.md) (session rebinding)
 - Issues: [#22](https://github.com/fabogit/battleship/issues/22) · [#21](https://github.com/fabogit/battleship/issues/21) (session restore) · [#25](https://github.com/fabogit/battleship/issues/25) (connection-state UX)

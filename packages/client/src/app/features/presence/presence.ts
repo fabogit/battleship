@@ -11,7 +11,7 @@ export type PauseCommandError = ErrorCode | TransportError;
 
 /**
  * The opponent's connection as the room page shows it in every phase with a snapshot (docs/client.md#connection-states,
- * ADR-0075): whether they are disconnected or back, their forfeit countdown, the pause control and the paused state
+ * ADR-0077): whether they are disconnected or back, their forfeit countdown, the pause control and the paused state
  * during the match, and who left when a seat was freed before the match. The room page keeps it across its views, so
  * its live region announces a change that also switches the view, such as a freed seat sending the player back to the
  * waiting screen.
@@ -33,7 +33,7 @@ export class Presence {
   /** The opponent's nickname; empty while the seat is free. */
   protected readonly nickname = computed(() => this.gameState.snapshot()?.opponent?.nickname ?? '');
 
-  /** Whether the opponent holds a seat without a socket: the server detects a drop after a few seconds (ADR-0075). */
+  /** Whether the opponent holds a seat without a socket: the server detects a drop after a few seconds (ADR-0077). */
   protected readonly isOpponentAway = computed(() => this.gameState.snapshot()?.opponent?.isConnected === false);
 
   /** The opponent's forfeit countdown as `m:ss`, worded for the phase; `null` while it does not run. */

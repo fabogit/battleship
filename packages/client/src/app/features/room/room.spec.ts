@@ -425,7 +425,7 @@ describe('Room', () => {
       expect(socket.reconnect).not.toHaveBeenCalled();
     });
 
-    it('explains a seat the server refused, even over an older snapshot (ADR-0075)', async () => {
+    it('explains a seat the server refused, even over an older snapshot (ADR-0076)', async () => {
       await harness.navigateByUrl(`/r/${ROOM_ID}`);
       await receive(battleSnapshot(ROOM_ID));
 
@@ -437,7 +437,7 @@ describe('Room', () => {
     });
   });
 
-  describe('after the server refused the stored seat (#25, ADR-0075)', () => {
+  describe('after the server refused the stored seat (#25, ADR-0076)', () => {
     /** The minutes the explanations quote, from core's constants. */
     const FORFEIT_MINUTES = DISCONNECT_FORFEIT_MS / 60_000;
     const GAME_OVER_MINUTES = GAME_OVER_TTL_MS / 60_000;

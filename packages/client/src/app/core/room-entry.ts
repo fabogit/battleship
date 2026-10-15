@@ -66,7 +66,7 @@ export class RoomEntryService {
 
   /**
    * Takes the free seat of a waiting room: `P2`, or `P1` when the creator left before the match (ADR-0073). Forgets a
-   * snapshot of the same room first: it belongs to a seat the server no longer knows (ADR-0075).
+   * snapshot of the same room first: it belongs to a seat the server no longer knows (ADR-0076).
    * @param roomId The id from the room link, already checked with core's `isRoomId`.
    * @param nickname The player's nickname, already trimmed and checked with core's `parseNickname`.
    * @returns The room's id, or why the seat was refused (`ROOM_NOT_FOUND`, `ROOM_FULL`).
@@ -97,8 +97,9 @@ export class RoomEntryService {
   }
 
   /**
-   * Gives up the seat before the match (`LEAVE_ROOM`, docs/server.md#leaving): the opponent, if any, goes back to
-   * waiting, and the stored credentials and the room's snapshot are dropped, so the room link shows the join form.
+   * Gives up the seat before the match (`LEAVE_ROOM`, docs/server.md#leaving, ADR-0078): the opponent, if any, goes
+   * back to waiting, and the stored credentials and the room's snapshot are dropped, so the room link shows the join
+   * form.
    * @param roomId The room the tab is in, from the address.
    * @returns Whether the seat was given up, or why not; a refusal keeps the credentials and the snapshot.
    */

@@ -165,7 +165,7 @@ describe('ServerWakeService', () => {
     expect(service.status()).toBe(WAKE_STATUSES.AWAKE);
   });
 
-  describe('startedAt (ADR-0075)', () => {
+  describe('startedAt (ADR-0076)', () => {
     it("reads the server's start from its uptime, in epoch ms on this device's clock", async () => {
       const startedAt = service.startedAt();
 

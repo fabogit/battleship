@@ -158,13 +158,13 @@ export class GameStateService {
 
   /**
    * The opponent who came back in the latest snapshot: their nickname until the next snapshot, else `null`
-   * (docs/client.md#connection-states).
+   * (ADR-0077).
    */
   readonly opponentReturned = computed(() => this.synced()?.returnedNickname ?? null);
 
   /**
-   * The player whose seat was freed before the match while this client followed the room (ADR-0073): their nickname
-   * until someone takes the seat or another room's snapshot arrives, else `null`.
+   * The player whose seat was freed before the match while this client followed the room (ADR-0073, ADR-0077): their
+   * nickname until someone takes the seat or another room's snapshot arrives, else `null`.
    */
   readonly opponentDeparted = computed(() => this.synced()?.departedNickname ?? null);
 
