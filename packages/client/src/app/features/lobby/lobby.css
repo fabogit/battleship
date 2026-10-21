@@ -39,3 +39,36 @@ input {
 .error {
   color: var(--color-error);
 }
+
+dialog {
+  width: calc(100% - 2rem);
+  max-width: 24rem;
+  box-sizing: border-box;
+  padding: 1.5rem;
+  border: 0.0625rem solid var(--color-border);
+  border-radius: 0.5rem;
+  background: Canvas;
+  color: CanvasText;
+}
+
+dialog[open] {
+  display: grid;
+  gap: 1rem;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+/* Square before the code is drawn, so the dialog keeps its height. */
+.code {
+  width: 100%;
+  max-width: 16rem;
+  aspect-ratio: 1;
+  justify-self: center;
+}
