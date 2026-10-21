@@ -4,7 +4,9 @@ import { Router, provideRouter, withComponentInputBinding } from '@angular/route
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
   CLIENT_EVENTS,
+  DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
+  GAME_OVER_TTL_MS,
   PLACEMENT_TIME_LIMIT_MS,
   ROOM_PHASES,
   SEATS,
@@ -17,10 +19,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FakeGameSocket,
   battleSnapshot,
+  fromSeat,
   gameOverSnapshot,
+  placementSnapshot,
   provideFakeGameSocket,
   waitingSnapshot,
 } from '../../../testing/fake-game-socket';
+import { FakeServerWake, provideFakeServerWake } from '../../../testing/fake-server-wake';
 import { routes } from '../../app.routes';
 import { GameStateService } from '../../core/game-state';
 import { TRANSPORT_ERRORS } from '../../core/game-socket';
@@ -29,6 +34,7 @@ import { SessionStore } from '../../core/session-store';
 import { BATTLE_TEXT } from '../battle/battle.text';
 import { LOBBY_TEXT } from '../lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../placement/placement.text';
+import { PRESENCE_TEXT } from '../presence/presence.text';
 import { ROOM_VIEWS } from './room';
 import { ROOM_TEXT } from './room.text';
 import { createRoomId, createPlayerSecret } from '../../../testing/session-fixtures';
@@ -60,13 +66,19 @@ function joinedSnapshot(): PlayerStateSnapshot {
 }
 
 let socket: FakeGameSocket;
+let wake: FakeServerWake;
 let harness: RouterTestingHarness;
 
 /** Starts the app with a fresh fake socket; web storage is whatever the spec left in it. */
 async function startApp(): Promise<void> {
   socket = new FakeGameSocket();
+  wake = new FakeServerWake();
   TestBed.configureTestingModule({
-    providers: [provideFakeGameSocket(socket), provideRouter(routes, withComponentInputBinding())],
+    providers: [
+      provideFakeGameSocket(socket),
+      provideFakeServerWake(wake),
+      provideRouter(routes, withComponentInputBinding()),
+    ],
   });
   // Created up front, as the app does through the shell, so it listens to `STATE` from the start.
   TestBed.inject(GameStateService);
@@ -167,6 +179,7 @@ describe('ROOM_VIEWS', () => {
       'placement',
       'battle',
       'not-found',
+      'seat-lost',
       'full',
     ]);
   });
@@ -412,15 +425,204 @@ describe('Room', () => {
       expect(socket.reconnect).not.toHaveBeenCalled();
     });
 
-    it('shows not-found once the server refused the stored session, even over an older snapshot', async () => {
+    it('explains a seat the server refused, even over an older snapshot (ADR-0076)', async () => {
       await harness.navigateByUrl(`/r/${ROOM_ID}`);
       await receive(battleSnapshot(ROOM_ID));
 
       TestBed.inject(SessionStore).refuse(ROOM_ID);
       await harness.fixture.whenStable();
 
-      expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
+      expect(heading()).toBe(ROOM_TEXT.seatLosses.unknown.heading);
       expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
+    });
+  });
+
+  describe('after the server refused the stored seat (#25, ADR-0076)', () => {
+    /** The minutes the explanations quote, from core's constants. */
+    const FORFEIT_MINUTES = DISCONNECT_FORFEIT_MS / 60_000;
+    const GAME_OVER_MINUTES = GAME_OVER_TTL_MS / 60_000;
+
+    /**
+     * Opens the room with a stored seat, shows a snapshot of it, then refuses the seat as the handshake does.
+     * @param snapshot The room's latest snapshot before the refusal.
+     */
+    async function refuseAfter(snapshot: PlayerStateSnapshot): Promise<void> {
+      TestBed.inject(SessionStore).save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+      await receive(snapshot);
+      TestBed.inject(SessionStore).refuse(ROOM_ID);
+      await harness.fixture.whenStable();
+    }
+
+    it('says the server restarted when it started after the seat was taken, with no way back in', async () => {
+      wake.startedAt.mockImplementation(() => Promise.resolve(Date.now() + 1));
+
+      await refuseAfter(battleSnapshot(ROOM_ID));
+
+      await vi.waitFor(() => {
+        expect(heading()).toBe(ROOM_TEXT.seatLosses.restarted.heading);
+      });
+      expect(page().textContent).toContain(ROOM_TEXT.seatLosses.restarted.reason(FORFEIT_MINUTES, GAME_OVER_MINUTES));
+      expect(page().querySelector('input')).toBeNull();
+      expect(page().querySelector('a')?.textContent).toBe(ROOM_TEXT.createOwn);
+      expect(wake.startedAt).toHaveBeenCalledOnce();
+    });
+
+    it('says the seat was given up when the server has run since, and offers to join again', async () => {
+      wake.startedAt.mockImplementation(() => Promise.resolve(Date.now() - 60_000));
+
+      await refuseAfter(placementSnapshot(ROOM_ID));
+
+      await vi.waitFor(() => {
+        expect(heading()).toBe(ROOM_TEXT.seatLosses['given-up'].heading);
+      });
+      expect(page().textContent).toContain(ROOM_TEXT.seatLosses['given-up'].reason(FORFEIT_MINUTES, GAME_OVER_MINUTES));
+      expect(page().textContent).toContain(`${String(FORFEIT_MINUTES)} minutes`);
+      expect(page().querySelector('button[type="submit"]')?.textContent.trim()).toBe(ROOM_TEXT.join);
+    });
+
+    it('says the room closed after a match this tab saw end, while the server has run since', async () => {
+      wake.startedAt.mockImplementation(() => Promise.resolve(Date.now() - 60_000));
+
+      await refuseAfter(gameOverSnapshot(ROOM_ID));
+
+      await vi.waitFor(() => {
+        expect(wake.startedAt).toHaveBeenCalledOnce();
+      });
+      await harness.fixture.whenStable();
+      expect(heading()).toBe(ROOM_TEXT.seatLosses.closed.heading);
+      expect(page().textContent).toContain(`${String(GAME_OVER_MINUTES)} minutes`);
+      expect(page().querySelector('input')).toBeNull();
+    });
+
+    it('says the server restarted rather than closed when it restarted after the match ended', async () => {
+      wake.startedAt.mockImplementation(() => Promise.resolve(Date.now() + 1));
+
+      await refuseAfter(gameOverSnapshot(ROOM_ID));
+
+      await vi.waitFor(() => {
+        expect(heading()).toBe(ROOM_TEXT.seatLosses.restarted.heading);
+      });
+    });
+
+    it('covers every cause when the server does not say when it started', async () => {
+      await refuseAfter(placementSnapshot(ROOM_ID));
+
+      await vi.waitFor(() => {
+        expect(wake.startedAt).toHaveBeenCalledOnce();
+      });
+      await harness.fixture.whenStable();
+
+      expect(heading()).toBe(ROOM_TEXT.seatLosses.unknown.heading);
+      expect(page().querySelector('button[type="submit"]')).not.toBeNull();
+    });
+
+    it('takes the free seat again, P1 included, without showing the old snapshot (ADR-0073)', async () => {
+      await refuseAfter(fromSeat(SEATS.P2, placementSnapshot(ROOM_ID)));
+      socket.emitWithAck.mockResolvedValue({ ok: true, playerSecret: createPlayerSecret() });
+
+      await join('Grace');
+
+      await vi.waitFor(() => {
+        expect(page().textContent).toContain(ROOM_TEXT.entering);
+      });
+      // The creator left too, so the joiner lands in P1 against a new opponent.
+      const rejoined = fromSeat(SEATS.P1, placementSnapshot(ROOM_ID));
+      await receive({ ...rejoined, opponent: rejoined.opponent && { ...rejoined.opponent, nickname: 'Linus' } });
+
+      expect(heading()).toBe(PLACEMENT_TEXT.heading);
+      expect(page().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Linus'));
+    });
+
+    it('shows not-found when joining again finds the room gone', async () => {
+      await refuseAfter(placementSnapshot(ROOM_ID));
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: ERROR_CODES.ROOM_NOT_FOUND });
+
+      await join('Grace');
+
+      await vi.waitFor(() => {
+        expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
+      });
+    });
+  });
+
+  describe('opponent presence (#25)', () => {
+    beforeEach(async () => {
+      TestBed.inject(SessionStore).save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+    });
+
+    it('shows above the waiting screen, placement and battle, but not while entering', async () => {
+      expect(page().querySelector('app-presence')).toBeNull();
+
+      for (const snapshot of [waitingSnapshot(ROOM_ID), placementSnapshot(ROOM_ID), battleSnapshot(ROOM_ID)]) {
+        await receive(snapshot);
+        expect(page().querySelector('app-presence')).not.toBeNull();
+      }
+    });
+
+    it('announces who left when a freed seat sends the player back to the waiting screen (ADR-0073)', async () => {
+      await receive(fromSeat(SEATS.P2, placementSnapshot(ROOM_ID)));
+      const liveRegion = page().querySelector('app-presence [aria-live]');
+
+      // Grace, who created the room as P1, did not come back: Ada waits in her own seat, P2.
+      await receive(fromSeat(SEATS.P2, waitingSnapshot(ROOM_ID, 'Ada')));
+
+      expect(heading()).toBe(LOBBY_TEXT.heading);
+      expect(page().querySelector('app-presence [aria-live]')).toBe(liveRegion);
+      expect(liveRegion?.textContent).toContain(PRESENCE_TEXT.departed('Grace'));
+    });
+  });
+
+  describe('leaving before the match (#25)', () => {
+    beforeEach(async () => {
+      TestBed.inject(SessionStore).save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+    });
+
+    /** @returns The "Leave room" button, or `null`. */
+    function leaveButton(): HTMLButtonElement | null {
+      return (
+        [...page().querySelectorAll('button')].find((button) => button.textContent.trim() === ROOM_TEXT.leave) ?? null
+      );
+    }
+
+    it.each([
+      ['the waiting screen', waitingSnapshot(ROOM_ID)],
+      ['placement', placementSnapshot(ROOM_ID)],
+    ])('gives up the seat from %s, forgets it and goes home', async (_view, snapshot) => {
+      await receive(snapshot);
+      socket.emitWithAck.mockResolvedValue({ ok: true });
+
+      leaveButton()?.click();
+
+      await vi.waitFor(() => {
+        expect(TestBed.inject(Router).url).toBe('/');
+      });
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.LEAVE_ROOM, {});
+      expect(TestBed.inject(SessionStore).get(ROOM_ID)).toBeNull();
+      expect(TestBed.inject(SessionStore).current()).toBeNull();
+      expect(TestBed.inject(GameStateService).snapshot()).toBeNull();
+    });
+
+    it('stays with the reason when the server refuses', async () => {
+      await receive(placementSnapshot(ROOM_ID));
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
+
+      leaveButton()?.click();
+
+      await vi.waitFor(() => {
+        expect(page().querySelector('.leave [role="alert"]')?.textContent).toBe(ROOM_TEXT.leaveErrors.NOT_ALLOWED);
+      });
+      expect(TestBed.inject(Router).url).toBe(`/r/${ROOM_ID}`);
+      expect(TestBed.inject(SessionStore).get(ROOM_ID)).not.toBeNull();
+      expect(heading()).toBe(PLACEMENT_TEXT.heading);
+    });
+
+    it('is not offered once the match has started', async () => {
+      await receive(battleSnapshot(ROOM_ID));
+
+      expect(leaveButton()).toBeNull();
     });
   });
 

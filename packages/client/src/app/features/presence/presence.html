@@ -1,0 +1,34 @@
+<div class="announcement" aria-live="polite">
+  @if (isOpponentAway()) {
+    <p class="pending">{{ text.away(nickname()) }}</p>
+  } @else if (gameState.opponentReturned(); as returned) {
+    <p class="ok">{{ text.back(returned) }}</p>
+  } @else if (gameState.opponentDeparted(); as departed) {
+    <p>{{ text.departed(departed) }}</p>
+  }
+  @if (isPaused()) {
+    <p>{{ text.paused }}</p>
+  } @else if (isOpponentAway() && isPaused() === false) {
+    <p>{{ text.running }}</p>
+  }
+</div>
+
+@if (forfeitMessage(); as message) {
+  <p role="timer">{{ message }}</p>
+}
+
+@if (gameState.canPause() || gameState.canResume()) {
+  <p>
+    @if (gameState.canPause()) {
+      <button type="button" [attr.aria-disabled]="pending() === null ? null : 'true'" (click)="setPaused(true)">
+        {{ pending() === true ? text.pausing : text.pause }}
+      </button>
+    } @else {
+      <button type="button" [attr.aria-disabled]="pending() === null ? null : 'true'" (click)="setPaused(false)">
+        {{ pending() === false ? text.resuming : text.resume }}
+      </button>
+    }
+  </p>
+}
+
+<p class="error" role="alert">{{ errorMessage() }}</p>

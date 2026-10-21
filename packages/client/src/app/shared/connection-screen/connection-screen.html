@@ -1,0 +1,19 @@
+@switch (reason()) {
+  @case (closeReasons.PROTOCOL_MISMATCH) {
+    <h1>{{ text.outdatedHeading }}</h1>
+    <p>{{ text.outdatedReason }}</p>
+    <p>
+      <button type="button" class="primary" (click)="reload()">{{ text.reload }}</button>
+    </p>
+  }
+  @case (closeReasons.SESSION_REPLACED) {
+    <h1>{{ text.replacedHeading }}</h1>
+    <p>{{ text.replacedReason }}</p>
+    <p>
+      <button type="button" class="primary" aria-describedby="play-here-hint" (click)="playHere()">
+        {{ text.playHere }}
+      </button>
+    </p>
+    <p id="play-here-hint" class="hint">{{ text.replacedHint }}</p>
+  }
+}

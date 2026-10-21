@@ -1,0 +1,32 @@
+/*
+ * Block layout, spaced by margins between parts that have content: with nothing to show (a connected opponent) the
+ * banner is zero high, while its live regions stay in the page to announce the next change.
+ */
+:host {
+  display: block;
+}
+
+:host > * + :not(:empty) {
+  margin-top: 0.25rem;
+}
+
+p {
+  margin: 0;
+}
+
+.announcement {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.pending {
+  color: var(--color-pending);
+}
+
+.ok {
+  color: var(--color-ok);
+}
+
+.error {
+  color: var(--color-error);
+}

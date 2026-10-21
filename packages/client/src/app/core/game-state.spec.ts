@@ -261,6 +261,56 @@ describe('GameStateService', () => {
     });
   });
 
+  describe('opponent changes (#25)', () => {
+    it('reports a return for one snapshot, even when nothing read the drop in between', () => {
+      receive(placement());
+      receive({ ...placement(), opponent: OPPONENT_AWAY });
+      receive(placement());
+
+      expect(state.opponentReturned()).toBe('Grace');
+
+      receive(placement({ remainingMs: 1_000 }));
+      expect(state.opponentReturned()).toBeNull();
+    });
+
+    it('does not report a return across rooms or from the first snapshot', () => {
+      receive({ ...placement(), opponent: OPPONENT_AWAY });
+      receive({ ...placement(), roomId: createRoomId(1) });
+
+      expect(state.opponentReturned()).toBeNull();
+    });
+
+    it('remembers who left while the seat stays free, until someone takes it (ADR-0073)', () => {
+      receive({ ...placement(), opponent: OPPONENT_AWAY });
+      receive(waiting());
+      receive(waiting());
+
+      expect(state.opponentDeparted()).toBe('Grace');
+
+      receive({ ...placement(), opponent: { ...OPPONENT, nickname: 'Linus' } });
+      expect(state.opponentDeparted()).toBeNull();
+    });
+
+    it('reports nobody leaving a room that never had an opponent, or another room', () => {
+      receive(waiting());
+      expect(state.opponentDeparted()).toBeNull();
+
+      receive(placement());
+      receive({ ...waiting(), roomId: createRoomId(1) });
+      expect(state.opponentDeparted()).toBeNull();
+    });
+
+    it('forgets both on clear()', () => {
+      receive(placement());
+      receive(waiting());
+
+      state.clear();
+
+      expect(state.opponentDeparted()).toBeNull();
+      expect(state.opponentReturned()).toBeNull();
+    });
+  });
+
   describe('countdowns', () => {
     it('counts the turn down locally from the remaining time in the snapshot', () => {
       receive(battle({ turnRemainingMs: 30_000 }));

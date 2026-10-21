@@ -1,3 +1,7 @@
+@if (hasPresence()) {
+  <app-presence />
+}
+
 @switch (view()) {
   @case (views.JOIN) {
     <h1>{{ text.joinHeading }}</h1>
@@ -38,6 +42,22 @@
       <a routerLink="/">{{ text.createOwn }}</a>
     </p>
   }
+  @case (views.SEAT_LOST) {
+    <h1>{{ seatLossText().heading }}</h1>
+    <p>{{ seatLossText().reason }}</p>
+    @if (canRejoin()) {
+      <app-nickname-form
+        [submitLabel]="text.join"
+        [submittingLabel]="text.joining"
+        [isConnected]="isConnected()"
+        [submitAction]="join"
+      />
+      <p class="error" role="alert">{{ joinErrorMessage() }}</p>
+    }
+    <p>
+      <a routerLink="/">{{ text.createOwn }}</a>
+    </p>
+  }
   @case (views.FULL) {
     <h1>{{ text.fullHeading }}</h1>
     <p>{{ text.fullReason }}</p>
@@ -45,4 +65,19 @@
       <a routerLink="/">{{ text.createOwn }}</a>
     </p>
   }
+}
+
+@if (canLeave()) {
+  <div class="leave">
+    <button
+      type="button"
+      aria-describedby="leave-hint"
+      [attr.aria-disabled]="isLeaving() ? 'true' : null"
+      (click)="leave()"
+    >
+      {{ isLeaving() ? text.leaving : text.leave }}
+    </button>
+    <p id="leave-hint" class="hint">{{ text.leaveHint }}</p>
+    <p class="error" role="alert">{{ leaveErrorMessage() }}</p>
+  </div>
 }

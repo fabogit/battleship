@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 
 import {
   ACK_TIMEOUT_MS,
+  CLOSE_REASONS,
   CONNECTION_STATUSES,
   GameSocketService,
   TRANSPORT_ERRORS,
@@ -143,6 +144,18 @@ function handshakeAuth(): unknown {
 describe('CONNECTION_STATUSES', () => {
   it('pins the values', () => {
     expect(Object.values(CONNECTION_STATUSES)).toEqual(['disconnected', 'connecting', 'connected']);
+  });
+});
+
+describe('CLOSE_REASONS', () => {
+  it('pins the values', () => {
+    expect(Object.values(CLOSE_REASONS)).toEqual([
+      'protocol-mismatch',
+      'session-replaced',
+      'server-shutdown',
+      'refused',
+      'server-disconnect',
+    ]);
   });
 });
 
@@ -317,6 +330,125 @@ describe('GameSocketService', () => {
       TestBed.resetTestingModule();
 
       expect(socket.close).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('why a connection ended, and retries (#25, ADR-0075)', () => {
+    it('has no close reason, retry error or reconnection before the first connection', () => {
+      expect(service.closeReason()).toBeNull();
+      expect(service.retryError()).toBeNull();
+      expect(service.isReconnecting()).toBe(false);
+    });
+
+    it('reports PROTOCOL_MISMATCH as the close reason of a refused handshake', () => {
+      service.connect();
+
+      socket.refuse(ERROR_CODES.PROTOCOL_MISMATCH, { isStillActive: false });
+
+      expect(service.closeReason()).toBe(CLOSE_REASONS.PROTOCOL_MISMATCH);
+      expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
+    });
+
+    it('reports any other refused handshake as refused', () => {
+      service.connect();
+      handshakeAuth();
+
+      // SESSION_INVALID for a handshake without a session: nothing to drop, so the refusal stands.
+      socket.refuse(ERROR_CODES.SESSION_INVALID, { isStillActive: false });
+
+      expect(service.closeReason()).toBe(CLOSE_REASONS.REFUSED);
+    });
+
+    it('has no close reason after SESSION_INVALID for a sent session: it connects again at once', () => {
+      TestBed.inject(SessionStore).save({ roomId: createRoomId(0), playerSecret: createPlayerSecret() });
+      service.connect();
+      handshakeAuth();
+
+      socket.refuse(ERROR_CODES.SESSION_INVALID, { isStillActive: false });
+
+      expect(service.closeReason()).toBeNull();
+    });
+
+    it.each([
+      [SERVER_EVENTS.SESSION_REPLACED, CLOSE_REASONS.SESSION_REPLACED],
+      [SERVER_EVENTS.SERVER_SHUTDOWN, CLOSE_REASONS.SERVER_SHUTDOWN],
+    ])('reports %s, then keeps it through the server disconnect that follows', (event, reason) => {
+      connected();
+
+      socket.fire(event, {});
+      expect(service.closeReason()).toBe(reason);
+      socket.drop('io server disconnect', { isStillActive: false });
+
+      expect(service.closeReason()).toBe(reason);
+      expect(service.status()).toBe(CONNECTION_STATUSES.DISCONNECTED);
+      expect(service.isReconnecting()).toBe(false);
+    });
+
+    it('reports a server disconnect without a reason first', () => {
+      connected();
+
+      socket.drop('io server disconnect', { isStillActive: false });
+
+      expect(service.closeReason()).toBe(CLOSE_REASONS.SERVER_DISCONNECT);
+    });
+
+    it('forgets the close reason on connect() and on the next handshake', () => {
+      connected();
+      socket.fire(SERVER_EVENTS.SESSION_REPLACED, {});
+      socket.drop('io server disconnect', { isStillActive: false });
+
+      service.connect();
+      expect(service.closeReason()).toBeNull();
+
+      socket.fire(SERVER_EVENTS.SERVER_SHUTDOWN, {});
+      socket.handshake();
+      expect(service.closeReason()).toBeNull();
+    });
+
+    it('keeps the last error while Socket.io retries, and drops it once connected (#51, F9)', () => {
+      service.connect();
+
+      socket.refuse('websocket error', { isStillActive: true });
+      socket.refuse('xhr poll error', { isStillActive: true });
+
+      expect(service.retryError()).toBe('xhr poll error');
+      expect(service.closeReason()).toBeNull();
+      expect(service.status()).toBe(CONNECTION_STATUSES.CONNECTING);
+
+      socket.handshake();
+      expect(service.retryError()).toBeNull();
+    });
+
+    it('tells a reconnection after a drop from a first connection', () => {
+      service.connect();
+      expect(service.isReconnecting()).toBe(false);
+      socket.handshake();
+
+      socket.drop('transport close', { isStillActive: true });
+      expect(service.isReconnecting()).toBe(true);
+      expect(service.closeReason()).toBeNull();
+
+      socket.handshake();
+      expect(service.isReconnecting()).toBe(false);
+    });
+
+    it('is not reconnecting after reconnect(): the client closed the socket itself', () => {
+      connected();
+
+      service.reconnect();
+
+      expect(service.isReconnecting()).toBe(false);
+      expect(service.closeReason()).toBeNull();
+    });
+
+    it('stops reconnecting when a retry is refused for good', () => {
+      connected();
+      socket.drop('transport close', { isStillActive: true });
+
+      socket.refuse(ERROR_CODES.PROTOCOL_MISMATCH, { isStillActive: false });
+
+      expect(service.isReconnecting()).toBe(false);
+      expect(service.closeReason()).toBe(CLOSE_REASONS.PROTOCOL_MISMATCH);
     });
   });
 

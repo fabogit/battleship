@@ -62,12 +62,6 @@ export class Battle {
 
   /** The opponent's nickname; empty in the moment the seat is freed. */
   protected readonly opponentNickname = computed(() => this.gameState.snapshot()?.opponent?.nickname ?? '');
-  /** Whether the opponent's socket is gone during the match. */
-  protected readonly isOpponentAway = computed(
-    () =>
-      this.gameState.phase() === ROOM_PHASES.IN_PROGRESS && this.gameState.snapshot()?.opponent?.isConnected === false,
-  );
-
   /** The `GAME_OVER` part of the snapshot; `null` while the match goes on. */
   protected readonly gameOver = computed(() => this.gameState.snapshot()?.gameOver ?? null);
 
