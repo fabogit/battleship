@@ -1,6 +1,7 @@
 import {
   BOARD_SIZE,
   CLIENT_EVENTS,
+  createPlayerSecret,
   createSeededRng,
   DEFAULT_RULES,
   DISCONNECT_FORFEIT_MS,
@@ -8,6 +9,7 @@ import {
   GAME_OVER_REASONS,
   GAME_OVER_TTL_MS,
   generateRandomFleet,
+  generateRoomId,
   MAX_ROOMS,
   parseSessionCredentials,
   PLACEMENT_TIME_LIMIT_MS,
@@ -36,7 +38,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
 import { COMMAND_EVENTS } from '../src/plugins/room-handlers.js';
-import { createPlayerSecret, generateRoomId, RoomManager } from '../src/room/room-manager.js';
+import { RoomManager } from '../src/room/room-manager.js';
 import { createServer } from '../src/server.js';
 import { FakeClock } from './fake-clock.js';
 

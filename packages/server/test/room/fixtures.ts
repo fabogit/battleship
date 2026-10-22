@@ -1,8 +1,10 @@
 import {
   CLIENT_EVENTS,
+  createPlayerSecret,
   createSeededRng,
   DEFAULT_RULES,
   generateRandomFleet,
+  generateRoomId,
   ROOM_PHASES,
   SEATS,
   type PlacedShip,
@@ -22,7 +24,6 @@ import {
   type TransitionResult,
   type WaitingRoom,
 } from '../../src/room/room.js';
-import { createPlayerSecret, generateRoomId } from '../../src/room/room-manager.js';
 
 export const NOW = 1_700_000_000_000;
 export const ROOM_ID = generateRoomId(createSeededRng(0));
