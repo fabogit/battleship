@@ -26,11 +26,15 @@
   }
   @case (views.LOBBY) {
     @if (snapshot(); as snapshot) {
-      <app-lobby [roomId]="snapshot.roomId" [nickname]="snapshot.me.nickname" />
+      <app-lobby [roomId]="snapshot.roomId" [nickname]="snapshot.me.nickname">
+        <ng-container [ngTemplateOutlet]="leaveControl" />
+      </app-lobby>
     }
   }
   @case (views.PLACEMENT) {
-    <app-placement />
+    <app-placement>
+      <ng-container [ngTemplateOutlet]="leaveControl" />
+    </app-placement>
   }
   @case (views.BATTLE) {
     <app-battle />
@@ -67,17 +71,16 @@
   }
 }
 
-@if (canLeave()) {
-  <div class="leave">
-    <button
-      type="button"
-      aria-describedby="leave-hint"
-      [attr.aria-disabled]="isLeaving() ? 'true' : null"
-      (click)="leave()"
-    >
-      {{ isLeaving() ? text.leaving : text.leave }}
-    </button>
-    <p id="leave-hint" class="hint">{{ text.leaveHint }}</p>
-    <p class="error" role="alert">{{ leaveErrorMessage() }}</p>
-  </div>
-}
+<ng-template #leaveControl>
+  <button
+    type="button"
+    class="leave"
+    aria-describedby="leave-hint"
+    [attr.aria-disabled]="isLeaving() ? 'true' : null"
+    (click)="leave()"
+  >
+    {{ isLeaving() ? text.leaving : text.leave }}
+  </button>
+  <p id="leave-hint" hidden>{{ text.leaveHint }}</p>
+  <p class="error leave-error" role="alert">{{ leaveErrorMessage() }}</p>
+</ng-template>
