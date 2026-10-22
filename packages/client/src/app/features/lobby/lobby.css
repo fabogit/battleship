@@ -72,3 +72,27 @@ h2 {
   aspect-ratio: 1;
   justify-self: center;
 }
+
+/*
+ * On a short screen the dialog would scroll its last line, "Link copied.", out of view: tighter spacing, and a code
+ * capped by the height left for it (the rest of the dialog and its margin take about 23rem), never under 12rem
+ * (12rem = 192px), so a phone can still scan it.
+ */
+@media (height < 45rem) {
+  dialog {
+    padding: 1rem;
+  }
+
+  dialog[open] {
+    gap: 0.5rem;
+  }
+
+  .code {
+    max-width: clamp(12rem, 100dvh - 23rem, 16rem);
+  }
+
+  /* "Other apps…" wraps the buttons onto a second row, 3.25rem (52px) more. */
+  dialog:has(.actions > button:nth-of-type(3)) .code {
+    max-width: clamp(12rem, 100dvh - 26.25rem, 16rem);
+  }
+}
