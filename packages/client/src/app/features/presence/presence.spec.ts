@@ -163,6 +163,23 @@ describe('Presence', () => {
       });
     });
 
+    it('clears the alert when SET_PAUSED is sent again', async () => {
+      await receive({ ...battleSnapshot(ROOM_ID, { isPaused: true }), opponent: away() });
+      socket.emitWithAck
+        .mockResolvedValueOnce({ ok: false, error: TRANSPORT_ERRORS.NO_ACK })
+        .mockReturnValue(new Promise(() => undefined));
+      button(PRESENCE_TEXT.resume)?.click();
+      await vi.waitFor(() => {
+        expect(banner().querySelector('[role="alert"]')?.textContent).toBe(PRESENCE_TEXT.errors.NO_ACK);
+      });
+
+      button(PRESENCE_TEXT.resume)?.click();
+      await fixture.whenStable();
+
+      expect(socket.emitWithAck).toHaveBeenCalledTimes(2);
+      expect(banner().querySelector('[role="alert"]')?.textContent).toBe('');
+    });
+
     it('drops a failed SET_PAUSED alert once no control is offered, through game over', async () => {
       await receive({ ...battleSnapshot(ROOM_ID, { isPaused: true }), opponent: away() });
       socket.emitWithAck.mockResolvedValue({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });

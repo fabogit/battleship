@@ -544,6 +544,20 @@ describe('Room', () => {
         expect(heading()).toBe(ROOM_TEXT.notFoundHeading);
       });
     });
+
+    it('asks when the server started only once the seat is refused', async () => {
+      TestBed.inject(SessionStore).save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+      for (const snapshot of [waitingSnapshot(ROOM_ID), placementSnapshot(ROOM_ID), battleSnapshot(ROOM_ID)]) {
+        await receive(snapshot);
+      }
+      expect(wake.startedAt).not.toHaveBeenCalled();
+
+      TestBed.inject(SessionStore).refuse(ROOM_ID);
+      await harness.fixture.whenStable();
+
+      expect(wake.startedAt).toHaveBeenCalledOnce();
+    });
   });
 
   describe('opponent presence (#25)', () => {
@@ -603,6 +617,22 @@ describe('Room', () => {
       expect(TestBed.inject(SessionStore).get(ROOM_ID)).toBeNull();
       expect(TestBed.inject(SessionStore).current()).toBeNull();
       expect(TestBed.inject(GameStateService).snapshot()).toBeNull();
+    });
+
+    it('sends LEAVE_ROOM once however often it is tapped, and shows it under way (ADR-0078)', async () => {
+      await receive(placementSnapshot(ROOM_ID));
+      socket.emitWithAck.mockReturnValue(new Promise(() => undefined));
+
+      const button = leaveButton();
+      button?.click();
+      await harness.fixture.whenStable();
+      // The same element, now worded "Leaving…": `leaveButton()` would no longer find it.
+      button?.click();
+      await harness.fixture.whenStable();
+
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.LEAVE_ROOM, {});
+      expect(button?.textContent.trim()).toBe(ROOM_TEXT.leaving);
+      expect(button?.getAttribute('aria-disabled')).toBe('true');
     });
 
     it('stays with the reason when the server refuses', async () => {
