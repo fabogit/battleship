@@ -17,7 +17,7 @@
   <p role="timer">{{ message }}</p>
 }
 
-@if (gameState.canPause() || gameState.canResume()) {
+@if (hasPauseControl()) {
   <p>
     @if (gameState.canPause()) {
       <button type="button" [attr.aria-disabled]="pending() === null ? null : 'true'" (click)="setPaused(true)">
