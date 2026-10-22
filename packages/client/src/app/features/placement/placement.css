@@ -8,6 +8,14 @@ p {
   margin: 0;
 }
 
+/* The heading, and on its right what the room page puts there: "Leave room", its message below both (ADR-0080). */
+.heading {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  column-gap: 1rem;
+}
+
 .status {
   display: grid;
   gap: 0.25rem;

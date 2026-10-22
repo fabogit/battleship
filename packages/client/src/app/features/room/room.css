@@ -21,15 +21,17 @@ app-presence:not(:has(p:not(:empty))) {
   margin-bottom: -1rem;
 }
 
+/* Compact beside the view's heading, and still 2.75rem (44px) high (ADR-0080). */
 .leave {
-  display: grid;
-  gap: 0.25rem;
-  justify-items: start;
-  padding-top: 1rem;
-  border-top: 0.0625rem solid var(--color-border);
+  padding: 0 0.75rem;
+  white-space: nowrap;
 }
 
-.hint {
-  color: var(--color-muted);
-  font-size: 0.875rem;
+/* Under the heading row, across it; no height and no gap while empty. */
+.leave-error {
+  grid-column: 1 / -1;
+}
+
+.leave-error:not(:empty) {
+  padding-top: 0.25rem;
 }

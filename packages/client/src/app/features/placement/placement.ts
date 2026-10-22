@@ -28,7 +28,8 @@ interface DockEntry {
  * The `PLACEMENT` view, touch-first (docs/client.md#board--interaction, ADR-0053): tap a ship in the dock, then a
  * cell to place it; tap a placed ship to move, rotate or remove it. "Randomize" fills the board, "Confirm fleet" and
  * "Unlock fleet" toggle the lock, and the opponent's lock is shown as it changes. Everything works with the keyboard
- * too: the dock and the actions are buttons, and the board is a grid of buttons.
+ * too: the dock and the actions are buttons, and the board is a grid of buttons. Its content goes beside the heading:
+ * the room page's "Leave room" (ADR-0080).
  */
 @Component({
   selector: 'app-placement',

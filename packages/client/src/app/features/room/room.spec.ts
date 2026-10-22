@@ -612,16 +612,40 @@ describe('Room', () => {
       leaveButton()?.click();
 
       await vi.waitFor(() => {
-        expect(page().querySelector('.leave [role="alert"]')?.textContent).toBe(ROOM_TEXT.leaveErrors.NOT_ALLOWED);
+        expect(page().querySelector('.leave-error[role="alert"]')?.textContent).toBe(ROOM_TEXT.leaveErrors.NOT_ALLOWED);
       });
       expect(TestBed.inject(Router).url).toBe(`/r/${ROOM_ID}`);
       expect(TestBed.inject(SessionStore).get(ROOM_ID)).not.toBeNull();
       expect(heading()).toBe(PLACEMENT_TEXT.heading);
     });
 
-    it('is not offered once the match has started', async () => {
-      await receive(battleSnapshot(ROOM_ID));
+    it.each([
+      ['the waiting screen', waitingSnapshot(ROOM_ID), LOBBY_TEXT.heading],
+      ['placement', placementSnapshot(ROOM_ID), PLACEMENT_TEXT.heading],
+    ])('sits beside the heading of %s, above the rest of the view (ADR-0080)', async (_view, snapshot, viewHeading) => {
+      await receive(snapshot);
 
+      const row = leaveButton()?.parentElement;
+      expect(row?.querySelector(':scope > h1')?.textContent.trim()).toBe(viewHeading);
+      expect(row?.querySelector(':scope > [role="alert"]')).not.toBeNull();
+    });
+
+    it('keeps its hint as a description, out of the reading order (ADR-0080)', async () => {
+      await receive(placementSnapshot(ROOM_ID));
+
+      const hintId = leaveButton()?.getAttribute('aria-describedby') ?? '';
+      const hint = page().querySelector(`[id="${hintId}"]`);
+      expect(hint?.textContent).toBe(ROOM_TEXT.leaveHint);
+      expect(hint?.hasAttribute('hidden')).toBe(true);
+    });
+
+    it.each([
+      ['the battle view', battleSnapshot(ROOM_ID)],
+      ['the game-over screen', gameOverSnapshot(ROOM_ID)],
+    ])('is not offered on %s', async (_view, snapshot) => {
+      await receive(snapshot);
+
+      expect(page().querySelector('app-presence')).not.toBeNull();
       expect(leaveButton()).toBeNull();
     });
   });

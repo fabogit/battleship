@@ -1,3 +1,4 @@
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, effect, inject, input, linkedSignal, resource, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { DISCONNECT_FORFEIT_MS, ERROR_CODES, GAME_OVER_TTL_MS, ROOM_PHASES, isRoomId } from '@battleship/core';
@@ -47,20 +48,18 @@ export type RoomView = (typeof ROOM_VIEWS)[keyof typeof ROOM_VIEWS];
 /** The views of a room the player sits in with its snapshot: the opponent's presence shows above them. */
 const SEATED_VIEWS: ReadonlySet<RoomView> = new Set([ROOM_VIEWS.LOBBY, ROOM_VIEWS.PLACEMENT, ROOM_VIEWS.BATTLE]);
 
-/** The views before the match, where "Leave room" gives up the seat (docs/server.md#leaving). */
-const LEAVABLE_VIEWS: ReadonlySet<RoomView> = new Set([ROOM_VIEWS.LOBBY, ROOM_VIEWS.PLACEMENT]);
-
 /** The seat losses after which the room may still wait for a player, so the page offers to join it again. */
 const REJOINABLE_LOSSES: ReadonlySet<SeatLoss> = new Set([SEAT_LOSSES.GIVEN_UP, SEAT_LOSSES.UNKNOWN]);
 
 /**
  * The page of one room, `/r/<roomId>`, for both players (ADR-0049). The creator lands here after "Create room" and
  * shares the page's own address; the joiner opens it, picks a nickname and takes the free seat. Which view it shows
- * follows from the snapshot, the stored session and the last join attempt.
+ * follows from the snapshot, the stored session and the last join attempt. Before the match, "Leave room" sits beside
+ * the heading of the waiting screen and placement, which project it (ADR-0080).
  */
 @Component({
   selector: 'app-room',
-  imports: [Battle, Lobby, NicknameForm, Placement, Presence, RouterLink],
+  imports: [Battle, Lobby, NgTemplateOutlet, NicknameForm, Placement, Presence, RouterLink],
   templateUrl: './room.html',
   styleUrl: './room.css',
 })
@@ -183,9 +182,6 @@ export class Room {
 
   /** Whether the refused room may still wait for a player, so the page offers the join form again. */
   protected readonly canRejoin = computed(() => REJOINABLE_LOSSES.has(this.seatLoss()));
-
-  /** Whether "Leave room" is offered: before the match, while the player sits in the room. */
-  protected readonly canLeave = computed(() => LEAVABLE_VIEWS.has(this.view()));
 
   /** Written by `leave` only; read through `isLeaving`. */
   private readonly isLeavingSignal = signal(false);

@@ -1,4 +1,7 @@
-<h1>{{ text.heading }}</h1>
+<div class="heading">
+  <h1>{{ text.heading }}</h1>
+  <ng-content />
+</div>
 
 <div class="status">
   @if (timeLeft(); as time) {

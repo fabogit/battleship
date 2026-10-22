@@ -52,7 +52,7 @@ export interface RoomText {
   readonly leave: string;
   /** The leave button while its command runs. */
   readonly leaving: string;
-  /** Under the leave button. */
+  /** The leave button's description, read with it and not shown (ADR-0080). */
   readonly leaveHint: string;
   /** A message for each `LEAVE_ROOM` failure the room page explains itself; the others get the room-entry messages. */
   readonly leaveErrors: Readonly<Partial<Record<RoomEntryError, string>>>;
