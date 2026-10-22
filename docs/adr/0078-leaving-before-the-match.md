@@ -21,6 +21,7 @@ The room page offers "Leave room" under the waiting screen and placement, the ph
 ## Links
 
 - Added on 2026-10-15 for the connection-state UX ([#25](https://github.com/fabogit/battleship/issues/25)).
+- Amended on 2026-10-22 for the M2 review ([#53](https://github.com/fabogit/battleship/issues/53), F1): "Leave room" sits beside the view's heading, with its hint as a description only ([ADR-0080](0080-leave-room-beside-the-heading.md)).
 - Spec: [Client: Routes & lobby flow](../client.md#routes--lobby-flow) · [Server: Leaving](../server.md#leaving)
 - Related: [ADR-0069](0069-session-storage-layout.md) (session storage layout) · [ADR-0073](0073-room-lifecycle-with-forfeits.md) (room lifecycle) · [ADR-0077](0077-opponent-presence-banner.md) (presence banner)
 - Issues: [#25](https://github.com/fabogit/battleship/issues/25) · [#35](https://github.com/fabogit/battleship/issues/35) (surrender) · [#36](https://github.com/fabogit/battleship/issues/36) (rematch)
