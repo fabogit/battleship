@@ -1129,4 +1129,23 @@ describe('LEAVE_ROOM', () => {
     expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.GAME_OVER);
   });
+
+  it("keeps the next match's shots from the leaver", async () => {
+    await start();
+    const { p1, p2, roomId } = await seatedPlayers();
+    expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: true });
+    await p1.inbox.state();
+    const carol = await player();
+    expect(await send(carol, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Carol' })).toMatchObject({ ok: true });
+    for (const [from, seed] of [
+      [p1, P1_FLEET_SEED],
+      [carol, P2_FLEET_SEED],
+    ] as const) {
+      await send(from, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements(placedFleet(seed)) });
+      await send(from, CLIENT_EVENTS.CONFIRM_PLACEMENT, {});
+    }
+    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
+    // The shot went out before the server read the probe below, so on the leaver's connection it would come first.
+    await expectNothingPending(p2);
+  });
 });

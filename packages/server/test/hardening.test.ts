@@ -1,6 +1,7 @@
 import { once } from 'node:events';
 
 import {
+  BOARD_SIZE,
   CLIENT_EVENTS,
   createSeededRng,
   DEFAULT_RULES,
@@ -118,8 +119,8 @@ async function playToGameOver(p1: ClientSocket, p2: ClientSocket): Promise<void>
     fleets[0].flatMap((ship) => ship.coordinates.map(({ x, y }) => `${String(x)},${String(y)}`)),
   );
   const water: Coordinate[] = [];
-  for (let y = 0; y < 10; y++) {
-    for (let x = 0; x < 10; x++) {
+  for (let y = 0; y < BOARD_SIZE; y++) {
+    for (let x = 0; x < BOARD_SIZE; x++) {
       if (!occupied.has(`${String(x)},${String(y)}`)) {
         water.push({ x, y });
       }
@@ -250,6 +251,34 @@ describe('game-over TTL', () => {
     });
   });
 
+  it('counts from the end of the match, not from a reconnection', async () => {
+    await start();
+    const [p1, p2] = await Promise.all([player(), player()]);
+    const roomId = await createRoom(p1);
+    const { playerSecret } = (await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' })) as {
+      playerSecret: string;
+    };
+    await playToGameOver(p1, p2);
+
+    clock.advance(GAME_OVER_TTL_MS - 10_000);
+    await leave(p2);
+    await player('websocket', { roomId, playerSecret });
+    clock.advance(10_000);
+    expect(rooms.get(roomId)).toBeUndefined();
+  });
+
+  it('takes the sockets still in an expired room out of its Socket.io room', async () => {
+    await start();
+    const [p1, p2] = await Promise.all([player(), player()]);
+    const roomId = await createRoom(p1);
+    await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
+    await playToGameOver(p1, p2);
+    expect(app.io.sockets.adapter.rooms.get(roomId)?.size).toBe(2);
+
+    clock.advance(GAME_OVER_TTL_MS);
+    expect(app.io.sockets.adapter.rooms.get(roomId)).toBeUndefined();
+  });
+
   it('does not run before the match ends', async () => {
     await start();
     const [p1, p2] = await Promise.all([player(), player()]);
@@ -257,6 +286,17 @@ describe('game-over TTL', () => {
     await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
     clock.advance(10 * GAME_OVER_TTL_MS);
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
+  });
+});
+
+describe('leaving', () => {
+  it("takes the leaver out of the room's Socket.io room", async () => {
+    await start();
+    const [p1, p2] = await Promise.all([player(), player()]);
+    const roomId = await createRoom(p1);
+    await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
+    expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: true });
+    expect([...(app.io.sockets.adapter.rooms.get(roomId) ?? [])]).toEqual([p1.id]);
   });
 });
 
