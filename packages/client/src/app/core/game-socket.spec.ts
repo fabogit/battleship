@@ -405,6 +405,17 @@ describe('GameSocketService', () => {
       expect(service.closeReason()).toBeNull();
     });
 
+    it('forgets the last retry error on connect() after Socket.io gave up', () => {
+      service.connect();
+      socket.refuse('xhr poll error', { isStillActive: true });
+      socket.refuse(ERROR_CODES.PROTOCOL_MISMATCH, { isStillActive: false });
+      expect(service.retryError()).toBe('xhr poll error');
+
+      service.connect();
+
+      expect(service.retryError()).toBeNull();
+    });
+
     it('keeps the last error while Socket.io retries, and drops it once connected (#51, F9)', () => {
       service.connect();
 

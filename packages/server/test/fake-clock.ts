@@ -1,5 +1,11 @@
 import type { Clock, Timer } from '../src/clock.js';
 
+/**
+ * How many tasks one `advance` may run before it gives up: far more than any test schedules, so only a task that keeps
+ * re-arming at a deadline already past reaches it.
+ */
+const MAX_TASKS_PER_ADVANCE = 1_000;
+
 /** A pending task of a `FakeClock`. */
 interface Scheduled {
   readonly at: number;
@@ -39,10 +45,18 @@ export class FakeClock implements Clock {
     return this.#pending.size;
   }
 
-  /** Moves the clock forward, running every task due by the new time. */
+  /**
+   * Moves the clock forward, running every task due by the new time.
+   * @throws When more than `MAX_TASKS_PER_ADVANCE` tasks run: a runaway timer fails the test instead of hanging the
+   * suite, which a vitest timeout cannot interrupt since the loop never yields.
+   */
   advance(ms: number): void {
     const end = this.#now + ms;
+    let runs = 0;
     for (let next = this.#due(end); next !== undefined; next = this.#due(end)) {
+      if (++runs > MAX_TASKS_PER_ADVANCE) {
+        throw new Error(`runaway timer: more than ${String(MAX_TASKS_PER_ADVANCE)} tasks in one advance`);
+      }
       this.#pending.delete(next);
       this.#now = Math.max(this.#now, next.at);
       next.task();

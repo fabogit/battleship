@@ -71,6 +71,12 @@ describe('GET /health', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: 'ok', uptime: expect.any(Number) as unknown });
   });
+
+  it('reports the uptime in seconds', async () => {
+    const { uptime } = (await (await fetch(`${baseUrl}/health`)).json()) as { uptime: number };
+    expect(uptime).toBeGreaterThan(0);
+    expect(uptime).toBeLessThanOrEqual(process.uptime());
+  });
 });
 
 describe('HTTP CORS', () => {
@@ -164,7 +170,8 @@ describe.each(TRANSPORTS)('Socket.io over %s', (transport) => {
     await app.close();
 
     expect(await shutdown).toEqual({});
-    await disconnected;
+    // Socket.io leaves `active` false only for this reason, which the client's forced wake needs (ADR-0075).
+    expect(await disconnected).toBe('io server disconnect');
   });
 });
 
