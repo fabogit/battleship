@@ -4,6 +4,7 @@ import { DISCONNECT_FORFEIT_MS } from '@battleship/core';
 import { CLOSE_REASONS, CONNECTION_STATUSES, GameSocketService } from '../../core/game-socket';
 import { ServerWakeService, WAKE_STATUSES } from '../../core/server-wake';
 import { SessionStore } from '../../core/session-store';
+import { wholeMinutes } from '../countdown';
 import { SERVER_STATUS_TEXT } from './server-status.text';
 
 /** How the status line colours its message (ADR-0043). */
@@ -30,9 +31,6 @@ export interface StatusLine {
   /** Whether a "Try again" button follows: the poll or the socket gave up, and retrying may help. */
   readonly canRetry: boolean;
 }
-
-/** Milliseconds in a minute, to word `DISCONNECT_FORFEIT_MS`. */
-const MS_PER_MINUTE = 60_000;
 
 /**
  * Wakes the server and opens the socket when the app starts, and tells the player where that stands
@@ -126,7 +124,7 @@ export class ServerStatus {
         }
         if (this.socket.isReconnecting()) {
           const seatKept =
-            this.sessions.current() === null ? [] : [this.text.seatKept(DISCONNECT_FORFEIT_MS / MS_PER_MINUTE)];
+            this.sessions.current() === null ? [] : [this.text.seatKept(wholeMinutes(DISCONNECT_FORFEIT_MS))];
           return pending(this.text.reconnecting, [...seatKept, ...retrying]);
         }
         return pending(this.text.connecting, retrying);

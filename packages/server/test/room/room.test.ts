@@ -1,5 +1,6 @@
 import {
   CLIENT_EVENTS,
+  createPlayerSecret,
   createSeededRng,
   DEFAULT_RULES,
   ERROR_CODES,
@@ -27,7 +28,6 @@ import {
   type RoomState,
   type SeatCommand,
 } from '../../src/room/room.js';
-import { createPlayerSecret } from '../../src/room/room-manager.js';
 import {
   apply,
   battleRoom,

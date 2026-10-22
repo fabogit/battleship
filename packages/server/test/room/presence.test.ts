@@ -1,5 +1,6 @@
 import {
   CLIENT_EVENTS,
+  createPlayerSecret,
   DEFAULT_RULES,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
@@ -19,7 +20,6 @@ import {
   reconnectSeat,
 } from '../../src/room/presence.js';
 import { applyCommand, endMatch, type BattleRoom, type RoomState } from '../../src/room/room.js';
-import { createPlayerSecret } from '../../src/room/room-manager.js';
 import { projectSnapshot } from '../../src/room/snapshot.js';
 import {
   apply,

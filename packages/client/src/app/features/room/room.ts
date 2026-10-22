@@ -9,6 +9,7 @@ import { RoomEntryService, type RoomEntryError } from '../../core/room-entry';
 import { roomEntryErrorMessage } from '../../core/room-entry.text';
 import { ServerWakeService } from '../../core/server-wake';
 import { SessionStore } from '../../core/session-store';
+import { wholeMinutes } from '../../shared/countdown';
 import { NicknameForm } from '../../shared/nickname-form/nickname-form';
 import { Battle } from '../battle/battle';
 import { Lobby } from '../lobby/lobby';
@@ -16,9 +17,6 @@ import { Placement } from '../placement/placement';
 import { Presence } from '../presence/presence';
 import { ROOM_TEXT } from './room.text';
 import { SEAT_LOSSES, classifySeatLoss, type SeatLoss } from './seat-loss';
-
-/** Milliseconds in a minute, to word `DISCONNECT_FORFEIT_MS` and `GAME_OVER_TTL_MS`. */
-const MS_PER_MINUTE = 60_000;
 
 /** What the room page shows, as `Room.view` picks it (docs/client.md#routes--lobby-flow). */
 export const ROOM_VIEWS = {
@@ -176,7 +174,7 @@ export class Room {
     const text = this.text.seatLosses[this.seatLoss()];
     return {
       heading: text.heading,
-      reason: text.reason(DISCONNECT_FORFEIT_MS / MS_PER_MINUTE, GAME_OVER_TTL_MS / MS_PER_MINUTE),
+      reason: text.reason(wholeMinutes(DISCONNECT_FORFEIT_MS), wholeMinutes(GAME_OVER_TTL_MS)),
     };
   });
 

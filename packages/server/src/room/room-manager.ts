@@ -1,15 +1,13 @@
 // Registry of the open rooms: ids, secrets, the room cap, and the stored state each transition replaces (ADR-0039).
 // It has no timers: the socket handlers remove expired rooms (ADR-0065).
 
-import { randomUUID } from 'node:crypto';
-
 import {
   CLIENT_EVENTS,
   createCryptoRng,
+  createPlayerSecret,
   ERROR_CODES,
+  generateRoomId,
   MAX_ROOMS,
-  ROOM_ID_ALPHABET,
-  ROOM_ID_LENGTH,
   SEATS,
   type CreateRoomPayload,
   type JoinRoomPayload,
@@ -75,27 +73,6 @@ export interface ForfeitedSeat {
   readonly seat: Seat;
   /** The room after the forfeit, already stored, or `null` when nobody was left and the room was removed. */
   readonly state: RoomState | null;
-}
-
-/**
- * Generates a player secret (docs/server.md#sessions--reconnection): a lowercase `crypto.randomUUID()`, which the
- * handshake's `parseSessionCredentials` accepts.
- * @returns A new secret, never sent to the other player.
- */
-export function createPlayerSecret(): string {
-  return randomUUID();
-}
-
-/**
- * Draws a room id: `ROOM_ID_LENGTH` characters of `ROOM_ID_ALPHABET`, each picked uniformly. It may collide with an
- * open room; `RoomManager` draws again when it does (ADR-0039).
- * @param rng Source of the characters.
- * @returns A well-formed id, accepted by the `JOIN_ROOM` guard.
- */
-export function generateRoomId(rng: Rng): string {
-  return Array.from({ length: ROOM_ID_LENGTH }, () =>
-    ROOM_ID_ALPHABET.charAt(rng.nextInt(ROOM_ID_ALPHABET.length)),
-  ).join('');
 }
 
 /**

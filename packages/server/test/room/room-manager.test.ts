@@ -3,18 +3,16 @@ import {
   createSeededRng,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
+  generateRoomId,
   MAX_ROOMS,
   parseSessionCredentials,
-  PAYLOAD_PARSERS,
-  ROOM_ID_ALPHABET,
-  ROOM_ID_LENGTH,
   ROOM_PHASES,
   SEATS,
   type Rng,
 } from '@battleship/core';
 import { describe, expect, it } from 'vitest';
 
-import { generateRoomId, RoomManager } from '../../src/room/room-manager.js';
+import { RoomManager } from '../../src/room/room-manager.js';
 import { fleet, NOW } from './fixtures.js';
 
 /** An Rng whose `nextInt` replays a script and then repeats its last value. */
@@ -34,21 +32,6 @@ const UNKNOWN_ROOM_ID = generateRoomId(createSeededRng(99));
 function manager(rng: Rng = createSeededRng(1)): RoomManager {
   return new RoomManager({ rng });
 }
-
-describe('generateRoomId', () => {
-  it('draws ROOM_ID_LENGTH characters of ROOM_ID_ALPHABET, which the JOIN_ROOM guard accepts', () => {
-    const rng = createSeededRng(7);
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const roomId = generateRoomId(rng);
-      expect(roomId).toMatch(new RegExp(`^[${ROOM_ID_ALPHABET}]{${String(ROOM_ID_LENGTH)}}$`));
-      expect(PAYLOAD_PARSERS.JOIN_ROOM({ roomId, nickname: 'Bob' })).not.toBeNull();
-    }
-  });
-
-  it('is repeatable with a fixed seed', () => {
-    expect(generateRoomId(createSeededRng(7))).toBe(generateRoomId(createSeededRng(7)));
-  });
-});
 
 describe('RoomManager', () => {
   it('registers a new room with the creator seated as P1', () => {
