@@ -313,6 +313,25 @@ describe('Lobby', () => {
       expect(share).toHaveBeenCalledOnce();
     });
 
+    it('ignores a second "Other apps…" while the sheet is open', async () => {
+      let closeSheet: () => void = () => undefined;
+      share
+        .mockReturnValueOnce(new Promise((resolve) => (closeSheet = resolve)))
+        .mockRejectedValue(new DOMException('An earlier share has not yet completed', 'InvalidStateError'));
+      const page = await render();
+      await click(page, LOBBY_TEXT.share);
+      const dialog = dialogOf(page);
+
+      await click(dialog, LOBBY_TEXT.otherApps);
+      await click(dialog, LOBBY_TEXT.otherApps);
+      closeSheet();
+      await fixture.whenStable();
+
+      expect(share).toHaveBeenCalledOnce();
+      expect(outcomeIn(dialog)).toBe('');
+      expect(button(dialog, LOBBY_TEXT.otherApps)?.getAttribute('aria-disabled')).toBeNull();
+    });
+
     it('leaves "Other apps…" out without the Web Share API', async () => {
       browserOffers({ hasShare: false, hasClipboard: true });
       const page = await render();
@@ -354,6 +373,17 @@ describe('Lobby', () => {
       expect(writeText).not.toHaveBeenCalled();
     });
 
+    it('opens the sheet again once the player has closed it', async () => {
+      share.mockImplementation(abortedAfter(NATIVE_SHEET_FAILURE_MS));
+      const page = await render();
+
+      await click(page, LOBBY_TEXT.share);
+      await click(page, LOBBY_TEXT.share);
+
+      expect(share).toHaveBeenCalledTimes(2);
+      expect(dialogOf(page).open).toBe(false);
+    });
+
     it('opens the dialog when the sheet aborts too soon to have shown, and skips the sheet afterwards', async () => {
       share.mockImplementation(abortedAfter(NATIVE_SHEET_FAILURE_MS - 1));
       const page = await render();
@@ -378,6 +408,20 @@ describe('Lobby', () => {
 
       expect(dialogOf(page).open).toBe(true);
       expect(outcomeIn(dialogOf(page))).toBe(LOBBY_TEXT.sheetFailed);
+    });
+
+    it('ignores a second "Share link" while the sheet is open', async () => {
+      share
+        .mockReturnValueOnce(new Promise<void>(() => undefined))
+        .mockRejectedValue(new DOMException('An earlier share has not yet completed', 'InvalidStateError'));
+      const page = await render();
+
+      await click(page, LOBBY_TEXT.share);
+      await click(page, LOBBY_TEXT.share);
+
+      expect(share).toHaveBeenCalledOnce();
+      expect(dialogOf(page).open).toBe(false);
+      expect(outcomeIn(dialogOf(page))).toBe('');
     });
 
     it('opens the dialog without the Web Share API', async () => {

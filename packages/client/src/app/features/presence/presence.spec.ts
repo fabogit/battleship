@@ -163,6 +163,53 @@ describe('Presence', () => {
       });
     });
 
+    it('drops a failed SET_PAUSED alert once no control is offered, through game over', async () => {
+      await receive({ ...battleSnapshot(ROOM_ID, { isPaused: true }), opponent: away() });
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      button(PRESENCE_TEXT.resume)?.click();
+      await vi.waitFor(() => {
+        expect(banner().querySelector('[role="alert"]')?.textContent).toBe(PRESENCE_TEXT.errors.NO_ACK);
+      });
+
+      await receive(battleSnapshot(ROOM_ID));
+      expect(banner().querySelector('button')).toBeNull();
+      expect(banner().querySelector('[role="alert"]')?.textContent).toBe('');
+
+      await receive(gameOverSnapshot(ROOM_ID));
+      expect(banner().querySelector('[role="alert"]')?.textContent).toBe('');
+    });
+
+    it('does not bring a failed SET_PAUSED alert back when the opponent drops again', async () => {
+      await receive({ ...battleSnapshot(ROOM_ID, { isPaused: true }), opponent: away() });
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      button(PRESENCE_TEXT.resume)?.click();
+      await vi.waitFor(() => {
+        expect(banner().querySelector('[role="alert"]')?.textContent).toBe(PRESENCE_TEXT.errors.NO_ACK);
+      });
+
+      await receive(battleSnapshot(ROOM_ID));
+      await receive({ ...battleSnapshot(ROOM_ID, { isPaused: false }), opponent: away() });
+
+      expect(button(PRESENCE_TEXT.pause)).toBeDefined();
+      expect(banner().querySelector('[role="alert"]')?.textContent).toBe('');
+    });
+
+    it('shows no alert for a SET_PAUSED that fails after the opponent is back', async () => {
+      await receive({ ...battleSnapshot(ROOM_ID, { isPaused: true }), opponent: away() });
+      let answer: (value: { ok: false; error: typeof TRANSPORT_ERRORS.NO_ACK }) => void = () => undefined;
+      socket.emitWithAck.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+      button(PRESENCE_TEXT.resume)?.click();
+      await fixture.whenStable();
+
+      await receive(battleSnapshot(ROOM_ID));
+      answer({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      // A macrotask lets the failed ack land; without it this spec passes on the unfixed code too.
+      await new Promise((resolve) => setTimeout(resolve));
+      await fixture.whenStable();
+
+      expect(banner().querySelector('[role="alert"]')?.textContent).toBe('');
+    });
+
     it('announces the return until the next snapshot, and offers no control any more', async () => {
       await receive({ ...battleSnapshot(ROOM_ID, { isPaused: true }), opponent: away() });
 

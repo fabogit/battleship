@@ -1,4 +1,4 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, signal } from '@angular/core';
 import { CLIENT_EVENTS, ROOM_PHASES, type ErrorCode } from '@battleship/core';
 
 import { GameSocketService, type TransportError } from '../../core/game-socket';
@@ -56,12 +56,24 @@ export class Presence {
   /** The `isPaused` of the `SET_PAUSED` waiting for its ack; `null` when none does. */
   protected readonly pending = this.pendingSignal.asReadonly();
 
-  /** Why the last `SET_PAUSED` failed; cleared by the next one. */
-  private readonly errorSignal = signal<PauseCommandError | null>(null);
-  /** The message for the last failed `SET_PAUSED`, or `null`. */
+  /** Whether the pause or the resume control is offered. */
+  protected readonly hasPauseControl = computed(() => this.gameState.canPause() || this.gameState.canResume());
+
+  /**
+   * Why the last `SET_PAUSED` failed; cleared by the next one, and whenever the control appears or disappears, so an
+   * old failure does not come back with a later drop.
+   */
+  private readonly errorSignal = linkedSignal<boolean, PauseCommandError | null>({
+    source: this.hasPauseControl,
+    computation: () => null,
+  });
+  /**
+   * The message for the last failed `SET_PAUSED`; `null` without one, or while no control is offered: an ack that fails
+   * after the opponent is back has nothing left to retry.
+   */
   protected readonly errorMessage = computed(() => {
     const error = this.errorSignal();
-    return error === null ? null : pauseErrorMessage(error, this.text);
+    return error === null || !this.hasPauseControl() ? null : pauseErrorMessage(error, this.text);
   });
 
   /**

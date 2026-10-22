@@ -67,6 +67,11 @@ export class Lobby {
   protected readonly isDialogOpen = signal(false);
   /** What the last share or copy did, on the page or in the dialog; `null` before the first one and across the dialog. */
   protected readonly shareOutcome = signal<ShareOutcome | null>(null);
+  /**
+   * Whether a `navigator.share` call has not settled yet. A second one would reject with `InvalidStateError`, which must
+   * not count as a sheet that failed to open.
+   */
+  private isSharing = false;
 
   /** The share dialog. */
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('shareDialog');
@@ -139,10 +144,15 @@ export class Lobby {
   }
 
   /**
-   * Opens the system share sheet with the room link.
-   * @returns Whether the sheet opened: shared, or closed by the player. `false` marks the sheet as failed.
+   * Opens the system share sheet with the room link. Ignored while the sheet of an earlier tap has not settled.
+   * @returns Whether the sheet opened: shared, closed by the player, or still open from an earlier tap. `false` marks
+   * the sheet as failed.
    */
   private async openSheet(): Promise<boolean> {
+    if (this.isSharing) {
+      return true;
+    }
+    this.isSharing = true;
     const startedAt = Date.now();
     try {
       await this.navigator?.share({ title: this.text.shareTitle, text: this.text.shareMessage, url: this.roomUrl() });
@@ -156,6 +166,8 @@ export class Lobby {
         this.hasSheetFailed.set(true);
       }
       return wasClosed;
+    } finally {
+      this.isSharing = false;
     }
   }
 
