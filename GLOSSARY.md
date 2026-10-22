@@ -18,6 +18,18 @@ _Avoid_: host, slot
 A seat no connection is bound to: its player closed the tab, lost the network or moved to another room. An away seat is kept for `DISCONNECT_FORFEIT_MS`, then forfeited; a connection replaced by a newer one leaves its seat connected.
 _Avoid_: offline, absent
 
+**Leave**:
+A player freeing their own seat before the match with `LEAVE_ROOM` ("Leave room"): the seat is free for someone else at once, and the room closes when nobody is left. Once the match has started, leaving is a surrender (#35) or a rematch choice (#36).
+_Avoid_: quit, exit, kick
+
+**Closed room**:
+A room removed because nobody is left in it: its last seat was freed by `LEAVE_ROOM` or a forfeit ("Room closed" in the logs).
+_Avoid_: expired room (for this case)
+
+**Expired room**:
+A room removed because its game-over TTL ran out, `GAME_OVER_TTL_MS` after the match ("Room expired" in the logs). The UI calls both a closed room ("This room has closed").
+_Avoid_: closed room (in server code and logs)
+
 **Nickname**:
 The name a player chooses before creating or joining a room; trimmed, non-empty, at most `NICKNAME_MAX_LENGTH` characters, rendered as text only.
 _Avoid_: username
@@ -33,6 +45,10 @@ _Avoid_: login
 **Current room**:
 The room a tab is in now: the room of its last accepted `CREATE_ROOM` or `JOIN_ROOM`, or the stored room it reopened from a link. The handshake sends its session. Each tab keeps its own, across reloads; another stored room the tab has left shows "You left this room".
 _Avoid_: active room
+
+**Share dialog**:
+The modal on the waiting screen that shows the room link as a QR code and in a read-only field, with "Copy link" and "Other apps…". "Share link" opens it on a computer; a phone opens the system share sheet instead.
+_Avoid_: share modal, popup
 
 **Seat binding**:
 The link between a connected socket and the seat it plays, set when the socket creates or joins a room, or at the handshake from a session; the server takes the sender's seat from it. It lasts as long as the socket; a session restores it after a reconnection.
@@ -138,11 +154,11 @@ A turn that ended on its timer instead of a `FIRE`. Every one increments the pla
 _Avoid_: idle, inactive
 
 **Pause**:
-The frozen state of a match in progress, entered automatically when a player's socket drops: the turn timer stops with its remaining time. Only the connected player may resume or pause again while the opponent is away; the forfeit clock keeps running.
+The frozen state of a match in progress, entered automatically when a player goes away: the turn timer stops with its remaining time. Only the connected player may resume or pause again while the opponent is away; the forfeit clock keeps running.
 _Avoid_: suspend
 
 **Forfeit**:
-The end of a match by absence: `AFK_FORFEIT` when a player reaches `MAX_CONSECUTIVE_AFK_TURNS` (unless both are AFK), `DISCONNECT_FORFEIT` when a disconnected player does not return within `DISCONNECT_FORFEIT_MS`.
+Losing by absence. In a match it ends the match: `AFK_FORFEIT` when a player reaches `MAX_CONSECUTIVE_AFK_TURNS` (unless both are AFK), `DISCONNECT_FORFEIT` when a player stays away for `DISCONNECT_FORFEIT_MS`. Before the match, a player away that long loses only their seat, which is freed for someone else.
 _Avoid_: walkover
 
 **Surrender**:
@@ -174,6 +190,16 @@ The `PROTOCOL_VERSION` constant, bumped on any breaking protocol change and chec
 
 **Foreign origin**:
 A browser `Origin` that `ALLOWED_ORIGINS` does not match; it gets `403` on HTTP and a refused Socket.io handshake. Requests without an `Origin` are allowed.
+
+### Connection
+
+**Close reason**:
+Why the client's connection ended in a way Socket.io does not retry by itself (`CLOSE_REASONS`): an outdated page (`PROTOCOL_MISMATCH`), the seat taken by a newer connection (`SESSION_REPLACED`), a server restart (`SERVER_SHUTDOWN`), another refused handshake, or a disconnect by the server. It picks the status line or the connection screen.
+_Avoid_: disconnect reason (Socket.io's own value)
+
+**Refused seat**:
+A stored seat whose session the server answered with `SESSION_INVALID`. The room page explains it as one of the `SEAT_LOSSES`: the server restarted, the room closed, the seat was given up, or the cause is unknown.
+_Avoid_: kicked, lost session
 
 ### Hosting
 
