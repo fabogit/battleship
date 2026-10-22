@@ -95,4 +95,15 @@ describe('FakeClock', () => {
     expect(task).not.toHaveBeenCalled();
     expect(clock.pendingCount).toBe(0);
   });
+
+  it('throws instead of looping when a task keeps re-arming at a deadline already past', () => {
+    const clock = new FakeClock(START);
+    const rearm = (): void => {
+      clock.scheduleAt(START, rearm);
+    };
+    clock.scheduleAt(START, rearm);
+    expect(() => {
+      clock.advance(0);
+    }).toThrow(/runaway timer/);
+  });
 });
