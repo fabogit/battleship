@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatCountdown, remainingSeconds } from './countdown';
+import { formatCountdown, remainingSeconds, wholeMinutes } from './countdown';
 
 describe('remainingSeconds', () => {
   it('rounds up, so zero shows only once the time is over', () => {
@@ -19,5 +19,15 @@ describe('formatCountdown', () => {
     expect(formatCountdown(9_000)).toBe('0:09');
     expect(formatCountdown(125_000)).toBe('2:05');
     expect(formatCountdown(0)).toBe('0:00');
+  });
+});
+
+describe('wholeMinutes', () => {
+  it('counts the whole minutes in a duration, rounded down', () => {
+    expect(wholeMinutes(180_000)).toBe(3);
+    expect(wholeMinutes(120_000)).toBe(2);
+    expect(wholeMinutes(119_999)).toBe(1);
+    expect(wholeMinutes(59_999)).toBe(0);
+    expect(wholeMinutes(0)).toBe(0);
   });
 });
