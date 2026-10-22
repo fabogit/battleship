@@ -53,7 +53,7 @@ Behaviour of the game server, `packages/server`.
 - Either player may send `UPDATE_RULES`. The server validates, stores, increments `rulesVersion`, and clears both confirmations.
 - `CONFIRM_RULES { rulesVersion }` with a stale version → `STALE_RULES`.
 - When both have confirmed the current version → `PLACEMENT`.
-- There is no negotiation timer (good faith). Idle rooms are bounded by the TTLs.
+- There is no negotiation timer (good faith). A room stays open while its players stay connected; once they have gone, their forfeits close it ([Room lifecycle](#room-lifecycle)).
 
 ### Placement
 
@@ -86,7 +86,7 @@ Decisions: [ADR-0008](adr/0008-disconnection-in-battle.md), [ADR-0072](adr/0072-
 
 - When a seat loses its last socket, the match auto-pauses. A paused match freezes the turn timer with its remaining time, and nothing else: the active player may still update targets and fire.
 - `SET_PAUSED { isPaused }` is accepted **only from the connected player while the opponent is disconnected**; otherwise `NOT_ALLOWED` (the player who is away included), and `WRONG_PHASE` outside `IN_PROGRESS`. Asking for the state the match is already in is accepted and changes nothing.
-- While unpaused, timers run normally: the absent player's turns time out and count as AFK.
+- While unpaused, timers run normally: the turns of the player who is away time out and count as AFK.
 - The forfeit clock (`DISCONNECT_FORFEIT_MS`, from the moment of disconnection) runs regardless of pause. On expiry → `GAME_OVER`, reason `DISCONNECT_FORFEIT`, the opponent winning.
 - On reconnection the match resumes automatically with the remaining turn time, once both seats are connected; if the opponent is away too, it stays paused and the returning player may resume it.
 - Both players away: each seat has its own clock, so the first to have dropped forfeits and the other wins, connected or not ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)).
@@ -95,7 +95,7 @@ Decisions: [ADR-0008](adr/0008-disconnection-in-battle.md), [ADR-0072](adr/0072-
 ### Disconnection in other phases
 
 - The seat is kept for `DISCONNECT_FORFEIT_MS`.
-- Placement timers keep running; auto-completion handles the absent player.
+- Placement timers keep running; auto-completion handles the player who is away.
 - On seat expiry, the player is removed and the other player returns to `WAITING_FOR_OPPONENT`, in the seat they had. Rules are kept; confirmations and fleets are cleared. When nobody is left, the room closes ([Room lifecycle](#room-lifecycle)).
 - In `GAME_OVER` nothing is forfeited: the opponent still sees `isConnected`, `forfeitRemainingMs` is `null`, and the room lives by `GAME_OVER_TTL_MS`.
 
@@ -119,6 +119,7 @@ Decisions: [ADR-0065](adr/0065-clock-and-room-timers.md), [ADR-0073](adr/0073-ro
 - A room closes as soon as no seat holds a player: its last seat was freed by `LEAVE_ROOM` or by a forfeit. Logged as "Room closed" with the `reason` (`LEAVE_ROOM`, `DISCONNECT_FORFEIT`).
 - A room in `GAME_OVER` is destroyed after `GAME_OVER_TTL_MS`, counted from the end of the match, unless it leaves `GAME_OVER` first (a resolved rematch, #36). Connected players do not keep it. Logged as "Room expired" with the `reason` `GAME_OVER`.
 - A room nobody sits in has every seat away, so the forfeits resolve it: before the match it closes `DISCONNECT_FORFEIT_MS` after the last player dropped; during the match the first to have dropped forfeits within `DISCONNECT_FORFEIT_MS`, and the finished room expires `GAME_OVER_TTL_MS` later. There is no empty-room TTL: it could never fire first.
+- Before game over, a room whose players stay connected has no timer: a waiting room stays open for as long as its creator's socket does, and holds its place under `MAX_ROOMS` meanwhile ([Hardening](#hardening), #113).
 - The forfeit and the TTL are room timers (`RoomTimers`, one per room and kind) on the server's `Clock`. `room-handlers` reviews a room's timers after every change to its phase or its seats' presence; when a room is removed, it leaves `RoomManager`, its other timers stop and the sockets still in it lose their seat, so a seated command gets `NOT_ALLOWED` and a later room with the same id never reaches them.
 
 ### Seat presence
@@ -148,7 +149,7 @@ Decision: [ADR-0072](adr/0072-seat-presence.md).
 - **Time:** `now` is epoch ms. Deadlines are stored as timestamps (`PlacementRoom.deadline`) and projected as remaining milliseconds.
 - **Phase checks:** a placement command outside `PLACEMENT` and a turn command outside `IN_PROGRESS` → `WRONG_PHASE`; the phase is checked before the seat or the payload.
 - **Projection:** the receiver's own fleet and both shot lists, in battle and at game over; the opponent's fleet only in `GAME_OVER`; never a secret. Fields whose feature is not built yet hold neutral values ([ADR-0038](adr/0038-snapshot-projection.md)).
-- **Registry:** `createRoom` → `SERVER_FULL` at `MAX_ROOMS` open rooms; `joinRoom` → `ROOM_NOT_FOUND` for an unknown id, and the seat the joiner took; `dispatch` runs a seated player's command; `setPresence`, `nextForfeit`, `forfeitDue` and `leave` run the presence transitions, and the last two remove a room nobody is left in; `remove` forgets a room whose TTL ran out ([Room lifecycle](#room-lifecycle)). The registry has no timers.
+- **Registry:** `createRoom` → `SERVER_FULL` at `MAX_ROOMS` open rooms; `joinRoom` → `ROOM_NOT_FOUND` for an unknown id, and the seat the joiner took; `dispatch` runs a seated player's command; `setPresence`, `nextForfeit`, `forfeitDue` and `leave` run the presence transitions, and the last two remove a room nobody is left in; `remove` forgets a room whose game-over TTL ran out ([Room lifecycle](#room-lifecycle)). The registry has no timers.
 
 ## Plugins
 
@@ -175,8 +176,7 @@ Decision: [ADR-0072](adr/0072-seat-presence.md).
 2. **Guard:** the payload goes through its `PAYLOAD_PARSERS` guard; `null` → `INVALID_PAYLOAD`, before any other check.
 3. **Dispatch:**
    - `CREATE_ROOM` → `RoomManager.createRoom` (`SERVER_FULL` at `MAX_ROOMS`); the socket is bound to `P1`.
-   - `JOIN_ROOM` → `RoomManager.joinRoom` (`ROOM_NOT_FOUND`, `ROOM_FULL`); the socket is bound to `P2`. Joining the room the socket already sits in → `NOT_ALLOWED`.
-   - `JOIN_ROOM` binds the socket to the seat the joiner took: `P2`, or `P1` after the creator left ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)).
+   - `JOIN_ROOM` → `RoomManager.joinRoom` (`ROOM_NOT_FOUND`, `ROOM_FULL`); the socket is bound to the seat the joiner took: `P2`, or `P1` after the creator left ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)). Joining the room the socket already sits in → `NOT_ALLOWED`.
    - `UPDATE_PLACEMENT`, `CONFIRM_PLACEMENT`, `UNLOCK_PLACEMENT`, `UPDATE_TARGETS`, `FIRE`, `SET_PAUSED` → `RoomManager.dispatch` with the sender's bound seat; a socket without a seat → `NOT_ALLOWED`.
    - `LEAVE_ROOM` → `RoomManager.leave` with the sender's bound seat ([Leaving](#leaving)); a socket without a seat → `NOT_ALLOWED`.
    - `UPDATE_RULES`, `CONFIRM_RULES`, `SURRENDER`, `REMATCH_CHOICE` → `NOT_ALLOWED` until their room logic lands (#26, #35, #36).
@@ -197,16 +197,17 @@ Decision: [ADR-0072](adr/0072-seat-presence.md).
   - Valid session → `RoomManager.findSeat` finds the open room and the seat holding the secret; the socket is bound to it (`socket.data.binding`) before it connects, joins the room's Socket.io room and receives a `STATE` snapshot immediately ([ADR-0063](adr/0063-session-rebinding.md)). A seat that was away is connected again: its forfeit clock stops, and the opponent gets `STATE` too ([Seat presence](#seat-presence)).
   - Malformed (`parseSessionCredentials` fails), unknown or expired session (the room is gone, or no seat holds the secret) → `SESSION_INVALID`; the client drops the stored credentials, connects again without them and explains the refusal on the room page: a server restart, a closed room or a seat given up ([ADR-0070](adr/0070-client-handshake-refusals.md), [ADR-0076](adr/0076-refused-seat-explanation.md)).
 - **Latest connection wins:** binding a new socket to a seat emits `SESSION_REPLACED` to every other socket bound to that seat and disconnects it from the namespace, so the client reads the event, then `io server disconnect`, and does not reconnect on its own ([ADR-0014](adr/0014-duplicate-sessions.md), [ADR-0063](adr/0063-session-rebinding.md)). The new socket joins the room first, so the seat never counts as away, and the opponent gets nothing ([ADR-0072](adr/0072-seat-presence.md)).
+- **Drop detection:** a seat is away from the tick its last socket's `disconnect` arrives, with no grace period ([Seat presence](#seat-presence)). A socket that vanishes without closing (a silent network loss) is caught by the Engine.IO heartbeat: `socket-io.ts` sets neither `pingInterval` nor `pingTimeout`, so the defaults apply (25 s and 20 s, announced in the handshake), and such a drop is noticed 20–45 s after it happened. In production a closed connection also reaches the server late: 10 s after a WebSocket close frame, 20 s after a TCP FIN, through Render's proxy ([Deployment: Hosting facts](deployment.md#hosting-facts-render-free)). Tuning either waits for the device playtest (#38).
 - **Mobile:** app switching kills sockets frequently. Reconnection is a primary flow and must be covered by integration tests.
 
 ## Hardening
 
-- Every inbound payload passes its `core/validation.ts` guard (`PAYLOAD_PARSERS`) before reaching room logic; failures → `INVALID_PAYLOAD` ([Payload validation](protocol.md#payload-validation)). Room logic receives the guard's copy, never the raw payload.
-  Decision: [ADR-0066](adr/0066-rate-limit-and-message-size.md).
+Decision: [ADR-0066](adr/0066-rate-limit-and-message-size.md).
 
+- Every inbound payload passes its `core/validation.ts` guard (`PAYLOAD_PARSERS`) before reaching room logic; failures → `INVALID_PAYLOAD` ([Payload validation](protocol.md#payload-validation)). Room logic receives the guard's copy, never the raw payload.
 - **Message size:** Socket.io `maxHttpBufferSize` is `MAX_MESSAGE_BYTES` (16 KiB, `socket-io.ts`), about forty times the largest valid command. A larger message closes the connection before anything parses it; the client sees `transport close` or `transport error`. Long polling shares the cap: the client splits its batches to the `maxPayload` the handshake announces.
 - **Rate limit:** each socket may send `RATE_LIMIT_EVENTS_PER_SECOND` (20) events in any one-second window (a sliding window on the server's `Clock`). Every inbound event counts, `ECHO` and malformed commands included. A further event is dropped before any guard or handler and its ack, if it has one, gets `{ ok: false, error: 'RATE_LIMITED' }`; refused events do not count, and the socket stays connected. The refusal is sent on `process.nextTick`, the queue Socket.io dispatches admitted events on, so a socket's acks keep the order of its events ([ADR-0066](adr/0066-rate-limit-and-message-size.md)). The first refusal of a run is logged ("Socket rate limited"); the rest of the run is not.
-- **Room cap:** `MAX_ROOMS` open rooms → `SERVER_FULL`; the TTLs keep idle rooms from holding places ([Room lifecycle](#room-lifecycle)).
+- **Room cap:** `MAX_ROOMS` open rooms → `SERVER_FULL`. Forfeits, `LEAVE_ROOM` and the game-over TTL free places ([Room lifecycle](#room-lifecycle)), but nothing frees a waiting room while its creator stays connected, and the rate limit is per socket: one client with `MAX_ROOMS` open sockets can hold every place (#113).
 
 ## Logging
 
@@ -218,7 +219,7 @@ Logs go through Fastify's Pino logger. `LOG_LEVEL` picks how much is written, `L
 | `debug` (local `.env`)   | Also `/health` requests, every socket event received or sent with its payload (broadcasts included, ack callbacks left out), transport upgrades, and each connection's raw `X-Forwarded-For` chain and peer address                                                                                                                                                                                                                                                                                    |
 
 - Every socket line carries the `socketId`, so one client's history can be followed.
-- **Client address** ([ADR-0067](adr/0067-client-address.md)): the `address` of "Socket connected" and the `req.remoteAddress` of Fastify's request lines are read from `X-Forwarded-For`, `TRUST_PROXY_HOPS` entries from the right (Fastify `trustProxy` for HTTP, `clientAddress` for Socket.io, the same rule). With the default `0` the header is ignored and the TCP peer is logged, which behind Render's proxy is the proxy. With hops set, the logs hold each client's public IP address, which is personal data; see [Deployment: Render](deployment.md#render-service-battleship-server) for calibrating the count.
+- **Client address** ([ADR-0067](adr/0067-client-address.md)): the `address` of "Socket connected" and the `req.remoteAddress` of Fastify's request lines are read from `X-Forwarded-For`, `TRUST_PROXY_HOPS` entries from the right (Fastify `trustProxy` for HTTP, `clientAddress` for Socket.io, the same rule). With the default `0` the header is ignored and the TCP peer is logged, which behind Render's proxy is the proxy. With hops set, the logs hold each client's public IP address, which is personal data. On Render the count is `1`, which fits WebSocket handshakes, the transport browsers use; plain HTTP crosses more proxies there, so Fastify's request lines and polling handshakes log Render's internal address (`10.30.x`) instead ([ADR-0081](adr/0081-one-proxy-hop-on-render.md)). See [Deployment: Render](deployment.md#render-service-battleship-server) for calibrating the count.
 - Room lines carry the `roomId` and, for creation and joining, the `seat`. A refused command logs its event and error code and, for `INVALID_PLACEMENT` and `INVALID_TARGETS`, the core violation, which is never sent ([ADR-0032](adr/0032-fleet-placement.md)).
 - Ack replies are not logged: Socket.io has no hook for them, so the handlers log refusals and room changes themselves.
 - Payloads stay at `debug` because they carry player data. No log line carries a `playerSecret`: secrets travel only in acks, which are not logged, and in the handshake `auth`, which is never logged. A debug-level test reads the whole log of a session rebinding for the secret, instead of a Pino `redact` list of paths ([ADR-0063](adr/0063-session-rebinding.md)).

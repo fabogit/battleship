@@ -72,7 +72,7 @@ export const ROOM_TEXT: RoomText = {
   leftReason: 'You have entered another room since, so this page no longer follows this one.',
   notFoundHeading: 'Room not found',
   notFoundReason:
-    'The link may be mistyped, or the room has closed: rooms do not survive a server restart and expire when left empty.',
+    'The link may be mistyped, or the room has closed: rooms do not survive a server restart and close a few minutes after their players have left.',
   fullHeading: 'This room is full',
   fullReason: 'Two players are already in this room.',
   createOwn: 'Create a new room',

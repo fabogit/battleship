@@ -25,6 +25,7 @@ The logs name the client's address as the proxy in front of the server saw it, r
 ## Links
 
 - Added on 2026-10-13 for server hardening ([#24](https://github.com/fabogit/battleship/issues/24)), from the M1 review addendum ([#52](https://github.com/fabogit/battleship/issues/52)).
+- Amended on 2026-10-22 for the M2 review ([#53](https://github.com/fabogit/battleship/issues/53), F21): `TRUST_PROXY_HOPS` is `1` on Render. A WebSocket handshake crosses one proxy and plain HTTP three, so the count is calibrated from a browser's WebSocket handshake, and HTTP lines log Render's internal address ([ADR-0081](0081-one-proxy-hop-on-render.md)).
 - Spec: [Server: Logging](../server.md#logging) · [Deployment: Render](../deployment.md#render-service-battleship-server)
 - Related: [ADR-0019](0019-backend-deploy.md) (backend on Render), [ADR-0066](0066-rate-limit-and-message-size.md) (the rate limit stays per socket)
 - Issues: [#24](https://github.com/fabogit/battleship/issues/24), [#52](https://github.com/fabogit/battleship/issues/52)
