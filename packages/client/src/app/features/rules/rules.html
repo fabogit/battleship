@@ -2,7 +2,7 @@
   <h1>{{ text.heading }}</h1>
   <ng-content />
 </div>
-<p>{{ text.intro(opponentNickname()) }}</p>
+<p class="intro">{{ text.intro(opponentNickname()) }}</p>
 
 <fieldset class="rules">
   <legend class="visually-hidden">{{ text.legend }}</legend>
@@ -74,11 +74,13 @@
   <button
     type="button"
     class="primary"
+    aria-describedby="confirm-hint"
     [attr.aria-disabled]="store.canConfirm() ? null : 'true'"
     (click)="store.confirm()"
   >
     {{ confirmLabel() }}
   </button>
+  <p id="confirm-hint" hidden>{{ text.confirmHint }}</p>
   <ul class="confirmations" [attr.aria-label]="text.confirmationsLabel">
     <li [class.ok]="store.hasConfirmed().me">{{ text.confirmation(text.you, store.hasConfirmed().me) }}</li>
     <li [class.ok]="store.hasConfirmed().opponent">

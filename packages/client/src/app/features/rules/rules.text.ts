@@ -16,7 +16,7 @@ export interface RulesText {
   /** The page heading. */
   readonly heading: string;
   /**
-   * Under the heading: who the rules are agreed with, and what an edit does.
+   * Under the heading: who the rules are agreed with.
    * @param nickname The opponent's nickname.
    * @returns The sentence.
    */
@@ -58,6 +58,8 @@ export interface RulesText {
   readonly confirmation: (name: string, isConfirmed: boolean) => string;
   /** The confirm button. */
   readonly confirm: string;
+  /** The confirm button's description, read with it and not shown: what an edit does to a confirmation. */
+  readonly confirmHint: string;
   /** The confirm button while its command runs. */
   readonly confirming: string;
   /** The confirm button once the player confirmed the version on screen. */
@@ -102,7 +104,7 @@ export interface RulesText {
  */
 export const RULES_TEXT: RulesText = {
   heading: 'Match rules',
-  intro: (nickname) => `Agree on the rules with ${nickname}. Any change asks you both to confirm again.`,
+  intro: (nickname) => `Agree on the rules with ${nickname}.`,
   legend: 'Rules',
   extraTurn: 'Extra turn on hit',
   adjacentShips: 'Ships may touch',
@@ -118,6 +120,7 @@ export const RULES_TEXT: RulesText = {
   you: 'You',
   confirmation: (name, isConfirmed) => `${name}: ${isConfirmed ? 'confirmed' : 'not confirmed yet'}`,
   confirm: 'Confirm rules',
+  confirmHint: 'Any change to the rules asks you both to confirm again.',
   confirming: 'Confirming…',
   confirmed: 'Rules confirmed',
   changes: {

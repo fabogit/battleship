@@ -212,6 +212,14 @@ describe('Rules', () => {
     expect(confirmButton().hasAttribute('aria-disabled')).toBe(false);
   });
 
+  it('describes "Confirm rules" with what an edit does, out of the reading order', async () => {
+    await render();
+
+    const hint = screen().querySelector(`[id="${confirmButton().getAttribute('aria-describedby') ?? ''}"]`);
+    expect(hint?.textContent).toBe(RULES_TEXT.confirmHint);
+    expect(hint?.hasAttribute('hidden')).toBe(true);
+  });
+
   it("lists both players' confirmations", async () => {
     await render({ hasConfirmedRules: { me: false, opponent: true } });
 

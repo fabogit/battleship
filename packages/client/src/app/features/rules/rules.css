@@ -173,6 +173,34 @@ legend {
   color: var(--color-error);
 }
 
+/*
+ * On a short screen (under 40rem, 640px) "Confirm rules" would fall below the fold at 320×568 with the opponent-away
+ * banner above the view: tighter spacing, the targets still 2.75rem (44px) high, and the intro read but not shown (the
+ * list of confirmations names the opponent too).
+ */
+@media (height < 40rem) {
+  :host {
+    gap: 0.5rem;
+  }
+
+  .intro {
+    position: absolute;
+    width: 0.0625rem;
+    height: 0.0625rem;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .rules {
+    gap: 0.25rem;
+  }
+
+  .options legend {
+    margin-bottom: 0.125rem;
+  }
+}
+
 .visually-hidden {
   position: absolute;
   width: 0.0625rem;

@@ -8,7 +8,6 @@ import {
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
-  PLACEMENT_TIME_LIMIT_MS,
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
@@ -47,24 +46,17 @@ const NEXT_ROOM_ID = createRoomId(1);
 const PLAYER_SECRET = createPlayerSecret();
 
 /**
- * The room right after the joiner took the seat, seen by the joiner. Until rules negotiation lands (#26) the server
- * moves straight to `PLACEMENT` (docs/server.md#room-creation--joining).
+ * The room right after the joiner took the seat, seen by the joiner: the server opens rules negotiation
+ * (docs/server.md#room-creation--joining).
  * @returns The snapshot.
  */
 function joinedSnapshot(): PlayerStateSnapshot {
   const waiting = waitingSnapshot(ROOM_ID, 'Ada');
   return {
     ...waiting,
-    phase: ROOM_PHASES.PLACEMENT,
+    phase: ROOM_PHASES.RULES_NEGOTIATION,
     me: { seat: SEATS.P2, nickname: 'Grace', isConnected: true, forfeitRemainingMs: null },
     opponent: { ...waiting.me },
-    hasConfirmedRules: { me: true, opponent: true },
-    placement: {
-      myShips: [],
-      hasConfirmed: { me: false, opponent: false },
-      remainingMs: PLACEMENT_TIME_LIMIT_MS,
-      startCountdownMs: null,
-    },
   };
 }
 
@@ -216,8 +208,8 @@ describe('Room', () => {
 
       await receive(joinedSnapshot());
 
-      expect(heading()).toBe(PLACEMENT_TEXT.heading);
-      expect(page().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Ada'));
+      expect(heading()).toBe(RULES_TEXT.heading);
+      expect(page().textContent).toContain(RULES_TEXT.intro('Ada'));
     });
 
     it('shows a not-found screen with a way home for ROOM_NOT_FOUND', async () => {
@@ -296,17 +288,12 @@ describe('Room', () => {
       const joined = joinedSnapshot();
       await receive({ ...joined, me: joined.opponent ?? joined.me, opponent: joined.me });
 
-      expect(heading()).toBe(PLACEMENT_TEXT.heading);
-      expect(page().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Grace'));
-    });
-
-    it('shows the rules screen while the players agree on the rules, then placement (#27)', async () => {
-      await receive(waitingSnapshot(ROOM_ID, 'Ada'));
-
-      await receive(negotiationSnapshot(ROOM_ID));
-
       expect(heading()).toBe(RULES_TEXT.heading);
       expect(page().textContent).toContain(RULES_TEXT.intro('Grace'));
+    });
+
+    it('moves on to placement once both confirm the rules (#27)', async () => {
+      await receive(negotiationSnapshot(ROOM_ID, { hasConfirmedRules: { me: true, opponent: false } }));
 
       await receive(placementSnapshot(ROOM_ID));
 
