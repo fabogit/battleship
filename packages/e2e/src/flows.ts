@@ -1,4 +1,4 @@
-// Steps the journeys share: entering a room, placing a fleet, firing. Selectors go by ARIA role and the client's own
+// Steps the journeys share: entering a room, agreeing on the rules, placing a fleet, firing. Selectors go by ARIA role and the client's own
 // text constants, imported from its sources, so a reworded label changes the journeys with it.
 
 import { BOARD_SIZE } from '@battleship/core';
@@ -9,6 +9,7 @@ import { HOME_TEXT } from '../../client/src/app/features/home/home.text';
 import { LOBBY_TEXT } from '../../client/src/app/features/lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../../client/src/app/features/placement/placement.text';
 import { ROOM_TEXT } from '../../client/src/app/features/room/room.text';
+import { RULES_TEXT } from '../../client/src/app/features/rules/rules.text';
 import { BOARD_GRID_TEXT } from '../../client/src/app/shared/board-grid/board-grid.text';
 import { formatCoordinate } from '../../client/src/app/shared/board-grid/coordinates';
 import { NICKNAME_FORM_TEXT } from '../../client/src/app/shared/nickname-form/nickname-form.text';
@@ -88,7 +89,7 @@ export async function createRoom(player: Player): Promise<string> {
 }
 
 /**
- * Opens a room's link and takes its free seat, which starts placement.
+ * Opens a room's link and takes its free seat, which starts rules negotiation.
  * @param player The joiner, on any page.
  * @param roomUrl The link the creator shares.
  */
@@ -98,7 +99,35 @@ export async function joinRoom(player: Player, roomUrl: string): Promise<void> {
   await expect(mainHeading(page)).toHaveText(ROOM_TEXT.joinHeading);
   await page.getByLabel(NICKNAME_FORM_TEXT.label).fill(player.nickname);
   await page.getByRole('button', { name: ROOM_TEXT.join }).click();
-  await expect(mainHeading(page)).toHaveText(PLACEMENT_TEXT.heading);
+  await expect(mainHeading(page)).toHaveText(RULES_TEXT.heading);
+}
+
+/**
+ * Both players confirm the rules on screen, one after the other, which starts placement (ADR-0003).
+ * @param players The two players, both on the rules screen.
+ */
+export async function agreeOnRules(players: readonly [Player, Player]): Promise<void> {
+  for (const { page } of players) {
+    await expect(mainHeading(page)).toHaveText(RULES_TEXT.heading);
+    // Disabled while an edit or a confirmation is on its way; `click` waits for it.
+    await page.getByRole('button', { name: RULES_TEXT.confirm }).click();
+  }
+  for (const { page } of players) {
+    await expect(mainHeading(page)).toHaveText(PLACEMENT_TEXT.heading);
+  }
+}
+
+/**
+ * Creates a room, joins it and agrees on the default rules: the shortest way into placement.
+ * @param creator The player who creates the room and sits in `P1`.
+ * @param joiner The player who joins it.
+ * @returns The room's link.
+ */
+export async function enterPlacement(creator: Player, joiner: Player): Promise<string> {
+  const roomUrl = await createRoom(creator);
+  await joinRoom(joiner, roomUrl);
+  await agreeOnRules([creator, joiner]);
+  return roomUrl;
 }
 
 /**
@@ -114,14 +143,14 @@ export async function confirmRandomFleet(player: Player): Promise<void> {
 }
 
 /**
- * Creates a room, joins it and confirms two random fleets: the shortest way into the battle.
+ * Creates a room, joins it, agrees on the default rules and confirms two random fleets: the shortest way into the
+ * battle.
  * @param creator The player who creates the room and sits in `P1`.
  * @param joiner The player who joins it.
  * @returns The room's link.
  */
 export async function startBattle(creator: Player, joiner: Player): Promise<string> {
-  const roomUrl = await createRoom(creator);
-  await joinRoom(joiner, roomUrl);
+  const roomUrl = await enterPlacement(creator, joiner);
   await confirmRandomFleet(creator);
   await confirmRandomFleet(joiner);
   for (const player of [creator, joiner]) {

@@ -4,14 +4,16 @@ import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
 import { LOBBY_TEXT } from '../../client/src/app/features/lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../../client/src/app/features/placement/placement.text';
 import { ROOM_TEXT } from '../../client/src/app/features/room/room.text';
+import { RULES_TEXT } from '../../client/src/app/features/rules/rules.text';
 import { test, expect } from '../src/fixtures.ts';
-import { confirmRandomFleet, createRoom, joinRoom, mainHeading, turnHeadings } from '../src/flows.ts';
+import { agreeOnRules, confirmRandomFleet, createRoom, joinRoom, mainHeading, turnHeadings } from '../src/flows.ts';
 
 /**
  * The smallest phone the layout supports, held as a phone, and a laptop screen (#53 F1, F4). "Leave room" sits beside
- * the heading (ADR-0080), so it is in view at the top of the page. "Confirm fleet" sits under the placement board,
- * which fills either screen, so it only has to come whole into view once scrolled to; so does "Fire" on the phone,
- * where Enemy waters fills the screen, while the laptop shows it at the top of the page.
+ * the heading (ADR-0080), so it is in view at the top of the page, as is "Confirm rules". "Confirm fleet" sits under
+ * the placement board, which fills either screen, so it only has to come whole into view once scrolled to; so does
+ * "Fire" on the phone, where Enemy waters fills the screen, while the laptop shows it at the top of the page. Both
+ * coming into view without a scroll is #31's.
  */
 const SCREENS = [
   { viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true, fireScroll: 'to' },
@@ -102,7 +104,16 @@ for (const screen of SCREENS) {
       await expect(dialog).toBeHidden();
 
       await joinRoom(grace, roomUrl);
-      await expect(mainHeading(ada.page)).toHaveText(PLACEMENT_TEXT.heading);
+      await expect(mainHeading(ada.page)).toHaveText(RULES_TEXT.heading);
+      await expectNoHorizontalScroll(ada.page, 'rules');
+      await expectInView(leave, '"Leave room" on the rules screen', 'top');
+      await expectInView(
+        ada.page.getByRole('button', { name: RULES_TEXT.confirm }),
+        '"Confirm rules" on the rules screen',
+        'top',
+      );
+
+      await agreeOnRules([ada, grace]);
       await expectNoHorizontalScroll(ada.page, 'placement');
       await expectInView(leave, '"Leave room" in placement', 'top');
       await expectInView(
