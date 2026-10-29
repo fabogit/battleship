@@ -6,8 +6,10 @@ import {
   DISCONNECT_FORFEIT_MS,
   FLEET,
   GAME_OVER_TTL_MS,
+  RULES_VIOLATIONS,
   SHIP_LENGTH,
   TIMEOUT_ACTIONS,
+  validateRules,
 } from '../src/index.js';
 
 describe('fleet', () => {
@@ -43,5 +45,50 @@ describe('DEFAULT_RULES', () => {
 
   it('respects the salvo / extra-turn exclusivity', () => {
     expect(DEFAULT_RULES.isSalvoModeEnabled && DEFAULT_RULES.isExtraTurnOnHitEnabled).toBe(false);
+  });
+});
+
+describe('validateRules', () => {
+  it('accepts DEFAULT_RULES', () => {
+    expect(validateRules(DEFAULT_RULES)).toEqual({ ok: true });
+  });
+
+  // ADR-0010: the exclusive pair.
+  it.each([
+    [false, false],
+    [false, true],
+  ])('accepts salvo %s with extra turn %s', (isSalvoModeEnabled, isExtraTurnOnHitEnabled) => {
+    expect(validateRules({ ...DEFAULT_RULES, isSalvoModeEnabled, isExtraTurnOnHitEnabled })).toEqual({ ok: true });
+  });
+
+  // ADR-0085: the shot engine throws on salvo until #32, which drops this test with the violation.
+  it('refuses salvo alone until the shot engine supports it, whatever the other fields', () => {
+    for (const rules of [
+      { ...DEFAULT_RULES, isSalvoModeEnabled: true },
+      {
+        isSalvoModeEnabled: true,
+        isExtraTurnOnHitEnabled: false,
+        areAdjacentShipsAllowed: true,
+        turnTimeLimitSeconds: 120,
+        timeoutAction: TIMEOUT_ACTIONS.PASS_TURN,
+      } as const,
+    ]) {
+      expect(validateRules(rules)).toEqual({ ok: false, reason: RULES_VIOLATIONS.SALVO_NOT_IMPLEMENTED });
+    }
+  });
+
+  it('refuses salvo with extra turn on hit, whatever the other fields', () => {
+    for (const rules of [
+      { ...DEFAULT_RULES, isSalvoModeEnabled: true, isExtraTurnOnHitEnabled: true },
+      {
+        isSalvoModeEnabled: true,
+        isExtraTurnOnHitEnabled: true,
+        areAdjacentShipsAllowed: true,
+        turnTimeLimitSeconds: 120,
+        timeoutAction: TIMEOUT_ACTIONS.PASS_TURN,
+      } as const,
+    ]) {
+      expect(validateRules(rules)).toEqual({ ok: false, reason: RULES_VIOLATIONS.SALVO_WITH_EXTRA_TURN });
+    }
   });
 });

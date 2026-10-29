@@ -8,6 +8,7 @@ import {
   randomTargets,
   ROOM_PHASES,
   SEATS,
+  TIMEOUT_ACTIONS,
   type Coordinate,
   type PlayerStateSnapshot,
   type Seat,
@@ -21,6 +22,7 @@ import {
   battleRoom,
   cellsOf,
   fleet,
+  negotiationRoom,
   NOW,
   P1_SECRET,
   P2_SECRET,
@@ -90,6 +92,25 @@ describe('projectSnapshot', () => {
       battle: null,
       gameOver: null,
     });
+  });
+
+  it('shows the rules under negotiation, their version and who confirmed them, from each side', () => {
+    const rules = { ...DEFAULT_RULES, turnTimeLimitSeconds: 120, timeoutAction: TIMEOUT_ACTIONS.PASS_TURN } as const;
+    const edited = apply(negotiationRoom(), { type: CLIENT_EVENTS.UPDATE_RULES, seat: SEATS.P2, payload: { rules } });
+    const state = apply(edited, { type: CLIENT_EVENTS.CONFIRM_RULES, seat: SEATS.P1, payload: { rulesVersion: 1 } });
+    expect(projectSnapshot(state, SEATS.P1, NOW)).toEqual({
+      roomId: ROOM_ID,
+      phase: ROOM_PHASES.RULES_NEGOTIATION,
+      me: { seat: SEATS.P1, nickname: 'Alice', isConnected: true, forfeitRemainingMs: null },
+      opponent: { seat: SEATS.P2, nickname: 'Bob', isConnected: true, forfeitRemainingMs: null },
+      rules,
+      rulesVersion: 1,
+      hasConfirmedRules: { me: true, opponent: false },
+      placement: null,
+      battle: null,
+      gameOver: null,
+    });
+    expect(projectSnapshot(state, SEATS.P2, NOW).hasConfirmedRules).toEqual({ me: false, opponent: true });
   });
 
   it('throws for an empty seat', () => {

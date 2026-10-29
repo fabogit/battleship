@@ -103,6 +103,25 @@ export function waitingSnapshot(roomId: string, nickname = 'Ada'): PlayerStateSn
 }
 
 /**
+ * A snapshot of a room in `RULES_NEGOTIATION`, seen by its creator Ada playing against Grace: by default the default
+ * rules at version 0, which neither has confirmed.
+ * @param roomId Any well-formed id; specs use the one their route or store expects.
+ * @param negotiation The rules, their version or the confirmations to override.
+ * @returns A new snapshot on every call, from the creator's side (`me` is `P1`).
+ */
+export function negotiationSnapshot(
+  roomId: string,
+  negotiation: Partial<Pick<PlayerStateSnapshot, 'rules' | 'rulesVersion' | 'hasConfirmedRules'>> = {},
+): PlayerStateSnapshot {
+  return {
+    ...waitingSnapshot(roomId, 'Ada'),
+    phase: ROOM_PHASES.RULES_NEGOTIATION,
+    opponent: { seat: SEATS.P2, nickname: 'Grace', isConnected: true, forfeitRemainingMs: null },
+    ...negotiation,
+  };
+}
+
+/**
  * A snapshot of a room in `PLACEMENT`, seen by its creator Ada playing against Grace; both fleets start empty and
  * unconfirmed.
  * @param roomId Any well-formed id; specs use the one their route or store expects.

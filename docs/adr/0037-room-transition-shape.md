@@ -26,6 +26,7 @@ Room logic lives in `packages/server/src/room/room.ts` as one pure function, `ap
 ## Links
 
 - Added on 2026-10-07 for the room logic ([#14](https://github.com/fabogit/battleship/issues/14)).
+- Amended on 2026-10-29 ([#26](https://github.com/fabogit/battleship/issues/26)): `RULES_NEGOTIATION` has its variant, `NegotiationRoom`, and `JOIN_ROOM` moves to it ([ADR-0082](0082-rules-negotiation-commands.md)).
 - Spec: [Server: Room state machine](../server.md#room-state-machine) · [Server: Transition rules](../server.md#transition-rules) · [Server: Testability](../server.md#testability)
 - Related: [ADR-0031](0031-payload-guard-strictness.md) (guards before room logic) · [ADR-0033](0033-turn-resolution.md) (turn resolution) · [ADR-0038](0038-snapshot-projection.md) (snapshot projection) · [ADR-0039](0039-room-registry.md) (room registry)
 - Issues: [#14](https://github.com/fabogit/battleship/issues/14) · [#15](https://github.com/fabogit/battleship/issues/15) (socket handlers)

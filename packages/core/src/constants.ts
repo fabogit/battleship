@@ -2,9 +2,9 @@
 
 /**
  * Bumped on any breaking protocol change; checked in the Socket.io handshake (ADR-0017). 2: the game-over snapshot
- * carries both final boards (ADR-0064).
+ * carries both final boards (ADR-0064). 3: `JOIN_ROOM` opens rules negotiation instead of placement (ADR-0084).
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** Side length of the square board, in cells. */
 export const BOARD_SIZE = 10;

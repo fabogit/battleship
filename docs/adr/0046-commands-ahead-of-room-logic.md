@@ -20,6 +20,7 @@ The server listens to every command of the protocol from the start, and each one
 ## Links
 
 - Added on 2026-10-08 for the socket handlers ([#15](https://github.com/fabogit/battleship/issues/15)).
+- Amended on 2026-10-29 ([#26](https://github.com/fabogit/battleship/issues/26)): `UPDATE_RULES` and `CONFIRM_RULES` have their room logic, and answer `WRONG_PHASE` outside `RULES_NEGOTIATION` ([ADR-0082](0082-rules-negotiation-commands.md)).
 - Spec: [Server: Socket handlers](../server.md#socket-handlers) · [Protocol: Client → server](../protocol.md#client--server)
 - Related: [ADR-0031](0031-payload-guard-strictness.md) (guards before room logic) · [ADR-0035](0035-command-acks.md) (command acks)
 - Issues: [#15](https://github.com/fabogit/battleship/issues/15) · [#23](https://github.com/fabogit/battleship/issues/23) · [#26](https://github.com/fabogit/battleship/issues/26) · [#35](https://github.com/fabogit/battleship/issues/35) · [#36](https://github.com/fabogit/battleship/issues/36)

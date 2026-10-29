@@ -1,0 +1,10 @@
+$kind: socket.io-message
+eventName: CONFIRM_RULES
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "rulesVersion": 0
+      }
+    contentType: json
+order: 1500

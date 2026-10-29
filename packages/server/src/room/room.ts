@@ -15,6 +15,7 @@ import {
   TARGET_VIOLATIONS,
   validateDraft,
   validateFleet,
+  validateRules,
   validateTargets,
   type Battle,
   type CommandPayload,
@@ -24,6 +25,7 @@ import {
   type JoinRoomPayload,
   type PlacedShip,
   type PlacementViolation,
+  type RulesViolation,
   type Seat,
   type ShotResolvedPayload,
   type TargetViolation,
@@ -49,9 +51,15 @@ export interface PlacementFleet {
 interface RoomBase {
   /** `ROOM_ID_LENGTH` characters of `ROOM_ID_ALPHABET`, unique among the open rooms. */
   readonly roomId: string;
-  /** The rules the match is played with; `DEFAULT_RULES` until rules negotiation lands (#26). */
+  /**
+   * The rules the match is played with: `DEFAULT_RULES` in a new room, then the latest edit; kept when a player leaves
+   * before the match (ADR-0083).
+   */
   readonly rules: GameRules;
-  /** Bumped by every `UPDATE_RULES` once negotiation lands (#26); `0` until then. */
+  /**
+   * Bumped by every `UPDATE_RULES` that changes the rules, and never reset, so a stale `CONFIRM_RULES` can never match
+   * a later version (ADR-0004); `0` in a new room.
+   */
   readonly rulesVersion: number;
   /**
    * When each seat lost its last socket, in epoch ms; `null` while a socket is bound to it, and for an empty seat
@@ -82,6 +90,16 @@ export interface WaitingRoom extends RoomBase {
         /** A joiner whose opponent left before the match. */
         readonly P2: RoomPlayer;
       };
+}
+
+/** A room where both players agree on the rules (ADR-0003): either may edit them, and both confirm one version. */
+export interface NegotiationRoom extends RoomBase {
+  /** Discriminant: the rules are being agreed on. */
+  readonly phase: typeof ROOM_PHASES.RULES_NEGOTIATION;
+  /** Both seats are taken from here on. */
+  readonly players: Readonly<Record<Seat, RoomPlayer>>;
+  /** Whether each seat confirmed the current `rulesVersion`; an edit clears both. */
+  readonly hasConfirmedRules: Readonly<Record<Seat, boolean>>;
 }
 
 /** A room where both players place their fleets. */
@@ -134,20 +152,22 @@ export interface GameOverRoom extends RoomBase {
 /** The ways a match can end so far: the last ship sunk, or a seat away for `DISCONNECT_FORFEIT_MS` (ADR-0072). */
 export type GameOverRoomReason = typeof GAME_OVER_REASONS.FLEET_DESTROYED | typeof GAME_OVER_REASONS.DISCONNECT_FORFEIT;
 
-/**
- * Everything the server keeps about one room, one variant per phase it can be in (ADR-0037). `RULES_NEGOTIATION`
- * joins with #26; until then `JOIN_ROOM` goes straight to `PLACEMENT` with the default rules.
- */
-export type RoomState = WaitingRoom | PlacementRoom | BattleRoom | GameOverRoom;
+/** Everything the server keeps about one room, one variant per phase it can be in (ADR-0037). */
+export type RoomState = WaitingRoom | NegotiationRoom | PlacementRoom | BattleRoom | GameOverRoom;
 
 /** Commands a seated player sends, handled by `applyCommand`; `RoomManager.dispatch` runs them for the socket handlers. */
 export type SeatCommandEvent =
+  | typeof CLIENT_EVENTS.UPDATE_RULES
+  | typeof CLIENT_EVENTS.CONFIRM_RULES
   | typeof CLIENT_EVENTS.UPDATE_PLACEMENT
   | typeof CLIENT_EVENTS.CONFIRM_PLACEMENT
   | typeof CLIENT_EVENTS.UNLOCK_PLACEMENT
   | typeof CLIENT_EVENTS.UPDATE_TARGETS
   | typeof CLIENT_EVENTS.FIRE
   | typeof CLIENT_EVENTS.SET_PAUSED;
+
+/** The rules commands, handled by `applyRulesCommand`. */
+type RulesCommandEvent = typeof CLIENT_EVENTS.UPDATE_RULES | typeof CLIENT_EVENTS.CONFIRM_RULES;
 
 /** The placement commands, handled by `applyPlacementCommand`. */
 type PlacementCommandEvent =
@@ -216,12 +236,21 @@ export interface RejectedTransition {
   readonly ok: false;
   /** What the ack reports (docs/protocol.md#error-codes). */
   readonly error: ErrorCode;
-  /** For `INVALID_PLACEMENT` and `INVALID_TARGETS`, the rule broken; for the server log only, never sent (ADR-0032). */
-  readonly violation?: PlacementViolation | TargetViolation;
+  /**
+   * For `INVALID_RULES`, `INVALID_PLACEMENT` and `INVALID_TARGETS`, the rule broken; for the server log only, never sent
+   * (ADR-0032).
+   */
+  readonly violation?: Violation;
 }
 
 /** Outcome of `applyCommand`. */
 export type TransitionResult = AcceptedTransition | RejectedTransition;
+
+/** The core violations a refused command can carry. */
+export type Violation = RulesViolation | PlacementViolation | TargetViolation;
+
+/** Neither seat has confirmed the current rules. */
+const NO_CONFIRMATIONS: Readonly<Record<Seat, boolean>> = { P1: false, P2: false };
 
 /** A placement fleet before the player's first update. */
 const EMPTY_FLEET: PlacementFleet = { ships: [], hasConfirmed: false };
@@ -260,7 +289,12 @@ export function createRoom(roomId: string, creator: RoomPlayer): WaitingRoom {
 export function applyCommand(state: RoomState, command: RoomCommand, now: number): TransitionResult {
   switch (command.type) {
     case CLIENT_EVENTS.JOIN_ROOM:
-      return joinRoom(state, command, now);
+      return joinRoom(state, command);
+    case CLIENT_EVENTS.UPDATE_RULES:
+    case CLIENT_EVENTS.CONFIRM_RULES:
+      return state.phase === ROOM_PHASES.RULES_NEGOTIATION
+        ? applyRulesCommand(state, command, now)
+        : reject(ERROR_CODES.WRONG_PHASE);
     case CLIENT_EVENTS.UPDATE_PLACEMENT:
     case CLIENT_EVENTS.CONFIRM_PLACEMENT:
     case CLIENT_EVENTS.UNLOCK_PLACEMENT:
@@ -300,29 +334,97 @@ export function endMatch(state: BattleRoom, battle: Battle, winner: Seat, reason
 }
 
 /**
- * Seats the joiner in the free seat, `P2` unless the creator has left (ADR-0073), and starts placement. A room with
- * both seats taken is `ROOM_FULL` in every phase, so `JOIN_ROOM` never answers `WRONG_PHASE`.
+ * Seats the joiner in the free seat, `P2` unless the creator has left (ADR-0073), and starts rules negotiation. A room
+ * with both seats taken is `ROOM_FULL` in every phase, so `JOIN_ROOM` never answers `WRONG_PHASE`.
  * @param state The room the payload's `roomId` named, in any phase.
  * @param command The join, with the joiner's nickname and secret.
- * @param now Current time in epoch ms; the placement deadline counts from it.
- * @returns The room in `PLACEMENT`, or `ROOM_FULL`. A seated player who is away stays away, with their forfeit clock.
+ * @returns The room in `RULES_NEGOTIATION` with the room's rules and version and no confirmation, or `ROOM_FULL`. A
+ * seated player who is away stays away, with their forfeit clock.
  */
-function joinRoom(state: RoomState, command: JoinRoomCommand, now: number): TransitionResult {
+function joinRoom(state: RoomState, command: JoinRoomCommand): TransitionResult {
   if (state.phase !== ROOM_PHASES.WAITING_FOR_OPPONENT) {
     return reject(ERROR_CODES.ROOM_FULL);
   }
   const joiner: RoomPlayer = { nickname: command.payload.nickname, playerSecret: command.playerSecret };
   const seated = state.players;
   return accept({
-    phase: ROOM_PHASES.PLACEMENT,
+    phase: ROOM_PHASES.RULES_NEGOTIATION,
     roomId: state.roomId,
     rules: state.rules,
     rulesVersion: state.rulesVersion,
     players: seated.P1 === null ? { P1: joiner, P2: seated.P2 } : { P1: seated.P1, P2: joiner },
     disconnectedAt: state.disconnectedAt,
+    hasConfirmedRules: NO_CONFIRMATIONS,
+  });
+}
+
+/**
+ * Handles the rules commands (docs/server.md#rules-negotiation, ADR-0003, ADR-0004, ADR-0082). Either player may
+ * edit: an edit that changes the rules bumps `rulesVersion` and clears both confirmations, an edit to the rules already
+ * in place changes nothing. A confirmation names the version it accepts; when both seats have confirmed the current
+ * one, placement starts with those rules.
+ * @param state The room in `RULES_NEGOTIATION`.
+ * @param command `UPDATE_RULES` or `CONFIRM_RULES`.
+ * @param now Current time in epoch ms; the placement deadline counts from it.
+ * @returns The updated room (the same object when nothing changed), or `INVALID_RULES` with the violation, or
+ * `STALE_RULES` for a confirmation of any other version.
+ */
+function applyRulesCommand(
+  state: NegotiationRoom,
+  command: Extract<SeatCommand, { type: RulesCommandEvent }>,
+  now: number,
+): TransitionResult {
+  if (command.type === CLIENT_EVENTS.UPDATE_RULES) {
+    const { rules } = command.payload;
+    const validation = validateRules(rules);
+    if (!validation.ok) {
+      return reject(ERROR_CODES.INVALID_RULES, validation.reason);
+    }
+    if (areSameRules(rules, state.rules)) {
+      return accept(state);
+    }
+    return accept({ ...state, rules, rulesVersion: state.rulesVersion + 1, hasConfirmedRules: NO_CONFIRMATIONS });
+  }
+
+  if (command.payload.rulesVersion !== state.rulesVersion) {
+    return reject(ERROR_CODES.STALE_RULES);
+  }
+  if (state.hasConfirmedRules[command.seat]) {
+    return accept(state);
+  }
+  const hasConfirmedRules = { ...state.hasConfirmedRules, [command.seat]: true };
+  return accept(
+    hasConfirmedRules.P1 && hasConfirmedRules.P2 ? startPlacement(state, now) : { ...state, hasConfirmedRules },
+  );
+}
+
+/**
+ * Whether two rules objects hold the same values, field by field.
+ * @param left Well-formed rules.
+ * @param right Well-formed rules.
+ * @returns `true` when every field matches.
+ */
+function areSameRules(left: GameRules, right: GameRules): boolean {
+  return (Object.keys(left) as (keyof GameRules)[]).every((field) => left[field] === right[field]);
+}
+
+/**
+ * Moves a room whose rules both players confirmed into placement, with empty fleets and the deadline counting from now.
+ * @param state The room in `RULES_NEGOTIATION`.
+ * @param now Current time in epoch ms.
+ * @returns The room in `PLACEMENT`, with the agreed rules and their version.
+ */
+function startPlacement(state: NegotiationRoom, now: number): PlacementRoom {
+  return {
+    phase: ROOM_PHASES.PLACEMENT,
+    roomId: state.roomId,
+    rules: state.rules,
+    rulesVersion: state.rulesVersion,
+    players: state.players,
+    disconnectedAt: state.disconnectedAt,
     fleets: { P1: EMPTY_FLEET, P2: EMPTY_FLEET },
     deadline: now + PLACEMENT_TIME_LIMIT_MS,
-  });
+  };
 }
 
 /**
@@ -476,10 +578,10 @@ function accept(state: RoomState, effects: readonly RoomEffect[] = []): Accepted
 /**
  * Builds a refused result, so each transition ends in one readable `return`.
  * @param error The code for the ack.
- * @param violation The rule broken, for `INVALID_PLACEMENT` and `INVALID_TARGETS`.
+ * @param violation The rule broken, for `INVALID_RULES`, `INVALID_PLACEMENT` and `INVALID_TARGETS`.
  * @returns `{ ok: false, error }`, plus `violation` only when one is given: the key is left out rather than set to
  * `undefined`.
  */
-function reject(error: ErrorCode, violation?: PlacementViolation | TargetViolation): RejectedTransition {
+function reject(error: ErrorCode, violation?: Violation): RejectedTransition {
   return violation === undefined ? { ok: false, error } : { ok: false, error, violation };
 }

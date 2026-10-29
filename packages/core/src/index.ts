@@ -74,7 +74,8 @@ export type {
 } from './protocol.js';
 export { createCryptoRng, createSeededRng } from './random.js';
 export type { Rng } from './random.js';
-export { DEFAULT_RULES } from './rules.js';
+export { DEFAULT_RULES, RULES_VIOLATIONS, validateRules } from './rules.js';
+export type { InvalidRules, RulesValidation, RulesViolation, ValidRules } from './rules.js';
 export {
   FLEET,
   GAME_OVER_REASONS,

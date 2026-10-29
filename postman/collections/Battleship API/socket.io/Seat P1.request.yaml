@@ -6,20 +6,24 @@ description: |-
 
   1. `CREATE_ROOM` (P1): the ack is `{ "ok": true, "roomId": "…", "playerSecret": "…" }`, then a `STATE` in `WAITING_FOR_OPPONENT`.
      Copy `roomId` into the collection variable `roomId`.
-  2. `JOIN_ROOM` (P2): both get a `STATE` in `PLACEMENT`.
-  3. `UPDATE_PLACEMENT` and `CONFIRM_PLACEMENT` from each seat; `UNLOCK_PLACEMENT` reverts a confirmed fleet.
+  2. `JOIN_ROOM` (P2): both get a `STATE` in `RULES_NEGOTIATION`, with `rules`, `rulesVersion` and `hasConfirmedRules`.
+  3. `UPDATE_RULES` (P1): the ack carries the new `rulesVersion` (1), and both confirmations are cleared.
+     `CONFIRM_RULES — stale` (P2) still quotes version 0: `STALE_RULES`. `CONFIRM_RULES` from each seat quotes 1;
+     the second one starts placement (`PLACEMENT`) with the agreed rules. Edit a `CONFIRM_RULES` message to match
+     the current `rulesVersion` when you edit the rules more than once.
+  4. `UPDATE_PLACEMENT` and `CONFIRM_PLACEMENT` from each seat; `UNLOCK_PLACEMENT` reverts a confirmed fleet.
      The second confirmation starts the match (`IN_PROGRESS`), `P1` first.
-  4. `UPDATE_TARGETS` (optional draft) and `FIRE` from the seat whose turn it is; each `FIRE` sends `SHOT_RESOLVED`,
+  5. `UPDATE_TARGETS` (optional draft) and `FIRE` from the seat whose turn it is; each `FIRE` sends `SHOT_RESOLVED`,
      then `STATE`, to both. Edit the target before firing again: a cell already shot is `INVALID_TARGETS`.
-  5. `SET_PAUSED` (P1) while P2 is connected: `NOT_ALLOWED`. Disconnect **Seat P2**: P1 gets a `STATE` with the
+  6. `SET_PAUSED` (P1) while P2 is connected: `NOT_ALLOWED`. Disconnect **Seat P2**: P1 gets a `STATE` with the
      opponent away (`isConnected: false`, `forfeitRemainingMs`) and the match paused. Now `SET_PAUSED — resume`
      and `SET_PAUSED` are accepted, each followed by a `STATE`. After 3 minutes P2's seat is forfeited:
      `GAME_OVER` with reason `DISCONNECT_FORFEIT`.
-  6. `LEAVE_ROOM` (P1) during the match: `NOT_ALLOWED` (leaving a match is a surrender, #35).
-  7. `CREATE_ROOM` (P1) again: P1 moves to a new room. `LEAVE_ROOM` there frees the seat at once and closes
+  7. `LEAVE_ROOM` (P1) during the match: `NOT_ALLOWED` (leaving a match is a surrender, #35).
+  8. `CREATE_ROOM` (P1) again: P1 moves to a new room. `LEAVE_ROOM` there frees the seat at once and closes
      the room; before the match it sends the other player, if any, back to `WAITING_FOR_OPPONENT`.
 
-  Every accepted command acks `{ "ok": true }` (plus credentials for `CREATE_ROOM` / `JOIN_ROOM`); a refused one
+  Every accepted command acks `{ "ok": true }` (plus credentials for `CREATE_ROOM` / `JOIN_ROOM`, `rulesVersion` for `UPDATE_RULES`); a refused one
   `{ "ok": false, "error": "<ErrorCode>" }` and nothing else. `CREATE_ROOM — invalid payload` shows `INVALID_PAYLOAD`.
   The URL carries `protocolVersion` as a query parameter: Postman cannot send the handshake `auth` (ADR-0062).
   It cannot send a `session` either, so a reconnected Postman socket has no seat: reconnect means starting a new room.

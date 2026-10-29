@@ -11,10 +11,17 @@ import {
   type Seat,
 } from '@battleship/core';
 
-import { endMatch, type PlacementRoom, type RejectedTransition, type RoomState, type WaitingRoom } from './room.js';
+import {
+  endMatch,
+  type NegotiationRoom,
+  type PlacementRoom,
+  type RejectedTransition,
+  type RoomState,
+  type WaitingRoom,
+} from './room.js';
 
 /** A room before its match starts, where freeing a seat sends the other player back to `WAITING_FOR_OPPONENT`. */
-type PreGameRoom = WaitingRoom | PlacementRoom;
+type PreGameRoom = WaitingRoom | NegotiationRoom | PlacementRoom;
 
 /** The forfeit a room is waiting for: the seat that has been away longest, and when it runs out. */
 export interface PendingForfeit {
@@ -107,6 +114,7 @@ export function nextForfeit(state: RoomState): PendingForfeit | null {
 export function forfeitSeat(state: RoomState, seat: Seat): RoomState | null {
   switch (state.phase) {
     case ROOM_PHASES.WAITING_FOR_OPPONENT:
+    case ROOM_PHASES.RULES_NEGOTIATION:
     case ROOM_PHASES.PLACEMENT:
       return freeSeat(state, seat);
     case ROOM_PHASES.IN_PROGRESS:
@@ -124,7 +132,11 @@ export function forfeitSeat(state: RoomState, seat: Seat): RoomState | null {
  * leaving is a surrender (#35), and in `GAME_OVER`, where it is a rematch choice (#36).
  */
 export function leaveRoom(state: RoomState, seat: Seat): LeftRoom | RejectedTransition {
-  if (state.phase === ROOM_PHASES.WAITING_FOR_OPPONENT || state.phase === ROOM_PHASES.PLACEMENT) {
+  if (
+    state.phase === ROOM_PHASES.WAITING_FOR_OPPONENT ||
+    state.phase === ROOM_PHASES.RULES_NEGOTIATION ||
+    state.phase === ROOM_PHASES.PLACEMENT
+  ) {
     return { ok: true, state: freeSeat(state, seat) };
   }
   return { ok: false, error: ERROR_CODES.NOT_ALLOWED };
@@ -132,8 +144,9 @@ export function leaveRoom(state: RoomState, seat: Seat): LeftRoom | RejectedTran
 
 /**
  * Removes a player before the match (ADR-0073): the other player, if any, goes back to `WAITING_FOR_OPPONENT` in the
- * seat they had, with the rules kept and the fleets cleared. Their own forfeit clock keeps running if they are away.
- * @param state The room in `WAITING_FOR_OPPONENT` or `PLACEMENT`.
+ * seat they had, with the rules and their version kept, edits during negotiation included, and the confirmations and
+ * fleets cleared (ADR-0083). Their own forfeit clock keeps running if they are away.
+ * @param state The room in `WAITING_FOR_OPPONENT`, `RULES_NEGOTIATION` or `PLACEMENT`.
  * @param seat The seat to free.
  * @returns The waiting room, or `null` when the freed seat was the last one taken.
  */

@@ -5,9 +5,9 @@ import {
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_REASONS,
-  PLACEMENT_TIME_LIMIT_MS,
   ROOM_PHASES,
   SEATS,
+  TIMEOUT_ACTIONS,
 } from '@battleship/core';
 import { describe, expect, it } from 'vitest';
 
@@ -27,6 +27,7 @@ import {
   deepFreeze,
   expectAccepted,
   fleet,
+  negotiationRoom,
   NOW,
   placeAndConfirm,
   placementRoom,
@@ -40,6 +41,18 @@ function gameOverRoom(): RoomState {
   return endMatch(state, state.battle, SEATS.P1, GAME_OVER_REASONS.FLEET_DESTROYED);
 }
 
+/**
+ * A negotiation where P1 edited the rules (version 1) and P2 confirmed them, the rest of the room as `negotiationRoom`.
+ */
+function editedNegotiation(): RoomState {
+  const edited = apply(negotiationRoom(), {
+    type: CLIENT_EVENTS.UPDATE_RULES,
+    seat: SEATS.P1,
+    payload: { rules: { ...DEFAULT_RULES, timeoutAction: TIMEOUT_ACTIONS.PASS_TURN } },
+  });
+  return apply(edited, { type: CLIENT_EVENTS.CONFIRM_RULES, seat: SEATS.P2, payload: { rulesVersion: 1 } });
+}
+
 /** Sends `SET_PAUSED` from a seat. */
 function setPaused(state: RoomState, seat: (typeof SEATS)[keyof typeof SEATS], isPaused: boolean) {
   return applyCommand(state, { type: CLIENT_EVENTS.SET_PAUSED, seat, payload: { isPaused } }, NOW);
@@ -48,6 +61,7 @@ function setPaused(state: RoomState, seat: (typeof SEATS)[keyof typeof SEATS], i
 describe('disconnectSeat', () => {
   it.each([
     [ROOM_PHASES.WAITING_FOR_OPPONENT, waitingRoom],
+    [ROOM_PHASES.RULES_NEGOTIATION, editedNegotiation],
     [ROOM_PHASES.PLACEMENT, placementRoom],
     [ROOM_PHASES.GAME_OVER, gameOverRoom],
   ])('records the drop in %s and changes nothing else', (_phase, room) => {
@@ -95,7 +109,7 @@ describe('reconnectSeat', () => {
 
 describe('forfeit clock', () => {
   it('runs DISCONNECT_FORFEIT_MS from the drop in every phase but GAME_OVER', () => {
-    for (const room of [waitingRoom, placementRoom, battleRoom]) {
+    for (const room of [waitingRoom, negotiationRoom, placementRoom, battleRoom]) {
       expect(forfeitDeadline(disconnectSeat(room(), SEATS.P1, NOW), SEATS.P1)).toBe(NOW + DISCONNECT_FORFEIT_MS);
     }
     expect(forfeitDeadline(disconnectSeat(gameOverRoom(), SEATS.P1, NOW), SEATS.P1)).toBeNull();
@@ -135,6 +149,23 @@ describe('forfeitSeat', () => {
         rules: DEFAULT_RULES,
         rulesVersion: 0,
         players: { [seat]: null, [stayer]: placed.players[stayer] },
+        disconnectedAt: { P1: null, P2: null },
+      });
+    },
+  );
+
+  // ADR-0083: the edit survives, its version too, and nobody's confirmation does.
+  it.each(Object.values(SEATS))(
+    'sends the other player back to WAITING_FOR_OPPONENT with the edited rules when %s forfeits rules negotiation',
+    (seat) => {
+      const stayer = seat === SEATS.P1 ? SEATS.P2 : SEATS.P1;
+      const negotiating = editedNegotiation();
+      expect(forfeitSeat(disconnectSeat(negotiating, seat, NOW), seat)).toEqual({
+        phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
+        roomId: ROOM_ID,
+        rules: { ...DEFAULT_RULES, timeoutAction: TIMEOUT_ACTIONS.PASS_TURN },
+        rulesVersion: 1,
+        players: { [seat]: null, [stayer]: negotiating.players[stayer] },
         disconnectedAt: { P1: null, P2: null },
       });
     },
@@ -181,9 +212,26 @@ describe('a seat freed before the match', () => {
       NOW + 1_000,
     );
     expect(joined).toMatchObject({
-      phase: ROOM_PHASES.PLACEMENT,
+      phase: ROOM_PHASES.RULES_NEGOTIATION,
       players: { P1: { nickname: 'Carol', playerSecret: secret }, P2: { nickname: 'Bob' } },
-      deadline: NOW + 1_000 + PLACEMENT_TIME_LIMIT_MS,
+    });
+  });
+
+  it('opens a new negotiation on the rules and version left behind, nobody confirmed', () => {
+    const left = leaveRoom(editedNegotiation(), SEATS.P1);
+    if (!left.ok || left.state === null) {
+      expect.fail('the seat was not freed');
+    }
+    const joined = apply(left.state, {
+      type: CLIENT_EVENTS.JOIN_ROOM,
+      payload: { roomId: ROOM_ID, nickname: 'Carol' },
+      playerSecret: createPlayerSecret(),
+    });
+    expect(joined).toMatchObject({
+      phase: ROOM_PHASES.RULES_NEGOTIATION,
+      rules: { ...DEFAULT_RULES, timeoutAction: TIMEOUT_ACTIONS.PASS_TURN },
+      rulesVersion: 1,
+      hasConfirmedRules: { P1: false, P2: false },
     });
   });
 });
@@ -193,9 +241,14 @@ describe('leaveRoom', () => {
     expect(leaveRoom(waitingRoom(), SEATS.P1)).toEqual({ ok: true, state: null });
   });
 
-  it('frees the seat at once in placement, like a forfeit', () => {
-    const state = placementRoom();
-    expect(leaveRoom(state, SEATS.P2)).toEqual({ ok: true, state: forfeitSeat(state, SEATS.P2) });
+  it.each([
+    [ROOM_PHASES.RULES_NEGOTIATION, editedNegotiation],
+    [ROOM_PHASES.PLACEMENT, placementRoom],
+  ])('frees the seat at once in %s, like a forfeit', (_phase, room) => {
+    const state = room();
+    const left = leaveRoom(state, SEATS.P2);
+    expect(left).toMatchObject({ ok: true, state: { phase: ROOM_PHASES.WAITING_FOR_OPPONENT } });
+    expect(left).toEqual({ ok: true, state: forfeitSeat(state, SEATS.P2) });
   });
 
   it.each([

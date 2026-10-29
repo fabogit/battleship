@@ -140,7 +140,7 @@ export type Seat = (typeof SEATS)[keyof typeof SEATS];
 export const ROOM_PHASES = {
   /** One seat taken: the creator sharing the room link, or the player left behind when the other one leaves. */
   WAITING_FOR_OPPONENT: 'WAITING_FOR_OPPONENT',
-  /** Both seated, agreeing on the rules (ADR-0003); skipped with `DEFAULT_RULES` until #26. */
+  /** Both seated, agreeing on the rules (ADR-0003): either may edit them, and both confirm one `rulesVersion`. */
   RULES_NEGOTIATION: 'RULES_NEGOTIATION',
   /** Both placing their fleets within `PLACEMENT_TIME_LIMIT_MS`, then the start countdown. */
   PLACEMENT: 'PLACEMENT',

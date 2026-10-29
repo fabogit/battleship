@@ -15,6 +15,7 @@ import { Battle } from '../battle/battle';
 import { Lobby } from '../lobby/lobby';
 import { Placement } from '../placement/placement';
 import { Presence } from '../presence/presence';
+import { Rules } from '../rules/rules';
 import { ROOM_TEXT } from './room.text';
 import { SEAT_LOSSES, classifySeatLoss, type SeatLoss } from './seat-loss';
 
@@ -26,8 +27,10 @@ export const ROOM_VIEWS = {
   ENTERING: 'entering',
   /** Seated once, but the tab has entered another room since, so this one sends it nothing more. */
   LEFT: 'left',
-  /** `WAITING_FOR_OPPONENT`, and `RULES_NEGOTIATION` until its rules part lands (#27): the waiting screen. */
+  /** `WAITING_FOR_OPPONENT`: the waiting screen. */
   LOBBY: 'lobby',
+  /** `RULES_NEGOTIATION`: the rules screen. */
+  RULES: 'rules',
   /** `PLACEMENT`: the fleet placement view. */
   PLACEMENT: 'placement',
   /** `IN_PROGRESS` and `GAME_OVER`: the battle view, which turns into the game-over screen (ADR-0058). */
@@ -44,7 +47,12 @@ export const ROOM_VIEWS = {
 export type RoomView = (typeof ROOM_VIEWS)[keyof typeof ROOM_VIEWS];
 
 /** The views of a room the player sits in with its snapshot: the opponent's presence shows above them. */
-const SEATED_VIEWS: ReadonlySet<RoomView> = new Set([ROOM_VIEWS.LOBBY, ROOM_VIEWS.PLACEMENT, ROOM_VIEWS.BATTLE]);
+const SEATED_VIEWS: ReadonlySet<RoomView> = new Set([
+  ROOM_VIEWS.LOBBY,
+  ROOM_VIEWS.RULES,
+  ROOM_VIEWS.PLACEMENT,
+  ROOM_VIEWS.BATTLE,
+]);
 
 /** The seat losses after which the room may still wait for a player, so the page offers to join it again. */
 const REJOINABLE_LOSSES: ReadonlySet<SeatLoss> = new Set([SEAT_LOSSES.GIVEN_UP, SEAT_LOSSES.UNKNOWN]);
@@ -53,11 +61,11 @@ const REJOINABLE_LOSSES: ReadonlySet<SeatLoss> = new Set([SEAT_LOSSES.GIVEN_UP, 
  * The page of one room, `/r/<roomId>`, for both players (ADR-0049). The creator lands here after "Create room" and
  * shares the page's own address; the joiner opens it, picks a nickname and takes the free seat. Which view it shows
  * follows from the snapshot, the stored session and the last join attempt. Before the match, "Leave room" sits beside
- * the heading of the waiting screen and placement, which project it (ADR-0080).
+ * the heading of the waiting screen, the rules screen and placement, which project it (ADR-0080).
  */
 @Component({
   selector: 'app-room',
-  imports: [Battle, Lobby, NgTemplateOutlet, NicknameForm, Placement, Presence, RouterLink],
+  imports: [Battle, Lobby, NgTemplateOutlet, NicknameForm, Placement, Presence, RouterLink, Rules],
   templateUrl: './room.html',
   styleUrl: './room.css',
 })
@@ -126,8 +134,9 @@ export class Room {
     if (snapshot !== null) {
       switch (snapshot.phase) {
         case ROOM_PHASES.WAITING_FOR_OPPONENT:
-        case ROOM_PHASES.RULES_NEGOTIATION:
           return ROOM_VIEWS.LOBBY;
+        case ROOM_PHASES.RULES_NEGOTIATION:
+          return ROOM_VIEWS.RULES;
         case ROOM_PHASES.PLACEMENT:
           return ROOM_VIEWS.PLACEMENT;
         case ROOM_PHASES.IN_PROGRESS:
