@@ -68,20 +68,20 @@ describe('RoomManager', () => {
     expect(rooms.size).toBe(MAX_ROOMS);
   });
 
-  it('seats a joiner as P2 and stores the room in placement', () => {
+  it('seats a joiner as P2 and stores the room in rules negotiation', () => {
     const rooms = manager();
     const created = rooms.createRoom({ nickname: 'Alice' });
     if (!created.ok) {
       expect.fail(created.error);
     }
     const joined = rooms.joinRoom({ roomId: created.roomId, nickname: 'Bob' }, NOW);
-    expect(joined).toMatchObject({ ok: true, seat: SEATS.P2, state: { phase: ROOM_PHASES.PLACEMENT } });
+    expect(joined).toMatchObject({ ok: true, seat: SEATS.P2, state: { phase: ROOM_PHASES.RULES_NEGOTIATION } });
     if (!joined.ok) {
       expect.fail(joined.error);
     }
     expect(joined.playerSecret).not.toBe(created.playerSecret);
     expect(parseSessionCredentials({ roomId: created.roomId, playerSecret: joined.playerSecret })).not.toBeNull();
-    expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
+    expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
     expect(rooms.joinRoom({ roomId: created.roomId, nickname: 'Carol' }, NOW)).toEqual({
       ok: false,
       error: ERROR_CODES.ROOM_FULL,
@@ -109,6 +109,9 @@ describe('RoomManager', () => {
       expect.fail(created.error);
     }
     rooms.joinRoom({ roomId: created.roomId, nickname: 'Bob' }, NOW);
+    for (const seat of Object.values(SEATS)) {
+      rooms.dispatch(created.roomId, { type: CLIENT_EVENTS.CONFIRM_RULES, seat, payload: { rulesVersion: 0 } }, NOW);
+    }
     const placed = rooms.dispatch(
       created.roomId,
       { type: CLIENT_EVENTS.UPDATE_PLACEMENT, seat: SEATS.P1, payload: { ships: fleet(1) } },

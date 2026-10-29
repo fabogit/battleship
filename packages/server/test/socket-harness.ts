@@ -23,7 +23,7 @@ import {
   type ShotResolvedPayload,
 } from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -246,6 +246,29 @@ export async function sendRaw(from: Player, event: string, payload: unknown): Pr
   return response;
 }
 
+/**
+ * Proves that nothing is left in a player's inbox. `Inbox` never checks for leftover events, so this creates a room
+ * whose `STATE` must be the very next event; a stray event read first fails the check.
+ */
+export async function expectNothingPending(target: Player): Promise<void> {
+  const { roomId } = (await send(target, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Probe' })) as { roomId: string };
+  expect((await target.inbox.state()).roomId).toBe(roomId);
+}
+
+/**
+ * Closes a client, as a tab that is closed or loses its network, and waits until the server has recorded its seat as
+ * away, which no other client may be there to see.
+ * @param target The client to close; it must be its seat's only socket.
+ * @param roomId Its room.
+ * @param seat Its seat.
+ */
+export async function drop(target: Player, roomId: string, seat: Seat): Promise<void> {
+  target.socket.close();
+  await vi.waitFor(() => {
+    expect(rooms.get(roomId)?.disconnectedAt[seat]).not.toBeNull();
+  });
+}
+
 /** A random fleet, deterministic for its seed. */
 export function placedFleet(seed: number): PlacedShip[] {
   return generateRandomFleet(DEFAULT_RULES, createSeededRng(seed));
@@ -277,7 +300,7 @@ export interface SeatedPlayers {
   readonly sessions: Readonly<Record<Seat, SessionCredentials>>;
 }
 
-/** P1 creates a room and P2 joins it; the snapshots this sends are read. */
+/** P1 creates a room and P2 joins it, which opens rules negotiation; the snapshots this sends are read. */
 export async function seatedPlayers(): Promise<SeatedPlayers> {
   const [p1, p2] = await Promise.all([player(), player()]);
   const created = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as SessionCredentials;
@@ -290,6 +313,17 @@ export async function seatedPlayers(): Promise<SeatedPlayers> {
     P2: { roomId, playerSecret: joined.playerSecret },
   };
   return { p1, p2, roomId, sessions };
+}
+
+/**
+ * Both players confirm the rules in place, `P1` first, which starts placement with them (ADR-0003). The inboxes are not
+ * read: each player gets one `STATE` per confirmation, two in all.
+ * @param rulesVersion The version in place; `0` until someone edits the rules.
+ */
+export async function agreeOnRules(p1: Player, p2: Player, rulesVersion = 0): Promise<void> {
+  for (const from of [p1, p2]) {
+    expect(await send(from, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion })).toEqual({ ok: true });
+  }
 }
 
 /**
@@ -308,9 +342,22 @@ export async function placeFleets(p1: Player, p2: Player): Promise<void> {
   }
 }
 
-/** Two seated players whose match has started, `P1` to fire; the snapshots this sends are read. */
-export async function startedMatch(): Promise<SeatedPlayers> {
+/** Two seated players who agreed on `DEFAULT_RULES`, now placing their fleets; the snapshots this sends are read. */
+export async function placingPlayers(): Promise<SeatedPlayers> {
   const seated = await seatedPlayers();
+  const { p1, p2 } = seated;
+  await agreeOnRules(p1, p2);
+  await p1.inbox.states(2);
+  await p2.inbox.states(2);
+  return seated;
+}
+
+/**
+ * Two seated players who agreed on `DEFAULT_RULES` and whose match has started, `P1` to fire; the snapshots this sends
+ * are read.
+ */
+export async function startedMatch(): Promise<SeatedPlayers> {
+  const seated = await placingPlayers();
   const { p1, p2 } = seated;
   await placeFleets(p1, p2);
   // One snapshot per accepted command, to each player.

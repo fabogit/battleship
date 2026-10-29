@@ -6,6 +6,7 @@ import {
   shotsAllowed,
   type BattleSnapshot,
   type GameOverSnapshot,
+  type PerPlayer,
   type PlacementSnapshot,
   type PlayerStateSnapshot,
   type PlayerView,
@@ -32,8 +33,6 @@ export function projectSnapshot(state: RoomState, seat: Seat, now: number): Play
   }
   const opponentSeat = otherSeat(seat);
   const opponent = state.players[opponentSeat];
-  // Rules are fixed until negotiation lands (#26): every phase past it counts as both players having confirmed them.
-  const haveRulesBeenAgreed = state.phase !== ROOM_PHASES.WAITING_FOR_OPPONENT;
   return {
     roomId: state.roomId,
     phase: state.phase,
@@ -41,7 +40,7 @@ export function projectSnapshot(state: RoomState, seat: Seat, now: number): Play
     opponent: opponent === null ? null : toPlayerView(state, opponentSeat, opponent, now),
     rules: state.rules,
     rulesVersion: state.rulesVersion,
-    hasConfirmedRules: { me: haveRulesBeenAgreed, opponent: haveRulesBeenAgreed },
+    hasConfirmedRules: toRulesConfirmations(state, seat),
     placement: state.phase === ROOM_PHASES.PLACEMENT ? toPlacementSnapshot(state, seat, now) : null,
     battle: state.phase === ROOM_PHASES.IN_PROGRESS ? toBattleSnapshot(state, seat) : null,
     gameOver: state.phase === ROOM_PHASES.GAME_OVER ? toGameOverSnapshot(state, seat) : null,
@@ -65,6 +64,26 @@ function toPlayerView(state: RoomState, seat: Seat, player: RoomPlayer, now: num
     isConnected: state.disconnectedAt[seat] === null,
     forfeitRemainingMs: deadline === null ? null : Math.max(0, deadline - now),
   };
+}
+
+/**
+ * Shows who confirmed the current rules (ADR-0003): the room's flags during negotiation; before it nobody has, and every
+ * phase after it was reached by both confirming.
+ * @param state The room, in any phase.
+ * @param seat The receiver.
+ * @returns `me` and `opponent` as the receiver sees them.
+ */
+function toRulesConfirmations(state: RoomState, seat: Seat): PerPlayer<boolean> {
+  switch (state.phase) {
+    case ROOM_PHASES.WAITING_FOR_OPPONENT:
+      return { me: false, opponent: false };
+    case ROOM_PHASES.RULES_NEGOTIATION:
+      return { me: state.hasConfirmedRules[seat], opponent: state.hasConfirmedRules[otherSeat(seat)] };
+    case ROOM_PHASES.PLACEMENT:
+    case ROOM_PHASES.IN_PROGRESS:
+    case ROOM_PHASES.GAME_OVER:
+      return { me: true, opponent: true };
+  }
 }
 
 /**

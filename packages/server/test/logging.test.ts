@@ -289,6 +289,9 @@ describe('room logs', () => {
     const joined: unknown = await p2
       .timeout(ACK_TIMEOUT_MS)
       .emitWithAck(CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
+    for (const socket of [p1, p2]) {
+      await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 });
+    }
     const ship = { type: SHIP_TYPES.CARRIER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.VERTICAL };
     const refused: unknown = await p2
       .timeout(ACK_TIMEOUT_MS)

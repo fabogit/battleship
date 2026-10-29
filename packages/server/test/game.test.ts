@@ -21,22 +21,25 @@ import {
   type CommandEvent,
   type CommandPayload,
   type PlayerStateSnapshot,
-  type Seat,
   type SessionCredentials,
 } from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { COMMAND_EVENTS } from '../src/plugins/room-handlers.js';
 import {
   ACK_TIMEOUT_MS,
+  agreeOnRules,
   app,
+  drop,
+  expectNothingPending,
   baseUrl,
   clock,
   P1_FLEET_SEED,
   P2_FLEET_SEED,
   placedFleet,
   placements,
+  placingPlayers,
   player,
   playToVictory,
   ROOM_SEED,
@@ -57,8 +60,6 @@ import {
 
 /** Commands whose room logic lands later; refused with `NOT_ALLOWED` after their guard (ADR-0046). */
 const NOT_YET_SUPPORTED: readonly { [E in CommandEvent]: readonly [E, CommandPayload<E>] }[CommandEvent][] = [
-  [CLIENT_EVENTS.UPDATE_RULES, { rules: DEFAULT_RULES }],
-  [CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 }],
   [CLIENT_EVENTS.SURRENDER, {}],
   [CLIENT_EVENTS.REMATCH_CHOICE, { choice: REMATCH_CHOICES.LEAVE }],
 ];
@@ -106,15 +107,6 @@ async function sendOnTimeline<E extends CommandEvent>(
 }
 
 /**
- * Proves that nothing is left in a player's inbox. `Inbox` never checks for leftover events, so this creates a room
- * whose `STATE` must be the very next event; a stray event read first fails the check.
- */
-async function expectNothingPending(target: Player): Promise<void> {
-  const { roomId } = (await send(target, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Probe' })) as { roomId: string };
-  expect((await target.inbox.state()).roomId).toBe(roomId);
-}
-
-/**
  * Resolves with the reason of a client's next disconnection.
  * @param target The client the server should disconnect.
  */
@@ -143,22 +135,8 @@ async function skipToState(
   }
 }
 
-/**
- * Closes a client, as a tab that is closed or loses its network, and waits until the server has recorded its seat as
- * away, which no other client may be there to see.
- * @param target The client to close; it must be its seat's only socket.
- * @param roomId Its room.
- * @param seat Its seat.
- */
-async function drop(target: Player, roomId: string, seat: Seat): Promise<void> {
-  target.socket.close();
-  await vi.waitFor(() => {
-    expect(rooms.get(roomId)?.disconnectedAt[seat]).not.toBeNull();
-  });
-}
-
 describe('a match between two real clients', () => {
-  it('goes from create to join, placement and battle until victory', async () => {
+  it('goes from create to join, rules, placement and battle until victory', async () => {
     await start();
     const [p1, p2] = await Promise.all([player(), player()]);
 
@@ -175,26 +153,51 @@ describe('a match between two real clients', () => {
       opponent: null,
     });
 
-    // Join: both get a placement snapshot with the deadline from the fixed clock.
+    // Join: both get a rules negotiation snapshot with the room's rules, nobody confirmed.
     const joined = await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
     expect(joined).toEqual({ ok: true, playerSecret: expect.any(String) as unknown });
     const p2Secret = (joined as { playerSecret: string }).playerSecret;
     expect(p2Secret).not.toBe(p1Secret);
     expect(parseSessionCredentials({ roomId, playerSecret: p2Secret })).not.toBeNull();
-    const placementSnapshots = [await p1.inbox.state(), await p2.inbox.state()];
-    for (const snapshot of placementSnapshots) {
+    const negotiationSnapshots = [await p1.inbox.state(), await p2.inbox.state()];
+    for (const snapshot of negotiationSnapshots) {
       expect(snapshot).toMatchObject({
-        phase: ROOM_PHASES.PLACEMENT,
-        placement: { myShips: [], hasConfirmed: { me: false, opponent: false }, remainingMs: PLACEMENT_TIME_LIMIT_MS },
+        phase: ROOM_PHASES.RULES_NEGOTIATION,
+        rules: DEFAULT_RULES,
+        rulesVersion: 0,
+        hasConfirmedRules: { me: false, opponent: false },
+        placement: null,
       });
       // Secrets only ever travel in their owner's ack.
       expect(JSON.stringify(snapshot)).not.toContain(p1Secret);
       expect(JSON.stringify(snapshot)).not.toContain(p2Secret);
     }
-    expect(placementSnapshots.map((snapshot) => [snapshot.me.seat, snapshot.opponent?.nickname])).toEqual([
+    expect(negotiationSnapshots.map((snapshot) => [snapshot.me.seat, snapshot.opponent?.nickname])).toEqual([
       [SEATS.P1, 'Bob'],
       [SEATS.P2, 'Alice'],
     ]);
+
+    // Rules: P2's edit reaches both with a new version; each confirmation shows up on both sides.
+    const rules = { ...DEFAULT_RULES, turnTimeLimitSeconds: 60 } as const;
+    expect(await send(p2, CLIENT_EVENTS.UPDATE_RULES, { rules })).toEqual({ ok: true, rulesVersion: 1 });
+    for (const { inbox } of [p1, p2]) {
+      expect(await inbox.state()).toMatchObject({ rules, rulesVersion: 1 });
+    }
+    expect(await send(p1, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 1 })).toEqual({ ok: true });
+    expect((await p1.inbox.state()).hasConfirmedRules).toEqual({ me: true, opponent: false });
+    expect((await p2.inbox.state()).hasConfirmedRules).toEqual({ me: false, opponent: true });
+
+    // Both confirmed: both get a placement snapshot with the agreed rules and the deadline from the fixed clock.
+    expect(await send(p2, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 1 })).toEqual({ ok: true });
+    for (const { inbox } of [p1, p2]) {
+      expect(await inbox.state()).toMatchObject({
+        phase: ROOM_PHASES.PLACEMENT,
+        rules,
+        rulesVersion: 1,
+        hasConfirmedRules: { me: true, opponent: true },
+        placement: { myShips: [], hasConfirmed: { me: false, opponent: false }, remainingMs: PLACEMENT_TIME_LIMIT_MS },
+      });
+    }
 
     // Placement: P1's draft reaches P1 only; confirm and unlock show up on P2's side.
     const p1Fleet = placedFleet(P1_FLEET_SEED);
@@ -420,7 +423,7 @@ describe('command acks', () => {
     await alice.inbox.state();
     await sendOnTimeline(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
     expect(await bob.inbox.ack()).toMatchObject({ ok: true });
-    expect((await bob.inbox.state()).phase).toBe(ROOM_PHASES.PLACEMENT);
+    expect((await bob.inbox.state()).phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
   });
 
   it("arrive before the shooter's SHOT_RESOLVED and STATE", async () => {
@@ -452,7 +455,7 @@ describe('seat binding', () => {
     expect((await p1.inbox.state()).roomId).toBe(second.roomId);
 
     await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId: first.roomId, nickname: 'Bob' });
-    expect((await p2.inbox.state()).phase).toBe(ROOM_PHASES.PLACEMENT);
+    expect((await p2.inbox.state()).phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
     // P1's commands now go to the second room, still waiting for an opponent; the first room's STATE never reached P1.
     expect(await send(p1, CLIENT_EVENTS.CONFIRM_PLACEMENT, {})).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
     const third = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
@@ -624,7 +627,7 @@ describe('handshake', () => {
 
 describe('seat presence', () => {
   // The common mobile case (docs/server.md#room-creation--joining): the creator switches app to share the link.
-  it('lets a friend join while the creator is away, and both end up in PLACEMENT once the creator is back', async () => {
+  it('lets a friend join while the creator is away, and both agree on the rules once the creator is back', async () => {
     await start();
     const alice = await player();
     const created = (await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as SessionCredentials;
@@ -637,7 +640,7 @@ describe('seat presence', () => {
       ok: true,
     });
     expect(await bob.inbox.state()).toMatchObject({
-      phase: ROOM_PHASES.PLACEMENT,
+      phase: ROOM_PHASES.RULES_NEGOTIATION,
       me: { seat: SEATS.P2, isConnected: true },
       opponent: {
         seat: SEATS.P1,
@@ -650,18 +653,19 @@ describe('seat presence', () => {
     clock.advance(30_000);
     const back = await player({ roomId: created.roomId, playerSecret: created.playerSecret });
     expect(await back.inbox.state()).toMatchObject({
-      phase: ROOM_PHASES.PLACEMENT,
+      phase: ROOM_PHASES.RULES_NEGOTIATION,
       me: { seat: SEATS.P1, isConnected: true, forfeitRemainingMs: null },
       opponent: { seat: SEATS.P2, nickname: 'Bob', isConnected: true },
     });
     expect(await bob.inbox.state()).toMatchObject({
-      phase: ROOM_PHASES.PLACEMENT,
+      phase: ROOM_PHASES.RULES_NEGOTIATION,
       opponent: { seat: SEATS.P1, isConnected: true, forfeitRemainingMs: null },
     });
 
-    // The seat is kept for good: the old deadline passes without a forfeit, and both place their fleets.
+    // The seat is kept for good: the old deadline passes without a forfeit, and both agree and place their fleets.
     clock.advance(DISCONNECT_FORFEIT_MS);
-    expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
+    expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+    await agreeOnRules(back, bob);
     for (const [from, seed] of [
       [back, P1_FLEET_SEED],
       [bob, P2_FLEET_SEED],
@@ -674,7 +678,7 @@ describe('seat presence', () => {
 
   it('tells the opponent when a seat drops in placement and when it comes back, with the forfeit time left', async () => {
     await start();
-    const { p1, p2, sessions } = await seatedPlayers();
+    const { p1, p2, sessions } = await placingPlayers();
     p2.socket.close();
     expect((await p1.inbox.state()).opponent).toEqual({
       seat: SEATS.P2,
@@ -696,7 +700,7 @@ describe('seat presence', () => {
 
   it('starts the match paused when a player is away at the second confirmation', async () => {
     await start();
-    const { p1, p2, roomId } = await seatedPlayers();
+    const { p1, p2, roomId } = await placingPlayers();
     for (const [from, seed] of [
       [p1, P1_FLEET_SEED],
       [p2, P2_FLEET_SEED],
@@ -820,9 +824,9 @@ describe('disconnect forfeit', () => {
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.IN_PROGRESS);
   });
 
-  it('sends the other player back to WAITING_FOR_OPPONENT when a seat is forfeited before the match', async () => {
+  it('sends the other player back to WAITING_FOR_OPPONENT when a seat is forfeited in placement', async () => {
     await start();
-    const { p1, p2, roomId, sessions } = await seatedPlayers();
+    const { p1, p2, roomId, sessions } = await placingPlayers();
     await send(p2, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements(placedFleet(P2_FLEET_SEED)) });
     await p2.inbox.state();
     await p1.inbox.state();
@@ -841,20 +845,22 @@ describe('disconnect forfeit', () => {
       ERROR_CODES.SESSION_INVALID,
     );
 
-    // The free seat is P1's: the next joiner takes it, and placement starts over.
+    // The free seat is P1's: the next joiner takes it, and the rules are agreed on again before a new placement.
     const carol = await player();
     expect(await send(carol, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Carol' })).toMatchObject({ ok: true });
     expect(await carol.inbox.state()).toMatchObject({
-      phase: ROOM_PHASES.PLACEMENT,
+      phase: ROOM_PHASES.RULES_NEGOTIATION,
       me: { seat: SEATS.P1, nickname: 'Carol' },
       opponent: { seat: SEATS.P2, nickname: 'Bob' },
-      placement: { myShips: [] },
+      hasConfirmedRules: { me: false, opponent: false },
     });
     expect(await p2.inbox.state()).toMatchObject({
-      phase: ROOM_PHASES.PLACEMENT,
+      phase: ROOM_PHASES.RULES_NEGOTIATION,
       opponent: { seat: SEATS.P1, nickname: 'Carol' },
-      placement: { myShips: [] },
     });
+    await agreeOnRules(carol, p2);
+    await carol.inbox.states(2);
+    expect(await p2.inbox.states(2)).toMatchObject({ phase: ROOM_PHASES.PLACEMENT, placement: { myShips: [] } });
   });
 });
 
@@ -918,6 +924,7 @@ describe('LEAVE_ROOM', () => {
     await p1.inbox.state();
     const carol = await player();
     expect(await send(carol, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Carol' })).toMatchObject({ ok: true });
+    await agreeOnRules(p1, carol);
     for (const [from, seed] of [
       [p1, P1_FLEET_SEED],
       [carol, P2_FLEET_SEED],

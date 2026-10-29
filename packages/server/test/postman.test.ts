@@ -83,6 +83,16 @@ const STEPS: readonly Step[] = [
     capture: 'roomId',
   },
   { request: 'Seat P2', message: CLIENT_EVENTS.JOIN_ROOM, ack: OK_WITH_SECRET },
+  // Rules negotiation (ADR-0003, ADR-0004): P1's edit makes version 1, so P2's confirmation of version 0 is stale.
+  { request: 'Seat P1', message: CLIENT_EVENTS.UPDATE_RULES, ack: { ok: true, rulesVersion: 1 } },
+  {
+    request: 'Seat P2',
+    message: `${CLIENT_EVENTS.CONFIRM_RULES} — stale`,
+    ack: { ok: false, error: ERROR_CODES.STALE_RULES },
+  },
+  { request: 'Seat P2', message: CLIENT_EVENTS.CONFIRM_RULES, ack: OK },
+  // The second confirmation of version 1 starts placement.
+  { request: 'Seat P1', message: CLIENT_EVENTS.CONFIRM_RULES, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.UPDATE_PLACEMENT, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.CONFIRM_PLACEMENT, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.UNLOCK_PLACEMENT, ack: OK },

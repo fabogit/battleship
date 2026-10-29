@@ -14,6 +14,7 @@ import {
   type CommandEvent,
   type CommandPayload,
   type Seat,
+  type UpdateRulesAckData,
 } from '@battleship/core';
 import fp from 'fastify-plugin';
 
@@ -44,6 +45,12 @@ type Reply<E extends CommandEvent> = (response: CommandAck<E> | AckFailure) => v
  * @template E The command's event name.
  */
 type CommandHandler<E extends CommandEvent> = (payload: CommandPayload<E>, reply: Reply<E>) => void;
+
+/**
+ * The ack data of a command whose accepted ack is a bare `{ ok: true }`.
+ * @returns No data.
+ */
+const NO_ACK_DATA = (): object => ({});
 
 /**
  * Every command the plugin listens to: all client→server events but `ECHO`, which has its own plugin and no guard.
@@ -265,14 +272,17 @@ function listenToCommands(
 
   /**
    * Runs a seated player's command against their room: ack, effects to both players, then `STATE` to each.
+   * @template T The data an accepted command's ack carries besides `ok`.
    * @param event The command, for the log.
    * @param reply Its ack.
    * @param build Builds the room command for the sender's seat.
+   * @param ackData Reads the ack's data from the room after the command; `NO_ACK_DATA` for a bare `{ ok: true }`.
    */
-  const dispatch = (
+  const dispatch = <T extends object>(
     event: SeatCommandEvent,
-    reply: (response: AckResponse) => void,
+    reply: (response: AckResponse<NoInfer<T>>) => void,
     build: (seat: Seat) => SeatCommand,
+    ackData: (state: RoomState) => T,
   ): void => {
     const binding = socket.data.binding;
     if (binding === undefined) {
@@ -286,7 +296,7 @@ function listenToCommands(
       refuse(event, reply, result);
       return;
     }
-    reply({ ok: true });
+    reply({ ok: true, ...ackData(result.state) });
     for (const effect of result.effects) {
       io.to(binding.roomId).emit(effect.type, effect.payload);
     }
@@ -377,37 +387,65 @@ function listenToCommands(
       reply({ ok: true, playerSecret: result.playerSecret });
       sendState(io, result.state, at);
     },
-    UPDATE_RULES: notYetSupported(CLIENT_EVENTS.UPDATE_RULES),
-    CONFIRM_RULES: notYetSupported(CLIENT_EVENTS.CONFIRM_RULES),
+    UPDATE_RULES: (payload, reply) => {
+      // An edit that changes nothing keeps the version, so the ack always names the version now in place (ADR-0082).
+      dispatch<UpdateRulesAckData>(
+        CLIENT_EVENTS.UPDATE_RULES,
+        reply,
+        (seat) => ({ type: CLIENT_EVENTS.UPDATE_RULES, seat, payload }),
+        (state) => ({ rulesVersion: state.rulesVersion }),
+      );
+    },
+    CONFIRM_RULES: (payload, reply) => {
+      dispatch(
+        CLIENT_EVENTS.CONFIRM_RULES,
+        reply,
+        (seat) => ({ type: CLIENT_EVENTS.CONFIRM_RULES, seat, payload }),
+        NO_ACK_DATA,
+      );
+    },
     UPDATE_PLACEMENT: (payload, reply) => {
-      dispatch(CLIENT_EVENTS.UPDATE_PLACEMENT, reply, (seat) => ({
-        type: CLIENT_EVENTS.UPDATE_PLACEMENT,
-        seat,
-        payload,
-      }));
+      dispatch(
+        CLIENT_EVENTS.UPDATE_PLACEMENT,
+        reply,
+        (seat) => ({ type: CLIENT_EVENTS.UPDATE_PLACEMENT, seat, payload }),
+        NO_ACK_DATA,
+      );
     },
     CONFIRM_PLACEMENT: (payload, reply) => {
-      dispatch(CLIENT_EVENTS.CONFIRM_PLACEMENT, reply, (seat) => ({
-        type: CLIENT_EVENTS.CONFIRM_PLACEMENT,
-        seat,
-        payload,
-      }));
+      dispatch(
+        CLIENT_EVENTS.CONFIRM_PLACEMENT,
+        reply,
+        (seat) => ({ type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat, payload }),
+        NO_ACK_DATA,
+      );
     },
     UNLOCK_PLACEMENT: (payload, reply) => {
-      dispatch(CLIENT_EVENTS.UNLOCK_PLACEMENT, reply, (seat) => ({
-        type: CLIENT_EVENTS.UNLOCK_PLACEMENT,
-        seat,
-        payload,
-      }));
+      dispatch(
+        CLIENT_EVENTS.UNLOCK_PLACEMENT,
+        reply,
+        (seat) => ({ type: CLIENT_EVENTS.UNLOCK_PLACEMENT, seat, payload }),
+        NO_ACK_DATA,
+      );
     },
     UPDATE_TARGETS: (payload, reply) => {
-      dispatch(CLIENT_EVENTS.UPDATE_TARGETS, reply, (seat) => ({ type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload }));
+      dispatch(
+        CLIENT_EVENTS.UPDATE_TARGETS,
+        reply,
+        (seat) => ({ type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload }),
+        NO_ACK_DATA,
+      );
     },
     FIRE: (payload, reply) => {
-      dispatch(CLIENT_EVENTS.FIRE, reply, (seat) => ({ type: CLIENT_EVENTS.FIRE, seat, payload }));
+      dispatch(CLIENT_EVENTS.FIRE, reply, (seat) => ({ type: CLIENT_EVENTS.FIRE, seat, payload }), NO_ACK_DATA);
     },
     SET_PAUSED: (payload, reply) => {
-      dispatch(CLIENT_EVENTS.SET_PAUSED, reply, (seat) => ({ type: CLIENT_EVENTS.SET_PAUSED, seat, payload }));
+      dispatch(
+        CLIENT_EVENTS.SET_PAUSED,
+        reply,
+        (seat) => ({ type: CLIENT_EVENTS.SET_PAUSED, seat, payload }),
+        NO_ACK_DATA,
+      );
     },
     SURRENDER: notYetSupported(CLIENT_EVENTS.SURRENDER),
     REMATCH_CHOICE: notYetSupported(CLIENT_EVENTS.REMATCH_CHOICE),

@@ -18,6 +18,7 @@ import {
   createRoom,
   type AcceptedTransition,
   type BattleRoom,
+  type NegotiationRoom,
   type PlacementRoom,
   type RoomCommand,
   type RoomState,
@@ -54,14 +55,33 @@ export function waitingRoom(): WaitingRoom {
   return createRoom(ROOM_ID, { nickname: 'Alice', playerSecret: P1_SECRET });
 }
 
+/** The room right after Bob joined Alice's: both seated, negotiating `DEFAULT_RULES` at version `0`. */
+export function negotiationRoom(): NegotiationRoom {
+  const state = apply(waitingRoom(), {
+    type: CLIENT_EVENTS.JOIN_ROOM,
+    payload: { roomId: ROOM_ID, nickname: 'Bob' },
+    playerSecret: P2_SECRET,
+  });
+  expect(state.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+  return state as NegotiationRoom;
+}
+
+/**
+ * Both players confirm the rules in place, `P1` first, which starts placement.
+ * @param state A room in `RULES_NEGOTIATION`.
+ * @param now When the second confirmation lands; the placement deadline counts from it.
+ */
+export function agreeOnRules(state: NegotiationRoom, now = NOW): PlacementRoom {
+  const payload = { rulesVersion: state.rulesVersion };
+  const confirmed = apply(state, { type: CLIENT_EVENTS.CONFIRM_RULES, seat: SEATS.P1, payload }, now);
+  const placement = apply(confirmed, { type: CLIENT_EVENTS.CONFIRM_RULES, seat: SEATS.P2, payload }, now);
+  expect(placement.phase).toBe(ROOM_PHASES.PLACEMENT);
+  return placement as PlacementRoom;
+}
+
+/** A room in placement with `DEFAULT_RULES`, entered at `now`. */
 export function placementRoom(now = NOW): PlacementRoom {
-  const state = apply(
-    waitingRoom(),
-    { type: CLIENT_EVENTS.JOIN_ROOM, payload: { roomId: ROOM_ID, nickname: 'Bob' }, playerSecret: P2_SECRET },
-    now,
-  );
-  expect(state.phase).toBe(ROOM_PHASES.PLACEMENT);
-  return state as PlacementRoom;
+  return agreeOnRules(negotiationRoom(), now);
 }
 
 export function placeAndConfirm(state: RoomState, seat: Seat, ships: readonly ShipPlacement[]): RoomState {

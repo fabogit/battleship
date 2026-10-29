@@ -1,0 +1,16 @@
+$kind: socket.io-message
+eventName: UPDATE_RULES
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "rules": {
+          "isExtraTurnOnHitEnabled": false,
+          "areAdjacentShipsAllowed": false,
+          "turnTimeLimitSeconds": 60,
+          "isSalvoModeEnabled": false,
+          "timeoutAction": "PASS_TURN"
+        }
+      }
+    contentType: json
+order: 1500

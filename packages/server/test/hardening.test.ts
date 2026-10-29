@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { MAX_MESSAGE_BYTES } from '../src/plugins/socket-io.js';
 import {
   ACK_TIMEOUT_MS,
+  agreeOnRules,
   app,
   clock,
   placeFleets,
@@ -50,8 +51,11 @@ async function leave({ socket }: Player): Promise<void> {
   await gone;
 }
 
-/** Plays a match to `GAME_OVER`: P1 fires at every cell of P2's fleet, P2 at water in between. */
+/**
+ * Plays a match to `GAME_OVER` from rules negotiation: P1 fires at every cell of P2's fleet, P2 at water in between.
+ */
 async function playToGameOver(p1: Player, p2: Player): Promise<void> {
+  await agreeOnRules(p1, p2);
   await placeFleets(p1, p2);
   await playToVictory(p1, p2);
 }
@@ -136,6 +140,7 @@ describe('room closing', () => {
     const [p1, p2] = await Promise.all([player(), player()]);
     const roomId = await createRoom(p1);
     await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
+    await agreeOnRules(p1, p2);
     await placeFleets(p1, p2);
     await leave(p1);
     clock.advance(1_000);
@@ -205,7 +210,7 @@ describe('game-over TTL', () => {
     const roomId = await createRoom(p1);
     await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
     clock.advance(10 * GAME_OVER_TTL_MS);
-    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
   });
 });
 
