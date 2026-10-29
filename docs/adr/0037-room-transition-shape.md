@@ -27,6 +27,7 @@ Room logic lives in `packages/server/src/room/room.ts` as one pure function, `ap
 
 - Added on 2026-10-07 for the room logic ([#14](https://github.com/fabogit/battleship/issues/14)).
 - Amended on 2026-10-29 ([#26](https://github.com/fabogit/battleship/issues/26)): `RULES_NEGOTIATION` has its variant, `NegotiationRoom`, and `JOIN_ROOM` moves to it ([ADR-0082](0082-rules-negotiation-commands.md)).
+- Amended on 2026-10-29 ([#28](https://github.com/fabogit/battleship/issues/28)): timers are not effects; the socket layer schedules them from the stored deadlines, `countdownEndsAt` included ([ADR-0090](0090-placement-timer.md)). The `Rng` is passed to `endPlacement`, the transition the placement timer runs, not to `applyCommand` ([ADR-0091](0091-fleet-completion-at-the-deadline.md)).
 - Spec: [Server: Room state machine](../server.md#room-state-machine) · [Server: Transition rules](../server.md#transition-rules) · [Server: Testability](../server.md#testability)
 - Related: [ADR-0031](0031-payload-guard-strictness.md) (guards before room logic) · [ADR-0033](0033-turn-resolution.md) (turn resolution) · [ADR-0038](0038-snapshot-projection.md) (snapshot projection) · [ADR-0039](0039-room-registry.md) (room registry)
 - Issues: [#14](https://github.com/fabogit/battleship/issues/14) · [#15](https://github.com/fabogit/battleship/issues/15) (socket handlers)

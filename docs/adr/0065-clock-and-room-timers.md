@@ -29,6 +29,7 @@ The first users are the room TTLs. After every change to a room's sockets or pha
 
 - Added on 2026-10-13 for server hardening ([#24](https://github.com/fabogit/battleship/issues/24)).
 - Amended on 2026-10-15 ([#23](https://github.com/fabogit/battleship/issues/23)): the disconnect forfeit is the `DISCONNECT_FORFEIT` room timer ([ADR-0072](0072-seat-presence.md)), and the `EMPTY_ROOM` timer is gone, since the forfeits always close a room nobody sits in first ([ADR-0073](0073-room-lifecycle-with-forfeits.md)).
+- Amended on 2026-10-29 ([#28](https://github.com/fabogit/battleship/issues/28)): the end of placement is the `PLACEMENT` room timer, set from the stored deadlines rather than returned as an effect, and the timers are reviewed after every accepted command ([ADR-0090](0090-placement-timer.md)).
 - Spec: [Server: Room lifecycle](../server.md#room-lifecycle) · [Server: Testability](../server.md#testability) · [Domain: Constants](../domain.md#constants)
 - Amends: [ADR-0039](0039-room-registry.md) (rooms are removed)
 - Related: [ADR-0037](0037-room-transition-shape.md) (room logic without timers), [ADR-0027](0027-shutdown-signals.md) (shutdown)

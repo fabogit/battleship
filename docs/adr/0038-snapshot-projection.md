@@ -24,6 +24,7 @@ The `STATE` snapshot is built on the server by `projectSnapshot(state, seat, now
 
 - Added on 2026-10-07 for the room logic ([#14](https://github.com/fabogit/battleship/issues/14)).
 - Amended on 2026-10-29 ([#26](https://github.com/fabogit/battleship/issues/26)): `hasConfirmedRules` is stored during `RULES_NEGOTIATION` and projected from the room; before it both are `false`, and from `PLACEMENT` on both are `true`, since every later phase was reached by both confirming.
+- Amended on 2026-10-29 ([#28](https://github.com/fabogit/battleship/issues/28)): `startCountdownMs` is set while both fleets are confirmed, from the stored end of the start countdown ([ADR-0090](0090-placement-timer.md)).
 - Spec: [Protocol: Snapshot](../protocol.md#snapshot) · [Server: Game over & rematch](../server.md#game-over--rematch)
 - Related: [ADR-0015](0015-protocol-shape.md) (snapshot as the client's source of truth) · [ADR-0034](0034-shot-history.md) (shot history) · [ADR-0036](0036-countdown-resync.md) (remaining milliseconds) · [ADR-0037](0037-room-transition-shape.md) (room transition shape) · [ADR-0064](0064-game-over-snapshot-boards.md) (game-over snapshot boards)
 - Issues: [#14](https://github.com/fabogit/battleship/issues/14)

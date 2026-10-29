@@ -41,11 +41,13 @@ battleship/
     ├── server/
     │   ├── src/
     │   │   ├── room/                  # Room logic, no timers, sockets or I/O (server.md#room-logic)
-    │   │   │   ├── room.ts            # RoomState per phase, createRoom, applyCommand(state, command, now) → state + effects
+    │   │   │   ├── room.ts            # RoomState per phase, createRoom, applyCommand(state, command, now) → state + effects,
+    │   │   │   │                      # endPlacement at the countdown's end or the deadline (D90, D91)
     │   │   │   ├── snapshot.ts        # projectSnapshot(state, seat, now): one player's snapshot, with fog-of-war
     │   │   │   ├── presence.ts        # Seat presence: drops, returns, disconnect forfeit, LEAVE_ROOM (D72, D73)
     │   │   │   ├── room-manager.ts    # RoomManager: rooms by id, room ids, secrets, MAX_ROOMS cap, presence, remove
-    │   │   │   └── room-timers.ts     # RoomTimers: one timer per room and kind (forfeit, game-over TTL; turn timer later) (D65)
+    │   │   │   └── room-timers.ts     # RoomTimers: one timer per room and kind (placement, forfeit, game-over TTL; turn timer
+    │   │   │                          # later) (D65, D90)
     │   │   ├── plugins/               # fastify-plugin wrapped, composed by createServer (server.md#plugins)
     │   │   │   ├── origin-policy.ts   # HTTP side of the origin policy: 403 onRequest hook + @fastify/cors (D21)
     │   │   │   ├── socket-io.ts       # Socket.io on the HTTP server: allowRequest origin check, 16 KiB cap, app.io, logs
@@ -61,7 +63,7 @@ battleship/
     │   │   ├── server.ts              # createServer: plugins + /health; rooms and clock injectable for tests
     │   │   ├── shutdown.ts            # SIGTERM/SIGINT → app.close(); repeats ignored, 10 s deadline (D27)
     │   │   └── index.ts               # Entry point: config, server, signal handling, listen
-    │   │                              # Not yet: placement and turn timers (#28, #30)
+    │   │                              # Not yet: turn timer (#30)
     │   ├── scripts/echo-client.ts     # Production smoke test: handshake + ECHO round trip (D48)
     │   ├── .env.example               # Local PORT / ALLOWED_ORIGINS / LOG_* / TRUST_PROXY_HOPS: copy to .env
     │   └── test/                      # Vitest: room/ unit tests (seeded fleets, fake clock) + socket integration tests,
