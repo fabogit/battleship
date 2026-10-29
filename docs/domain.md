@@ -142,7 +142,7 @@ export type RematchChoice = (typeof REMATCH_CHOICES)[keyof typeof REMATCH_CHOICE
 - `validateRules(rules)`: checks whether a match can be played with a well-formed `GameRules`. It returns `{ ok: true }` or `{ ok: false, reason }`, the first of `RULES_VIOLATIONS` that applies; the server logs the reason and never sends it, as with the placement and target violations.
   - `SALVO_WITH_EXTRA_TURN`: salvo and extra turn on hit are exclusive ([ADR-0010](adr/0010-salvo-vs-extra-turn.md)).
   - `SALVO_NOT_IMPLEMENTED`: salvo at all, until the shot engine supports it with #32, which drops this violation ([ADR-0085](adr/0085-salvo-refused-until-implemented.md)). Extra turn on hit is allowed.
-  - The client UI disables what `validateRules` refuses; the server still rejects it with `INVALID_RULES`. Field types and enum membership are checked earlier by the `UPDATE_RULES` guard (`INVALID_PAYLOAD`, [Payload validation](protocol.md#payload-validation)).
+  - The client does not offer what `validateRules` refuses: the rules screen has no salvo control until #34 ([Client: Rules screen](client.md#rules-screen)); the server still rejects it with `INVALID_RULES`. Field types and enum membership are checked earlier by the `UPDATE_RULES` guard (`INVALID_PAYLOAD`, [Payload validation](protocol.md#payload-validation)).
 
 ## Randomness
 

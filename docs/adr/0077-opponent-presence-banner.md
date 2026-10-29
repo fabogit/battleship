@@ -31,6 +31,7 @@ Every sentence but the countdown sits in one polite live region that exists befo
 ## Links
 
 - Added on 2026-10-15 for the connection-state UX ([#25](https://github.com/fabogit/battleship/issues/25)).
+- Amended on 2026-10-29 for the rules negotiation UI ([#27](https://github.com/fabogit/battleship/issues/27)): in `RULES_NEGOTIATION` the banner, and the forfeit countdown before the match, sit above the rules screen instead of the waiting screen.
 - Spec: [Client: Connection states](../client.md#connection-states) · [Client: Game state](../client.md#game-state) · [Server: Seat presence](../server.md#seat-presence)
 - Related: [ADR-0036](0036-countdown-resync.md) (countdown resync) · [ADR-0072](0072-seat-presence.md) (seat presence) · [ADR-0073](0073-room-lifecycle-with-forfeits.md) (room lifecycle) · [ADR-0074](0074-pause.md) (pause)
 - Issues: [#25](https://github.com/fabogit/battleship/issues/25) · [#52](https://github.com/fabogit/battleship/issues/52) (the line outside a live region) · [#30](https://github.com/fabogit/battleship/issues/30) (turn timer)

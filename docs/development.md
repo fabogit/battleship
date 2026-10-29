@@ -75,11 +75,11 @@ battleship/
             ├── app/
             │   ├── app.routes.ts  # `/` home, `/r/:roomId` room (D49)
             │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService,
-            │   │                  # ServerWakeService, createSyncedDraft (the draft sync of placement and battle)
+            │   │                  # ServerWakeService, createSyncedDraft (the draft sync of placement, battle and rules)
             │   ├── features/      # home (nickname, create), room (one view per phase, refused-seat explanation, leave),
-            │   │                  # lobby (waiting screen, share dialog D79; rules: #27), placement (+ PlacementStore),
-            │   │                  # battle (+ BattleStore; also the game-over screen, D58), presence (opponent's connection,
-            │   │                  # pause control, D77)
+            │   │                  # lobby (waiting screen, share dialog D79), rules (+ RulesStore, D86–D88),
+            │   │                  # placement (+ PlacementStore), battle (+ BattleStore; also the game-over screen, D58),
+            │   │                  # presence (opponent's connection, pause control, D77)
             │   └── shared/        # board-grid/, nickname-form/, qr-code/ (D79), server-status/, connection-screen/ (D75),
             │                      # countdown.ts
             │                      # Not yet: I18nService (#37), dice (#29), timers UI (#31)
