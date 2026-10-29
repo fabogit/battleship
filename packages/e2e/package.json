@@ -1,0 +1,22 @@
+{
+  "name": "@battleship/e2e",
+  "version": "0.3.0",
+  "private": true,
+  "description": "End-to-end browser journeys (Playwright) against a local server and the production client bundle",
+  "type": "module",
+  "scripts": {
+    "e2e": "NODE_OPTIONS=--conditions=@battleship/source playwright test",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "@battleship/client": "workspace:*",
+    "@battleship/core": "workspace:*",
+    "@battleship/server": "workspace:*",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "tsx": "^4.23.15",
+    "typescript": "catalog:"
+  }
+}

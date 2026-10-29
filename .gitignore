@@ -8,6 +8,9 @@ node_modules/
 dist/
 .angular/
 coverage/
+# Playwright output (packages/e2e): the HTML report and the traces of failed journeys
+playwright-report/
+test-results/
 # Vitest reporter output (`--reporter=json` writes .vitest/json/output.json)
 .vitest/
 *.tsbuildinfo
