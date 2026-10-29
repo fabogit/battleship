@@ -213,8 +213,8 @@ describe('the agreed rules', () => {
     const version = await edit(p1, p2, rules);
     await agreeOnRules(p1, p2, version);
     await placeFleets(p1, p2);
-    await p1.inbox.states(6);
-    await p2.inbox.states(6);
+    await p1.inbox.states(7);
+    await p2.inbox.states(7);
 
     const [hit] = placedFleet(P2_FLEET_SEED).flatMap((ship) => ship.coordinates);
     const [miss] = waterOf(placedFleet(P2_FLEET_SEED));

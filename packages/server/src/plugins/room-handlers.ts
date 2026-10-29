@@ -65,8 +65,8 @@ export interface RoomHandlersOptions {
   /** The open rooms; one registry per server. */
   readonly rooms: RoomManager;
   /**
-   * The time of each command, passed to room logic and the snapshot projection, and the room timers: the disconnect
-   * forfeit and the game-over TTL (ADR-0065).
+   * The time of each command, passed to room logic and the snapshot projection, and the room timers: the end of
+   * placement, the disconnect forfeit and the game-over TTL (ADR-0065).
    */
   readonly clock: Clock;
 }
@@ -78,8 +78,8 @@ interface CommandContext {
   /** Current time in epoch ms. */
   readonly now: () => number;
   /**
-   * Brings a room's timers in line with its stored state: the forfeit of the seat away longest, and the game-over TTL;
-   * called after every change to its phase or its seats' presence.
+   * Brings a room's timers in line with its stored state: the end of placement, the forfeit of the seat away longest,
+   * and the game-over TTL; called after every accepted command and every change to its seats' presence.
    * @param roomId The room that changed; an id no room has stops whatever timers it had left.
    */
   readonly reviewTimers: (roomId: string) => void;
@@ -102,7 +102,8 @@ interface CommandContext {
  * Listens to every command on every socket (docs/server.md#socket-handlers). A payload that fails its core guard is
  * refused with `INVALID_PAYLOAD` before room logic sees it; a command sent without an ack callback is ignored. An
  * accepted command is acked first, then its effects (`SHOT_RESOLVED`) go to the room and each seated socket gets its
- * own `STATE` projection (ADR-0047). Seat presence is tracked here too (docs/server.md#seat-presence, ADR-0072): a
+ * own `STATE` projection (ADR-0047). Placement ends on a room timer, at the end of the start countdown or at the
+ * deadline, and the match starts (ADR-0090). Seat presence is tracked here too (docs/server.md#seat-presence, ADR-0072): a
  * seat with no socket bound to it is away, its forfeit clock runs as a room timer, and every socket of the room gets
  * `STATE` when a seat drops or comes back. A room in `GAME_OVER` expires after `GAME_OVER_TTL_MS`, and one nobody is
  * left in closes (docs/server.md#room-lifecycle); the sockets still in it lose their seat.
@@ -166,13 +167,41 @@ export default fp<RoomHandlersOptions>(
       reviewTimers(roomId);
     };
 
+    /**
+     * Ends a room's placement when its timer fires: unconfirmed fleets are completed and locked, and the match starts
+     * (ADR-0090, ADR-0091).
+     * @param roomId The room whose `PLACEMENT` timer ran out.
+     */
+    const endPlacement = (roomId: string): void => {
+      const at = clock.now();
+      const ended = rooms.endPlacementDue(roomId, at);
+      if (ended === undefined) {
+        reviewTimers(roomId);
+        return;
+      }
+      if (ended.completedSeats.length > 0) {
+        app.log.info({ roomId, seats: ended.completedSeats }, 'Fleets completed');
+      }
+      app.log.info({ roomId, phase: ended.state.phase }, 'Room phase changed');
+      sendState(io, ended.state, at);
+      reviewTimers(roomId);
+    };
+
     const reviewTimers = (roomId: string): void => {
       const room = rooms.get(roomId);
       if (room === undefined) {
         timers.stopRoom(roomId);
         return;
       }
-      // The deadline is stored with the room, so starting it again on every review lands on the same time.
+      // Deadlines are stored with the room, so starting a timer again on every review lands on the same time.
+      const placementEnd = rooms.placementEndsAt(roomId);
+      if (placementEnd === undefined) {
+        timers.stop(roomId, ROOM_TIMER_KINDS.PLACEMENT);
+      } else {
+        timers.start(roomId, ROOM_TIMER_KINDS.PLACEMENT, placementEnd, () => {
+          endPlacement(roomId);
+        });
+      }
       const pending = rooms.nextForfeit(roomId);
       if (pending === undefined) {
         timers.stop(roomId, ROOM_TIMER_KINDS.DISCONNECT_FORFEIT);
@@ -302,8 +331,9 @@ function listenToCommands(
     }
     if (result.state.phase !== before?.phase) {
       log.info({ roomId: binding.roomId, phase: result.state.phase }, 'Room phase changed');
-      reviewTimers(binding.roomId);
     }
+    // A confirmation or an unlock moves the end of placement without changing the phase.
+    reviewTimers(binding.roomId);
     sendState(io, result.state, at);
   };
 

@@ -16,6 +16,8 @@ import { expect } from 'vitest';
 import {
   applyCommand,
   createRoom,
+  endPlacement,
+  placementEndsAt,
   type AcceptedTransition,
   type BattleRoom,
   type NegotiationRoom,
@@ -89,11 +91,24 @@ export function placeAndConfirm(state: RoomState, seat: Seat, ships: readonly Sh
   return apply(placed, { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat, payload: {} });
 }
 
-/** A room in battle with fleets from seeds 1 (P1) and 2 (P2). */
+/**
+ * Ends placement as the `PLACEMENT` timer does, at its due time.
+ * @param state A room in `PLACEMENT`.
+ * @param seed Seed of the fleets completed at the deadline; unused after a countdown.
+ */
+export function endPlacementNow(state: RoomState, seed = 0): BattleRoom {
+  expect(state.phase).toBe(ROOM_PHASES.PLACEMENT);
+  const placement = state as PlacementRoom;
+  const ended = endPlacement(placement, placementEndsAt(placement), createSeededRng(seed));
+  if (ended === null) {
+    expect.fail('Expected placement to end at its due time');
+  }
+  return ended.state;
+}
+
+/** A room in battle with fleets from seeds 1 (P1) and 2 (P2), started by the end of the start countdown. */
 export function battleRoom(): BattleRoom {
-  const state = placeAndConfirm(placeAndConfirm(placementRoom(), SEATS.P1, fleet(1)), SEATS.P2, fleet(2));
-  expect(state.phase).toBe(ROOM_PHASES.IN_PROGRESS);
-  return state as BattleRoom;
+  return endPlacementNow(placeAndConfirm(placeAndConfirm(placementRoom(), SEATS.P1, fleet(1)), SEATS.P2, fleet(2)));
 }
 
 /** Every cell of a fleet. */

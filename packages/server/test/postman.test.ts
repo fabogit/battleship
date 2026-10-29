@@ -4,7 +4,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 
-import { CLIENT_EVENTS, ERROR_CODES, PROTOCOL_VERSION } from '@battleship/core';
+import { CLIENT_EVENTS, ERROR_CODES, PROTOCOL_VERSION, START_COUNTDOWN_MS } from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
@@ -36,7 +36,8 @@ interface SocketIoMessage {
  * One step of the replay, in the order the collection's descriptions give (**Seat P1**). A step names a request by its
  * file name without `.request.yaml`, which is the name Postman shows, and, to send one of its saved messages, the
  * message's file name without `.message.yaml`. The connection of a request opens at its first step and stays open
- * until a `disconnect` step closes it, as Postman's Disconnect button does.
+ * until a `disconnect` step closes it, as Postman's Disconnect button does. A `waitMs` step names no request: it only
+ * moves the clock.
  */
 type Step =
   | {
@@ -56,6 +57,10 @@ type Step =
       readonly request: string;
       /** Closes the request's open connection; the next step runs once the server has seen it go. */
       readonly disconnect: true;
+    }
+  | {
+      /** Moves the clock this far, as a person waits for a countdown to run out; it sends nothing. */
+      readonly waitMs: number;
     };
 
 const OK = { ok: true };
@@ -100,8 +105,9 @@ const STEPS: readonly Step[] = [
   { request: 'Seat P2', message: CLIENT_EVENTS.CONFIRM_PLACEMENT, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.UNLOCK_PLACEMENT, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.CONFIRM_PLACEMENT, ack: OK },
-  // The second fleet locked starts the match, P1 first.
+  // The second fleet locked starts the start countdown; when it runs out, the match starts, P1 first (ADR-0090).
   { request: 'Seat P1', message: CLIENT_EVENTS.CONFIRM_PLACEMENT, ack: OK },
+  { waitMs: START_COUNTDOWN_MS },
   { request: 'Seat P1', message: CLIENT_EVENTS.UPDATE_TARGETS, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.FIRE, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.UPDATE_TARGETS, ack: OK },
@@ -204,6 +210,9 @@ describe('the Postman collection', () => {
     const requests = socketIoRequests();
     const used = new Set<string>();
     for (const step of STEPS) {
+      if ('waitMs' in step) {
+        continue;
+      }
       const request = requests.get(step.request);
       expect(request, `step for unknown request "${step.request}"`).toBeDefined();
       if ('message' in step) {
@@ -221,7 +230,7 @@ describe('the Postman collection', () => {
       'steps without a saved message',
     ).toEqual([]);
     expect(
-      [...requests.keys()].filter((name) => !STEPS.some((step) => step.request === name)),
+      [...requests.keys()].filter((name) => !STEPS.some((step) => 'request' in step && step.request === name)),
       'requests without a replay step',
     ).toEqual([]);
   });
@@ -288,6 +297,10 @@ async function replay(requests: ReadonlyMap<string, LoadedRequest>): Promise<voi
   const open = new Map<string, Socket>();
 
   for (const [index, step] of STEPS.entries()) {
+    if ('waitMs' in step) {
+      clock.advance(step.waitMs);
+      continue;
+    }
     const label = `step ${String(index + 1)}: ${step.request}${'message' in step ? ` › ${step.message}` : ''}`;
     if ('disconnect' in step) {
       await disconnect(open, step.request, label);

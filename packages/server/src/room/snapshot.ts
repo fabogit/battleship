@@ -87,18 +87,19 @@ function toRulesConfirmations(state: RoomState, seat: Seat): PerPlayer<boolean> 
 }
 
 /**
- * Builds the `PLACEMENT` part: the receiver's own fleet only, and both confirmation flags.
+ * Builds the `PLACEMENT` part: the receiver's own fleet only, both confirmation flags, and the time left before the
+ * deadline and, while both fleets are confirmed, before the start countdown ends (ADR-0090).
  * @param state The room in `PLACEMENT`.
  * @param seat The receiver.
- * @param now Current time in epoch ms.
- * @returns The placement part. `startCountdownMs` stays `null` until the start countdown lands (#28).
+ * @param now Current time in epoch ms; a reconnecting player gets the times left at that moment.
+ * @returns The placement part.
  */
 function toPlacementSnapshot(state: PlacementRoom, seat: Seat, now: number): PlacementSnapshot {
   return {
     myShips: state.fleets[seat].ships,
     hasConfirmed: { me: state.fleets[seat].hasConfirmed, opponent: state.fleets[otherSeat(seat)].hasConfirmed },
     remainingMs: Math.max(0, state.deadline - now),
-    startCountdownMs: null,
+    startCountdownMs: state.countdownEndsAt === null ? null : Math.max(0, state.countdownEndsAt - now),
   };
 }
 

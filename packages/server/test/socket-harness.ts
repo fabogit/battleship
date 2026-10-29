@@ -9,6 +9,7 @@ import {
   generateRandomFleet,
   PROTOCOL_VERSION,
   SERVER_EVENTS,
+  START_COUNTDOWN_MS,
   type ClientToServerEvents,
   type CommandEvent,
   type CommandPayload,
@@ -327,8 +328,9 @@ export async function agreeOnRules(p1: Player, p2: Player, rulesVersion = 0): Pr
 }
 
 /**
- * Both players place and confirm the fleets of `P1_FLEET_SEED` and `P2_FLEET_SEED`, which starts the match with `P1`
- * to fire. The inboxes are not read: each player gets one `STATE` per command, four in all.
+ * Both players place and confirm the fleets of `P1_FLEET_SEED` and `P2_FLEET_SEED`, then the clock runs the start
+ * countdown, which starts the match with `P1` to fire. The inboxes are not read: each player gets one `STATE` per
+ * command and one when the match starts, five in all.
  */
 export async function placeFleets(p1: Player, p2: Player): Promise<void> {
   for (const [from, seed] of [
@@ -340,6 +342,7 @@ export async function placeFleets(p1: Player, p2: Player): Promise<void> {
     });
     expect(await send(from, CLIENT_EVENTS.CONFIRM_PLACEMENT, {})).toEqual({ ok: true });
   }
+  clock.advance(START_COUNTDOWN_MS);
 }
 
 /** Two seated players who agreed on `DEFAULT_RULES`, now placing their fleets; the snapshots this sends are read. */
@@ -360,9 +363,9 @@ export async function startedMatch(): Promise<SeatedPlayers> {
   const seated = await placingPlayers();
   const { p1, p2 } = seated;
   await placeFleets(p1, p2);
-  // One snapshot per accepted command, to each player.
-  await p1.inbox.states(4);
-  await p2.inbox.states(4);
+  // One snapshot per accepted command, and one at the end of the countdown, to each player.
+  await p1.inbox.states(5);
+  await p2.inbox.states(5);
   return seated;
 }
 

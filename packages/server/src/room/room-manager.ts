@@ -1,5 +1,5 @@
 // Registry of the open rooms: ids, secrets, the room cap, and the stored state each transition replaces (ADR-0039).
-// It has no timers: the socket handlers remove the rooms whose game-over TTL ran out (ADR-0065).
+// It has no timers: the socket handlers run the transitions their room timers call for (ADR-0065).
 
 import {
   CLIENT_EVENTS,
@@ -8,6 +8,7 @@ import {
   ERROR_CODES,
   generateRoomId,
   MAX_ROOMS,
+  ROOM_PHASES,
   SEATS,
   type CreateRoomPayload,
   type JoinRoomPayload,
@@ -28,6 +29,9 @@ import {
 import {
   applyCommand,
   createRoom,
+  endPlacement,
+  placementEndsAt,
+  type EndedPlacement,
   type RejectedTransition,
   type RoomPlayer,
   type RoomState,
@@ -37,7 +41,7 @@ import {
 
 /** What a `RoomManager` draws its randomness from; production uses the defaults, tests inject both. */
 export interface RoomManagerOptions {
-  /** Source of room ids; `createCryptoRng()` by default (ADR-0030). */
+  /** Source of room ids and of the fleets completed at the placement deadline; `createCryptoRng()` by default (ADR-0030). */
   readonly rng?: Rng;
   /** Source of player secrets; `createPlayerSecret` by default. */
   readonly createSecret?: () => string;
@@ -84,7 +88,7 @@ export interface ForfeitedSeat {
 export class RoomManager {
   /** The open rooms, by id. */
   readonly #rooms = new Map<string, RoomState>();
-  /** Source of room ids. */
+  /** Source of room ids and of completed fleets (ADR-0091). */
   readonly #rng: Rng;
   /** Source of player secrets. */
   readonly #createSecret: () => string;
@@ -228,6 +232,35 @@ export class RoomManager {
   nextForfeit(roomId: string): PendingForfeit | undefined {
     const room = this.#rooms.get(roomId);
     return (room === undefined ? null : nextForfeit(room)) ?? undefined;
+  }
+
+  /**
+   * When a room's placement ends, which the socket layer schedules as the `PLACEMENT` room timer (ADR-0090).
+   * @param roomId The room to look at; an unknown id has none.
+   * @returns The end of the start countdown while both fleets are confirmed, else the deadline, in epoch ms;
+   * `undefined` when the room is gone or not in `PLACEMENT`.
+   */
+  placementEndsAt(roomId: string): number | undefined {
+    const room = this.#rooms.get(roomId);
+    return room?.phase === ROOM_PHASES.PLACEMENT ? placementEndsAt(room) : undefined;
+  }
+
+  /**
+   * Ends a room's placement if it is due, completing the unconfirmed fleets with the registry's `Rng` (ADR-0091), and
+   * stores the room in battle.
+   * @param roomId The room whose `PLACEMENT` timer ran out.
+   * @param now Current time in epoch ms.
+   * @returns The room in battle and the seats whose fleets were completed, or `undefined` when the room is gone, out of
+   * `PLACEMENT`, or not due yet.
+   */
+  endPlacementDue(roomId: string, now: number): EndedPlacement | undefined {
+    const room = this.#rooms.get(roomId);
+    const ended = room?.phase === ROOM_PHASES.PLACEMENT ? endPlacement(room, now, this.#rng) : null;
+    if (ended === null) {
+      return undefined;
+    }
+    this.#rooms.set(roomId, ended.state);
+    return ended;
   }
 
   /**

@@ -8,6 +8,7 @@ import {
   randomTargets,
   ROOM_PHASES,
   SEATS,
+  START_COUNTDOWN_MS,
   TIMEOUT_ACTIONS,
   type Coordinate,
   type PlayerStateSnapshot,
@@ -145,6 +146,29 @@ describe('projectSnapshot', () => {
     });
     expect(coordinatesAboutOpponent(p2)).toEqual([]);
     expect(projectSnapshot(state, SEATS.P1, NOW + PLACEMENT_TIME_LIMIT_MS + 1).placement?.remainingMs).toBe(0);
+  });
+
+  it('shows the start countdown to both players while both fleets are confirmed, at the time of the projection', () => {
+    const p2Placed = apply(placeAndConfirm(placementRoom(NOW), SEATS.P1, fleet(1)), {
+      type: CLIENT_EVENTS.UPDATE_PLACEMENT,
+      seat: SEATS.P2,
+      payload: { ships: fleet(2) },
+    });
+    const bothConfirmed = apply(
+      p2Placed,
+      { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat: SEATS.P2, payload: {} },
+      NOW + 2_000,
+    );
+    for (const seat of Object.values(SEATS)) {
+      expect(projectSnapshot(bothConfirmed, seat, NOW + 3_000).placement).toMatchObject({
+        hasConfirmed: { me: true, opponent: true },
+        remainingMs: PLACEMENT_TIME_LIMIT_MS - 3_000,
+        startCountdownMs: START_COUNTDOWN_MS - 1_000,
+      });
+    }
+    // A reconnecting player gets the time left at the moment of their snapshot, and never less than zero.
+    const pastEnd = NOW + 2_000 + START_COUNTDOWN_MS + 1;
+    expect(projectSnapshot(bothConfirmed, SEATS.P1, pastEnd).placement?.startCountdownMs).toBe(0);
   });
 
   it('shows the draft targets to the active player only', () => {
