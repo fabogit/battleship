@@ -54,7 +54,7 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 | `LEAVE_ROOM`        | `{}`                         | —                              | any                                                                       |
 | `ECHO`              | any                          | `{ payload, protocolVersion }` | any; the smoke check (ADR-0048), no guard; only the rate limit refuses it |
 
-`ECHO` is permanent ([ADR-0048](adr/0048-echo-smoke-check.md)): after every deploy, `pnpm --filter @battleship/server echo <url>` connects with the handshake `auth`, sends it and expects its ack, so the check covers the origin policy, the transport, the handshake and one event round trip without opening a room (a `CREATE_ROOM` would leave a room open until its TTL runs out). It is not a command: the client never sends it, and `emitWithAck` refuses it at compile time. The Postman collection keeps its `ECHO` requests ([Local tooling](development.md#local-tooling)).
+`ECHO` is permanent ([ADR-0048](adr/0048-echo-smoke-check.md)): after every deploy, `pnpm --filter @battleship/server echo <url>` connects with the handshake `auth`, sends it and expects its ack, so the check covers the origin policy, the transport, the handshake and one event round trip without opening a room (a `CREATE_ROOM` would hold a place under `MAX_ROOMS` until the creator's seat is forfeited, `DISCONNECT_FORFEIT_MS` after the check disconnects). It is not a command: the client never sends it, and `emitWithAck` refuses it at compile time. The Postman collection keeps its `ECHO` requests ([Local tooling](development.md#local-tooling)).
 
 ## Payload validation
 

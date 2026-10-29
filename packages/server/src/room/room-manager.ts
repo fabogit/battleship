@@ -1,5 +1,5 @@
 // Registry of the open rooms: ids, secrets, the room cap, and the stored state each transition replaces (ADR-0039).
-// It has no timers: the socket handlers remove expired rooms (ADR-0065).
+// It has no timers: the socket handlers remove the rooms whose game-over TTL ran out (ADR-0065).
 
 import {
   CLIENT_EVENTS,
@@ -77,8 +77,9 @@ export interface ForfeitedSeat {
 
 /**
  * Keeps every open room in memory, by id (docs/server.md#room-lifecycle), and runs commands against them through
- * `applyCommand`, storing the state an accepted command returns. A room stays until `remove`, which the socket handlers
- * call when one of its TTLs runs out (ADR-0065).
+ * `applyCommand`, storing the state an accepted command returns. A room stays until a forfeit or `LEAVE_ROOM` leaves
+ * nobody in it (`forfeitDue`, `leave`; ADR-0073), or until `remove`, which the socket handlers call when its game-over
+ * TTL runs out (ADR-0065).
  */
 export class RoomManager {
   /** The open rooms, by id. */

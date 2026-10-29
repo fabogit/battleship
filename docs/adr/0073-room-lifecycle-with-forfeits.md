@@ -29,6 +29,6 @@ With the disconnect forfeit in place ([ADR-0072](0072-seat-presence.md)), seats 
 
 - Added on 2026-10-15 for disconnection rules ([#23](https://github.com/fabogit/battleship/issues/23)).
 - Spec: [Server: Room lifecycle](../server.md#room-lifecycle) · [Server: Leaving](../server.md#leaving) · [Domain: Constants](../domain.md#constants)
-- Amends: [ADR-0065](0065-clock-and-room-timers.md) (no `EMPTY_ROOM` timer)
-- Related: [ADR-0072](0072-seat-presence.md) (seat presence) · [ADR-0039](0039-room-registry.md) (room registry)
+- Amends: [ADR-0065](0065-clock-and-room-timers.md) (no `EMPTY_ROOM` timer) · [ADR-0039](0039-room-registry.md) (rooms also leave the registry when nobody is left in them)
+- Related: [ADR-0072](0072-seat-presence.md) (seat presence)
 - Issues: [#23](https://github.com/fabogit/battleship/issues/23) · [#24](https://github.com/fabogit/battleship/issues/24) (TTLs) · [#35](https://github.com/fabogit/battleship/issues/35) · [#36](https://github.com/fabogit/battleship/issues/36)

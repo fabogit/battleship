@@ -1,6 +1,6 @@
 {
   "name": "@battleship/client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Angular browser client",
   "type": "module",
