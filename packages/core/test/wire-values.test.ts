@@ -84,7 +84,7 @@ describe('wire values', () => {
   });
 
   it('RULES_VIOLATIONS', () => {
-    expect(Object.values(RULES_VIOLATIONS)).toEqual(['SALVO_WITH_EXTRA_TURN']);
+    expect(Object.values(RULES_VIOLATIONS)).toEqual(['SALVO_WITH_EXTRA_TURN', 'SALVO_NOT_IMPLEMENTED']);
   });
 
   it('ERROR_CODES, in the order of docs/protocol.md#error-codes', () => {

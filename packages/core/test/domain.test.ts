@@ -53,13 +53,28 @@ describe('validateRules', () => {
     expect(validateRules(DEFAULT_RULES)).toEqual({ ok: true });
   });
 
-  // ADR-0010: the only constraint between fields; each one alone is fine.
+  // ADR-0010: the exclusive pair.
   it.each([
     [false, false],
-    [true, false],
     [false, true],
   ])('accepts salvo %s with extra turn %s', (isSalvoModeEnabled, isExtraTurnOnHitEnabled) => {
     expect(validateRules({ ...DEFAULT_RULES, isSalvoModeEnabled, isExtraTurnOnHitEnabled })).toEqual({ ok: true });
+  });
+
+  // ADR-0085: the shot engine throws on salvo until #32, which drops this test with the violation.
+  it('refuses salvo alone until the shot engine supports it, whatever the other fields', () => {
+    for (const rules of [
+      { ...DEFAULT_RULES, isSalvoModeEnabled: true },
+      {
+        isSalvoModeEnabled: true,
+        isExtraTurnOnHitEnabled: false,
+        areAdjacentShipsAllowed: true,
+        turnTimeLimitSeconds: 120,
+        timeoutAction: TIMEOUT_ACTIONS.PASS_TURN,
+      } as const,
+    ]) {
+      expect(validateRules(rules)).toEqual({ ok: false, reason: RULES_VIOLATIONS.SALVO_NOT_IMPLEMENTED });
+    }
   });
 
   it('refuses salvo with extra turn on hit, whatever the other fields', () => {

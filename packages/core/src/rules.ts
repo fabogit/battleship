@@ -12,10 +12,15 @@ export const DEFAULT_RULES: GameRules = {
   timeoutAction: TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT,
 };
 
-/** Constraints between the fields of a well-formed `GameRules`; each field's own values are the guard's job. */
+/**
+ * What `validateRules` refuses in a well-formed `GameRules`, checked in this order; each field's own values are the
+ * guard's job.
+ */
 export const RULES_VIOLATIONS = {
   /** Salvo and extra turn on hit both enabled (ADR-0010). */
   SALVO_WITH_EXTRA_TURN: 'SALVO_WITH_EXTRA_TURN',
+  /** Salvo enabled before the shot engine supports it (ADR-0085); #32 drops this violation when it lands. */
+  SALVO_NOT_IMPLEMENTED: 'SALVO_NOT_IMPLEMENTED',
 } as const;
 
 /** One of the `RULES_VIOLATIONS`. */
@@ -39,17 +44,23 @@ export interface InvalidRules {
 export type RulesValidation = ValidRules | InvalidRules;
 
 /**
- * Checks the constraints between the fields of a rules object (docs/domain.md#rules). Pure, so the client can run it
+ * Checks whether a match can be played with a rules object (docs/domain.md#rules). Pure, so the client can run it
  * before sending `UPDATE_RULES`; the server runs it on every edit.
  * @param rules Well-formed rules, as the `UPDATE_RULES` guard returns them.
- * @returns `{ ok: true }`, or the constraint broken: salvo and extra turn on hit are exclusive (ADR-0010).
+ * @returns `{ ok: true }`, or the first violation: salvo and extra turn on hit are exclusive (ADR-0010), and salvo is
+ * refused until the shot engine supports it (ADR-0085, #32), since `shotsAllowed` and `resolveTurn` throw on it.
  * @example
  * validateRules(DEFAULT_RULES); // { ok: true }
  * validateRules({ ...DEFAULT_RULES, isSalvoModeEnabled: true, isExtraTurnOnHitEnabled: true });
  * // { ok: false, reason: 'SALVO_WITH_EXTRA_TURN' }
+ * validateRules({ ...DEFAULT_RULES, isSalvoModeEnabled: true }); // { ok: false, reason: 'SALVO_NOT_IMPLEMENTED' }
  */
 export function validateRules(rules: GameRules): RulesValidation {
-  return rules.isSalvoModeEnabled && rules.isExtraTurnOnHitEnabled
-    ? { ok: false, reason: RULES_VIOLATIONS.SALVO_WITH_EXTRA_TURN }
-    : { ok: true };
+  if (rules.isSalvoModeEnabled && rules.isExtraTurnOnHitEnabled) {
+    return { ok: false, reason: RULES_VIOLATIONS.SALVO_WITH_EXTRA_TURN };
+  }
+  if (rules.isSalvoModeEnabled) {
+    return { ok: false, reason: RULES_VIOLATIONS.SALVO_NOT_IMPLEMENTED };
+  }
+  return { ok: true };
 }
