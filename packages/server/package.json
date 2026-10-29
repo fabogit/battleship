@@ -4,6 +4,17 @@
   "private": true,
   "description": "Authoritative Fastify + Socket.io game server",
   "type": "module",
+  "exports": {
+    "./clock": {
+      "@battleship/source": "./src/clock.ts",
+      "default": "./dist/clock.js"
+    },
+    "./server": {
+      "@battleship/source": "./src/server.ts",
+      "default": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist"
   ],
