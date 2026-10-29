@@ -39,12 +39,14 @@ pnpm build
 
 CI runs these steps, in this order, on every pull request and on every push to `main` ([`ci.yml`](.github/workflows/ci.yml)). `pnpm verify` runs the same steps locally, with `lint` before `typecheck`, and stops at the first failure. A pre-commit hook formats the staged files with Prettier ([Local tooling](docs/development.md#local-tooling)).
 
+The browser journeys run apart, in their own CI job `e2e`: `pnpm e2e` plays them in Chromium (Playwright) against a local server and the production client bundle ([End-to-end journeys](docs/development.md#end-to-end-journeys)). Neither `pnpm test` nor `pnpm verify` runs them.
+
 ## Docs
 
 | Document                           | Contents                                                                                                              |
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | [Overview](docs/overview.md)       | Product scope, the good-faith principle, technical constraints                                                        |
-| [Development](docs/development.md) | Monorepo layout, how `@battleship/core` is resolved, code conventions, local tooling                                  |
+| [Development](docs/development.md) | Monorepo layout, how `@battleship/core` is resolved, code conventions, local tooling, end-to-end journeys             |
 | [Deployment](docs/deployment.md)   | Render facts that shape the design, environment variables, backend and frontend deploys                               |
 | [Domain](docs/domain.md)           | Constants, domain types, rules, randomness, placement, shot engine                                                    |
 | [Server](docs/server.md)           | Room state machine, transition rules, room logic, plugins, socket handlers, sessions, hardening, logging, testability |

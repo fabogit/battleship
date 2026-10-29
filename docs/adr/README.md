@@ -92,5 +92,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0086](0086-rules-edits-sent-at-once.md)        | Rules edits sent at once                   | Accepted, 2026-10-29   |
 | [ADR-0087](0087-rules-controls-as-native-inputs.md) | Rules controls as native inputs            | Accepted, 2026-10-29   |
 | [ADR-0088](0088-rules-change-notices.md)            | Rules change notices                       | Accepted, 2026-10-29   |
+| [ADR-0089](0089-e2e-time-control.md)                | Time control in the end-to-end suite       | Accepted, 2026-10-29   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
