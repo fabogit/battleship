@@ -64,7 +64,7 @@ battleship/
     │   ├── scripts/echo-client.ts     # Production smoke test: handshake + ECHO round trip (D48)
     │   ├── .env.example               # Local PORT / ALLOWED_ORIGINS / LOG_* / TRUST_PROXY_HOPS: copy to .env
     │   └── test/                      # Vitest: room/ unit tests (seeded fleets, fake clock) + socket integration tests,
-    │                                  # Postman message replay (D68)
+    │                                  # Postman message replay (D68); socket-harness.ts: the shared server and clients
     │
     └── client/                    # Angular 22, @angular/build (esbuild), unit tests on Vitest + jsdom
         ├── vitest-base.config.ts  # `ng test` runnerConfig: resolves core from source (D22)

@@ -9,15 +9,11 @@ import { io as connect, type Socket } from 'socket.io-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
 
-import type { FastifyInstance } from 'fastify';
-
-import { createServer } from '../src/server.js';
-import { FakeClock } from './fake-clock.js';
+import { ACK_TIMEOUT_MS, app, baseUrl, clock, start, stop, track } from './socket-harness.js';
 
 const POSTMAN_DIR = resolve(import.meta.dirname, '../../../postman');
 const COLLECTION_DIR = join(POSTMAN_DIR, 'collections/Battleship API');
 const ENVIRONMENT_FILE = join(POSTMAN_DIR, 'environments/localhost.environment.yaml');
-const ACK_TIMEOUT_MS = 2_000;
 /** Time between two steps, as a person clicking through the collection would leave. */
 const STEP_MS = 1_000;
 
@@ -122,16 +118,7 @@ const STEPS: readonly Step[] = [
   { request: 'Seat P1', message: CLIENT_EVENTS.LEAVE_ROOM, ack: OK },
 ];
 
-let app: FastifyInstance | undefined;
-const sockets: Socket[] = [];
-
-afterEach(async () => {
-  for (const socket of sockets.splice(0)) {
-    socket.close();
-  }
-  await app?.close();
-  app = undefined;
-});
+afterEach(stop);
 
 /** Every file under a folder whose name ends with the suffix, as absolute paths. */
 function filesEndingWith(directory: string, suffix: string): string[] {
@@ -276,7 +263,7 @@ async function disconnect(open: Map<string, Socket>, request: string, label: str
   socket.close();
   open.delete(request);
   await vi.waitFor(() => {
-    expect(app?.io.of('/').sockets.has(socketId), `${label}: the server still has the socket`).toBe(false);
+    expect(app.io.of('/').sockets.has(socketId), `${label}: the server still has the socket`).toBe(false);
   });
 }
 
@@ -285,10 +272,9 @@ async function disconnect(open: Map<string, Socket>, request: string, label: str
  * @param requests The Socket.IO requests to connect, by name.
  */
 async function replay(requests: ReadonlyMap<string, LoadedRequest>): Promise<void> {
-  const clock = new FakeClock(1_700_000_000_000);
   const variables = postmanVariables();
-  app = createServer({ allowedOrigins: [variables.get('allowedOrigin') ?? ''], logger: false, clock });
-  variables.set('baseUrl', await app.listen({ port: 0, host: '127.0.0.1' }));
+  await start({ allowedOrigins: [variables.get('allowedOrigin') ?? ''] });
+  variables.set('baseUrl', baseUrl);
   const open = new Map<string, Socket>();
 
   for (const [index, step] of STEPS.entries()) {
@@ -304,15 +290,15 @@ async function replay(requests: ReadonlyMap<string, LoadedRequest>): Promise<voi
     }
     // Postman's Socket.IO client speaks WebSocket only.
     const connectRequest = (): Socket => {
-      const socket = connect(substitute(request.url, variables), {
-        transports: ['websocket'],
-        reconnection: false,
-        extraHeaders: Object.fromEntries(
-          request.headers.map(({ key, value }) => [key, substitute(value, variables)] as const),
-        ),
-      });
-      sockets.push(socket);
-      return socket;
+      return track(
+        connect(substitute(request.url, variables), {
+          transports: ['websocket'],
+          reconnection: false,
+          extraHeaders: Object.fromEntries(
+            request.headers.map(({ key, value }) => [key, substitute(value, variables)] as const),
+          ),
+        }),
+      );
     };
 
     if (!('message' in step)) {

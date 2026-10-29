@@ -1,80 +1,36 @@
 import { once } from 'node:events';
 
 import {
-  BOARD_SIZE,
   CLIENT_EVENTS,
-  createSeededRng,
-  DEFAULT_RULES,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
-  generateRandomFleet,
-  PROTOCOL_VERSION,
   RATE_LIMIT_EVENTS_PER_SECOND,
   ROOM_PHASES,
   SEATS,
-  type ClientToServerEvents,
-  type Coordinate,
-  type PlacedShip,
-  type ServerToClientEvents,
 } from '@battleship/core';
-import { io as connect, type Socket } from 'socket.io-client';
+import { type Socket } from 'socket.io-client';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { FastifyInstance } from 'fastify';
-
 import { MAX_MESSAGE_BYTES } from '../src/plugins/socket-io.js';
-import { RoomManager } from '../src/room/room-manager.js';
-import { createServer } from '../src/server.js';
-import { FakeClock } from './fake-clock.js';
+import {
+  ACK_TIMEOUT_MS,
+  app,
+  clock,
+  placeFleets,
+  player,
+  playToVictory,
+  rooms,
+  send,
+  sendRaw,
+  start,
+  stop,
+  type Player,
+} from './socket-harness.js';
 
-type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
-type Transport = 'websocket' | 'polling';
+afterEach(stop);
 
-const NOW = 1_700_000_000_000;
-const ACK_TIMEOUT_MS = 2_000;
-
-let app: FastifyInstance;
-let rooms: RoomManager;
-let clock: FakeClock;
-let baseUrl: string;
-const clients: ClientSocket[] = [];
-
-async function start(): Promise<void> {
-  rooms = new RoomManager({ rng: createSeededRng(3) });
-  clock = new FakeClock(NOW);
-  app = createServer({ allowedOrigins: ['https://battleship.example'], logger: false, rooms, clock });
-  baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
-}
-
-afterEach(async () => {
-  for (const client of clients.splice(0)) {
-    client.close();
-  }
-  await app.close();
-});
-
-async function player(transport: Transport = 'websocket', session?: object): Promise<ClientSocket> {
-  const socket: ClientSocket = connect(baseUrl, {
-    transports: [transport],
-    reconnection: false,
-    auth: { protocolVersion: PROTOCOL_VERSION, ...(session === undefined ? {} : { session }) },
-  });
-  clients.push(socket);
-  await new Promise<void>((resolve) => {
-    socket.once('connect', resolve);
-  });
-  return socket;
-}
-
-/** Sends any event with an ack and returns the reply, untyped: each test asserts the shape. */
-async function send(socket: ClientSocket, event: string, payload: unknown): Promise<unknown> {
-  // The typed socket cannot narrow an event name held in a variable.
-  const response: unknown = await (socket as Socket).timeout(ACK_TIMEOUT_MS).emitWithAck(event, payload);
-  return response;
-}
-
-async function createRoom(socket: ClientSocket, nickname = 'Alice'): Promise<string> {
+async function createRoom(socket: Player, nickname = 'Alice'): Promise<string> {
   const created = (await send(socket, CLIENT_EVENTS.CREATE_ROOM, { nickname })) as { ok: boolean; roomId: string };
   expect(created.ok).toBe(true);
   return created.roomId;
@@ -84,7 +40,7 @@ async function createRoom(socket: ClientSocket, nickname = 'Alice'): Promise<str
  * Closes a client and waits until the server has handled its `disconnect`: the handlers' listener was added first, so
  * it has run when this one does.
  */
-async function leave(socket: ClientSocket): Promise<void> {
+async function leave({ socket }: Player): Promise<void> {
   const serverSide = app.io.sockets.sockets.get(socket.id ?? '');
   if (serverSide === undefined) {
     expect.fail('the server does not know the socket');
@@ -94,46 +50,10 @@ async function leave(socket: ClientSocket): Promise<void> {
   await gone;
 }
 
-function fleet(seed: number): PlacedShip[] {
-  return generateRandomFleet(DEFAULT_RULES, createSeededRng(seed));
-}
-
-/** Both players place and confirm the fleets of seeds 1 and 2, which starts the match. */
-async function placeFleets(p1: ClientSocket, p2: ClientSocket): Promise<readonly [PlacedShip[], PlacedShip[]]> {
-  const fleets = [fleet(1), fleet(2)] as const;
-  for (const [socket, ships] of [
-    [p1, fleets[0]],
-    [p2, fleets[1]],
-  ] as const) {
-    const placements = ships.map(({ type, start, orientation }) => ({ type, start, orientation }));
-    expect(await send(socket, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements })).toEqual({ ok: true });
-    expect(await send(socket, CLIENT_EVENTS.CONFIRM_PLACEMENT, {})).toEqual({ ok: true });
-  }
-  return fleets;
-}
-
 /** Plays a match to `GAME_OVER`: P1 fires at every cell of P2's fleet, P2 at water in between. */
-async function playToGameOver(p1: ClientSocket, p2: ClientSocket): Promise<void> {
-  const fleets = await placeFleets(p1, p2);
-  const occupied = new Set(
-    fleets[0].flatMap((ship) => ship.coordinates.map(({ x, y }) => `${String(x)},${String(y)}`)),
-  );
-  const water: Coordinate[] = [];
-  for (let y = 0; y < BOARD_SIZE; y++) {
-    for (let x = 0; x < BOARD_SIZE; x++) {
-      if (!occupied.has(`${String(x)},${String(y)}`)) {
-        water.push({ x, y });
-      }
-    }
-  }
-  const targets = fleets[1].flatMap((ship) => ship.coordinates);
-  for (const [turn, target] of targets.entries()) {
-    clock.advance(1_000);
-    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [target] })).toEqual({ ok: true });
-    if (turn < targets.length - 1) {
-      expect(await send(p2, CLIENT_EVENTS.FIRE, { targets: [water[turn]] })).toEqual({ ok: true });
-    }
-  }
+async function playToGameOver(p1: Player, p2: Player): Promise<void> {
+  await placeFleets(p1, p2);
+  await playToVictory(p1, p2);
 }
 
 // A room nobody sits in is closed by its seats' forfeits, not by a TTL of its own (ADR-0073).
@@ -167,7 +87,7 @@ describe('room closing', () => {
     await leave(alice);
     clock.advance(DISCONNECT_FORFEIT_MS - 1);
 
-    await player('websocket', { roomId: created.roomId, playerSecret: created.playerSecret });
+    await player({ roomId: created.roomId, playerSecret: created.playerSecret });
     clock.advance(10 * DISCONNECT_FORFEIT_MS);
     expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
   });
@@ -262,7 +182,7 @@ describe('game-over TTL', () => {
 
     clock.advance(GAME_OVER_TTL_MS - 10_000);
     await leave(p2);
-    await player('websocket', { roomId, playerSecret });
+    await player({ roomId, playerSecret });
     clock.advance(10_000);
     expect(rooms.get(roomId)).toBeUndefined();
   });
@@ -296,7 +216,7 @@ describe('leaving', () => {
     const roomId = await createRoom(p1);
     await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
     expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: true });
-    expect([...(app.io.sockets.adapter.rooms.get(roomId) ?? [])]).toEqual([p1.id]);
+    expect([...(app.io.sockets.adapter.rooms.get(roomId) ?? [])]).toEqual([p1.socket.id]);
   });
 });
 
@@ -305,12 +225,12 @@ describe('rate limit', () => {
   // replies to the events sent before it (ADR-0066).
   it.each(['websocket', 'polling'] as const)('keeps the acks in emit order over %s', async (transport) => {
     await start();
-    const alice = await player(transport);
+    const alice = await player(undefined, transport);
     const count = RATE_LIMIT_EVENTS_PER_SECOND + 5;
     const arrivals: string[] = [];
     await new Promise<void>((resolve, reject) => {
       for (let index = 0; index < count; index++) {
-        (alice as Socket)
+        (alice.socket as Socket)
           .timeout(ACK_TIMEOUT_MS)
           .emit(CLIENT_EVENTS.ECHO, index, (error: Error | null, reply: unknown) => {
             if (error !== null) {
@@ -336,9 +256,11 @@ describe('rate limit', () => {
     'refuses events beyond RATE_LIMIT_EVENTS_PER_SECOND with RATE_LIMITED over %s',
     async (transport) => {
       await start();
-      const alice = await player(transport);
+      const alice = await player(undefined, transport);
       const replies = await Promise.all(
-        Array.from({ length: RATE_LIMIT_EVENTS_PER_SECOND + 1 }, (_, index) => send(alice, CLIENT_EVENTS.ECHO, index)),
+        Array.from({ length: RATE_LIMIT_EVENTS_PER_SECOND + 1 }, (_, index) =>
+          sendRaw(alice, CLIENT_EVENTS.ECHO, index),
+        ),
       );
       expect(replies.slice(0, -1).every((reply) => (reply as { ok: boolean }).ok)).toBe(true);
       expect(replies.at(-1)).toEqual({ ok: false, error: ERROR_CODES.RATE_LIMITED });
@@ -349,7 +271,7 @@ describe('rate limit', () => {
     await start();
     const alice = await player();
     for (let index = 0; index < RATE_LIMIT_EVENTS_PER_SECOND; index++) {
-      await send(alice, CLIENT_EVENTS.ECHO, index);
+      await sendRaw(alice, CLIENT_EVENTS.ECHO, index);
     }
     expect(await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })).toEqual({
       ok: false,
@@ -362,22 +284,22 @@ describe('rate limit', () => {
     await start();
     const alice = await player();
     for (let index = 0; index <= RATE_LIMIT_EVENTS_PER_SECOND; index++) {
-      await send(alice, CLIENT_EVENTS.ECHO, index);
+      await sendRaw(alice, CLIENT_EVENTS.ECHO, index);
     }
     clock.advance(1_000);
-    expect(await send(alice, CLIENT_EVENTS.ECHO, 'again')).toMatchObject({ ok: true, payload: 'again' });
+    expect(await sendRaw(alice, CLIENT_EVENTS.ECHO, 'again')).toMatchObject({ ok: true, payload: 'again' });
   });
 
   it('counts per socket and keeps the limited socket connected', async () => {
     await start();
     const [alice, bob] = await Promise.all([player(), player()]);
     for (let index = 0; index <= RATE_LIMIT_EVENTS_PER_SECOND; index++) {
-      await send(alice, CLIENT_EVENTS.ECHO, index);
+      await sendRaw(alice, CLIENT_EVENTS.ECHO, index);
     }
     // Events without an ack are dropped silently once over the limit.
-    (alice as Socket).emit(CLIENT_EVENTS.ECHO);
-    expect(await send(bob, CLIENT_EVENTS.ECHO, 'bob')).toMatchObject({ ok: true });
-    expect(alice.connected).toBe(true);
+    (alice.socket as Socket).emit(CLIENT_EVENTS.ECHO);
+    expect(await sendRaw(bob, CLIENT_EVENTS.ECHO, 'bob')).toMatchObject({ ok: true });
+    expect(alice.socket.connected).toBe(true);
   });
 });
 
@@ -391,19 +313,19 @@ describe('message size', () => {
     'accepts a message just under MAX_MESSAGE_BYTES over %s',
     async (transport) => {
       await start();
-      const alice = await player(transport);
+      const alice = await player(undefined, transport);
       const payload = payloadOf(MAX_MESSAGE_BYTES - 100);
-      expect(await send(alice, CLIENT_EVENTS.ECHO, payload)).toMatchObject({ ok: true, payload });
+      expect(await sendRaw(alice, CLIENT_EVENTS.ECHO, payload)).toMatchObject({ ok: true, payload });
     },
   );
 
   it.each(['websocket', 'polling'] as const)('closes the connection on a larger message over %s', async (transport) => {
     await start();
-    const alice = await player(transport);
+    const alice = await player(undefined, transport);
     const disconnected = new Promise((resolve) => {
-      alice.once('disconnect', resolve);
+      alice.socket.once('disconnect', resolve);
     });
-    (alice as Socket).emit(CLIENT_EVENTS.ECHO, payloadOf(MAX_MESSAGE_BYTES + 1));
+    (alice.socket as Socket).emit(CLIENT_EVENTS.ECHO, payloadOf(MAX_MESSAGE_BYTES + 1));
     expect(await disconnected).toMatch(/transport (close|error)/);
   });
 });

@@ -8,7 +8,6 @@ import {
   ERROR_CODES,
   GAME_OVER_REASONS,
   GAME_OVER_TTL_MS,
-  generateRandomFleet,
   generateRoomId,
   MAX_ROOMS,
   parseSessionCredentials,
@@ -19,43 +18,42 @@ import {
   SEATS,
   SERVER_EVENTS,
   SHOT_OUTCOMES,
-  type ClientToServerEvents,
   type CommandEvent,
-  type HandshakeAuth,
   type CommandPayload,
-  type Coordinate,
-  type PlacedShip,
   type PlayerStateSnapshot,
   type Seat,
-  type ServerToClientEvents,
   type SessionCredentials,
-  type ShipPlacement,
-  type ShotResolvedPayload,
 } from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { FastifyInstance } from 'fastify';
-
 import { COMMAND_EVENTS } from '../src/plugins/room-handlers.js';
-import { RoomManager } from '../src/room/room-manager.js';
-import { createServer } from '../src/server.js';
-import { FakeClock } from './fake-clock.js';
-
-type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
-
-/** Seed of the registry's room ids, so the first room id is known in advance. */
-const ROOM_SEED = 7;
-/** Seeds of the two fleets. */
-const P1_FLEET_SEED = 1;
-const P2_FLEET_SEED = 2;
-/** The time every test starts at; the clock only moves when a test advances it. */
-const NOW = 1_700_000_000_000;
-/** How long a player takes per turn in the full match, so the rate limit sees real pacing. */
-const TURN_MS = 1_000;
-const ACK_TIMEOUT_MS = 2_000;
-/** Stands for a command's ack among the events of an inbox; lower case, so no server event can take it. */
-const ACK_MARKER = 'ack';
+import {
+  ACK_TIMEOUT_MS,
+  app,
+  baseUrl,
+  clock,
+  P1_FLEET_SEED,
+  P2_FLEET_SEED,
+  placedFleet,
+  placements,
+  player,
+  playToVictory,
+  ROOM_SEED,
+  rooms,
+  seatedPlayers,
+  send,
+  sendRaw,
+  start,
+  startedMatch,
+  stop,
+  track,
+  TURN_MS,
+  waterOf,
+  type ClientSocket,
+  type Inbox,
+  type Player,
+} from './socket-harness.js';
 
 /** Commands whose room logic lands later; refused with `NOT_ALLOWED` after their guard (ADR-0046). */
 const NOT_YET_SUPPORTED: readonly { [E in CommandEvent]: readonly [E, CommandPayload<E>] }[CommandEvent][] = [
@@ -65,133 +63,7 @@ const NOT_YET_SUPPORTED: readonly { [E in CommandEvent]: readonly [E, CommandPay
   [CLIENT_EVENTS.REMATCH_CHOICE, { choice: REMATCH_CHOICES.LEAVE }],
 ];
 
-let app: FastifyInstance;
-let rooms: RoomManager;
-let clock: FakeClock;
-let baseUrl: string;
-const clients: ClientSocket[] = [];
-
-/** Starts a server with a seeded registry (ADR-0030) and a fake clock (ADR-0065). */
-async function start(): Promise<void> {
-  rooms = new RoomManager({ rng: createSeededRng(ROOM_SEED) });
-  clock = new FakeClock(NOW);
-  app = createServer({ allowedOrigins: ['https://battleship.example'], logger: false, rooms, clock });
-  baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
-}
-
-afterEach(async () => {
-  for (const client of clients.splice(0)) {
-    client.close();
-  }
-  await app.close();
-});
-
-/** A server event as a client received it. */
-interface Received {
-  readonly event: string;
-  readonly payload: unknown;
-}
-
-/**
- * Every server event one client receives, in order, so a test reads them one by one and an unexpected or missing event
- * fails the next read. Acks of commands sent with `sendOnTimeline` join the same timeline as `ACK_MARKER` entries.
- */
-class Inbox {
-  readonly #messages: Received[] = [];
-  #waiting: ((message: Received) => void) | undefined;
-
-  constructor(socket: ClientSocket) {
-    socket.onAny((event: string, payload: unknown) => {
-      this.#deliver({ event, payload });
-    });
-  }
-
-  /**
-   * Puts a command's ack on the timeline, called from the emit callback so it lands between the events that arrived
-   * before and after it.
-   * @param response The ack's reply, read back with `ack()`.
-   */
-  recordAck(response: unknown): void {
-    this.#deliver({ event: ACK_MARKER, payload: response });
-  }
-
-  /**
-   * Hands a message to the read waiting for it, or queues it.
-   * @param message An event or an ack, in arrival order.
-   */
-  #deliver(message: Received): void {
-    const waiting = this.#waiting;
-    this.#waiting = undefined;
-    if (waiting === undefined) {
-      this.#messages.push(message);
-    } else {
-      waiting(message);
-    }
-  }
-
-  /** The next event, waiting for it when none is queued. */
-  next(): Promise<Received> {
-    const message = this.#messages.shift();
-    return message === undefined
-      ? new Promise((resolve) => {
-          this.#waiting = resolve;
-        })
-      : Promise.resolve(message);
-  }
-
-  /** The next event, which must be `STATE`. */
-  async state(): Promise<PlayerStateSnapshot> {
-    const message = await this.next();
-    expect(message.event).toBe(SERVER_EVENTS.STATE);
-    return message.payload as PlayerStateSnapshot;
-  }
-
-  /** The next event, which must be `SHOT_RESOLVED`. */
-  async shot(): Promise<ShotResolvedPayload> {
-    const message = await this.next();
-    expect(message.event).toBe(SERVER_EVENTS.SHOT_RESOLVED);
-    return message.payload as ShotResolvedPayload;
-  }
-
-  /** The next entry, which must be the ack of a command sent with `sendOnTimeline`; returns its reply. */
-  async ack(): Promise<unknown> {
-    const message = await this.next();
-    expect(message.event).toBe(ACK_MARKER);
-    return message.payload;
-  }
-
-  /** Reads `count` snapshots and returns the last one. */
-  async states(count: number): Promise<PlayerStateSnapshot | undefined> {
-    let last: PlayerStateSnapshot | undefined;
-    for (let index = 0; index < count; index++) {
-      last = await this.state();
-    }
-    return last;
-  }
-}
-
-/** A connected client with its inbox. */
-interface Player {
-  readonly socket: ClientSocket;
-  readonly inbox: Inbox;
-}
-
-/**
- * A connected client, as the browser opens it: the current protocol version and, to reopen a seat, a session.
- * @param session Credentials from a `CREATE_ROOM` or `JOIN_ROOM` ack; none for a client without a room.
- */
-async function player(session?: SessionCredentials): Promise<Player> {
-  const auth: HandshakeAuth =
-    session === undefined ? { protocolVersion: PROTOCOL_VERSION } : { protocolVersion: PROTOCOL_VERSION, session };
-  const socket: ClientSocket = connect(baseUrl, { transports: ['websocket'], reconnection: false, auth });
-  clients.push(socket);
-  const inbox = new Inbox(socket);
-  await new Promise<void>((resolve, reject) => {
-    socket.once('connect', resolve);
-    socket.once('connect_error', reject);
-  });
-  return { socket, inbox };
-}
+afterEach(stop);
 
 /**
  * Opens a socket whose handshake the server must refuse.
@@ -199,8 +71,7 @@ async function player(session?: SessionCredentials): Promise<Player> {
  * @returns The `connect_error` message: the error code (ADR-0061).
  */
 async function refusedHandshake(auth: object): Promise<string> {
-  const socket: ClientSocket = connect(baseUrl, { transports: ['websocket'], reconnection: false, auth });
-  clients.push(socket);
+  const socket: ClientSocket = track(connect(baseUrl, { transports: ['websocket'], reconnection: false, auth }));
   const error = await new Promise<Error>((resolve, reject) => {
     socket.once('connect_error', resolve);
     socket.once('connect', () => {
@@ -209,18 +80,6 @@ async function refusedHandshake(auth: object): Promise<string> {
   });
   expect(socket.active).toBe(false);
   return error.message;
-}
-
-/** Sends a command and returns its ack, untyped: each test asserts the shape. */
-async function send<E extends CommandEvent>(from: Player, event: E, payload: CommandPayload<E>): Promise<unknown> {
-  return sendRaw(from, event, payload);
-}
-
-/** Sends anything under a command's name, as a misbehaving client could. */
-async function sendRaw(from: Player, event: string, payload: unknown): Promise<unknown> {
-  // The typed socket cannot narrow an event name held in a variable; `send` keeps the contract.
-  const response: unknown = await (from.socket as Socket).timeout(ACK_TIMEOUT_MS).emitWithAck(event, payload);
-  return response;
 }
 
 /**
@@ -253,86 +112,6 @@ async function sendOnTimeline<E extends CommandEvent>(
 async function expectNothingPending(target: Player): Promise<void> {
   const { roomId } = (await send(target, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Probe' })) as { roomId: string };
   expect((await target.inbox.state()).roomId).toBe(roomId);
-}
-
-/** A random fleet, deterministic for its seed. */
-function placedFleet(seed: number): PlacedShip[] {
-  return generateRandomFleet(DEFAULT_RULES, createSeededRng(seed));
-}
-
-/** The fleet as the client sends it: placements without derived coordinates. */
-function placements(fleet: readonly PlacedShip[]): ShipPlacement[] {
-  return fleet.map(({ type, start, orientation }) => ({ type, start, orientation }));
-}
-
-/** Every board cell no ship of the fleet occupies. */
-function waterOf(fleet: readonly PlacedShip[]): Coordinate[] {
-  const occupied = new Set(fleet.flatMap((ship) => ship.coordinates.map(({ x, y }) => `${String(x)},${String(y)}`)));
-  return Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) => ({
-    x: index % BOARD_SIZE,
-    y: Math.floor(index / BOARD_SIZE),
-  })).filter(({ x, y }) => !occupied.has(`${String(x)},${String(y)}`));
-}
-
-/** Two seated players, with the credentials each got in its ack. */
-interface SeatedPlayers {
-  readonly p1: Player;
-  readonly p2: Player;
-  readonly roomId: string;
-  /** Each seat's session, as the client stores it. */
-  readonly sessions: Readonly<Record<Seat, SessionCredentials>>;
-}
-
-/** P1 creates a room and P2 joins it; the snapshots this sends are read. */
-async function seatedPlayers(): Promise<SeatedPlayers> {
-  const [p1, p2] = await Promise.all([player(), player()]);
-  const created = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as SessionCredentials;
-  const { roomId } = created;
-  const joined = (await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' })) as { playerSecret: string };
-  await p1.inbox.states(2);
-  await p2.inbox.states(1);
-  const sessions = {
-    P1: { roomId, playerSecret: created.playerSecret },
-    P2: { roomId, playerSecret: joined.playerSecret },
-  };
-  return { p1, p2, roomId, sessions };
-}
-
-/** Both players place and confirm their seeded fleets, so the match starts with `P1` to fire. */
-async function startedMatch(): Promise<SeatedPlayers> {
-  const seated = await seatedPlayers();
-  const { p1, p2 } = seated;
-  for (const [from, seed] of [
-    [p1, P1_FLEET_SEED],
-    [p2, P2_FLEET_SEED],
-  ] as const) {
-    await send(from, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements(placedFleet(seed)) });
-    await send(from, CLIENT_EVENTS.CONFIRM_PLACEMENT, {});
-  }
-  // One snapshot per accepted command, to each player.
-  await p1.inbox.states(4);
-  await p2.inbox.states(4);
-  return seated;
-}
-
-/**
- * Plays a started match to its end without reading the inboxes: P1 fires at every cell of P2's fleet, P2 at water in
- * between, so P1 wins with its last shot. The clock moves `TURN_MS` per round.
- * @returns The cells each player fired at, in order.
- */
-async function playToVictory(p1: Player, p2: Player): Promise<Record<Seat, Coordinate[]>> {
-  const p1Targets = placedFleet(P2_FLEET_SEED).flatMap((ship) => ship.coordinates);
-  const p2Targets = waterOf(placedFleet(P1_FLEET_SEED)).slice(0, p1Targets.length - 1);
-  for (const [turn, target] of p1Targets.entries()) {
-    // One turn per second for each player, under the rate limit whatever the test sent before.
-    clock.advance(TURN_MS);
-    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [target] })).toEqual({ ok: true });
-    const p2Target = p2Targets[turn];
-    if (p2Target !== undefined) {
-      expect(await send(p2, CLIENT_EVENTS.FIRE, { targets: [p2Target] })).toEqual({ ok: true });
-    }
-  }
-  return { P1: p1Targets, P2: p2Targets };
 }
 
 /**

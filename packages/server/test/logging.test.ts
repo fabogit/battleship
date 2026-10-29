@@ -9,25 +9,28 @@ import {
   SEATS,
   SERVER_EVENTS,
   SHIP_TYPES,
-  type ClientToServerEvents,
-  type ServerToClientEvents,
 } from '@battleship/core';
-import { io as connect, type Socket } from 'socket.io-client';
+import { io as connect } from 'socket.io-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { FastifyInstance } from 'fastify';
-
 import type { LogLevel } from '../src/config.js';
-import { createServer, type ServerOptions } from '../src/server.js';
-import { FakeClock } from './fake-clock.js';
+import {
+  ACK_TIMEOUT_MS,
+  ALLOWED_ORIGIN as ALLOWED,
+  baseUrl as harnessBaseUrl,
+  clock,
+  closeServer,
+  start as startServer,
+  stop,
+  track,
+  type ClientSocket,
+  type StartOptions,
+} from './socket-harness.js';
 
-const ALLOWED = 'https://battleship.example';
 const FOREIGN = 'https://evil.example';
 /** A client address as Render's proxy would append it, and one a client could write itself. */
 const CLIENT_ADDRESS = '203.0.113.9';
 const SPOOFED_ADDRESS = '198.51.100.1';
-
-type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface LogLine {
   readonly level: number;
@@ -35,26 +38,16 @@ interface LogLine {
   readonly [key: string]: unknown;
 }
 
-let app: FastifyInstance | undefined;
-const clients: ClientSocket[] = [];
+afterEach(stop);
 
-afterEach(async () => {
-  for (const client of clients.splice(0)) {
-    client.close();
-  }
-  await app?.close();
-  app = undefined;
-});
-
-/** Starts a server whose Pino output is collected in memory. */
+/** Starts the harness server with its Pino output collected in memory. */
 async function start(
   level: LogLevel,
-  options: Pick<ServerOptions, 'clock' | 'trustProxyHops'> = {},
+  options: Pick<StartOptions, 'trustProxyHops'> = {},
 ): Promise<{ baseUrl: string; lines: LogLine[] }> {
   const lines: LogLine[] = [];
-  app = createServer({
+  await startServer({
     ...options,
-    allowedOrigins: [ALLOWED],
     logger: {
       level,
       stream: {
@@ -64,8 +57,7 @@ async function start(
       },
     },
   });
-  const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
-  return { baseUrl, lines };
+  return { baseUrl: harnessBaseUrl, lines };
 }
 
 function client(
@@ -80,8 +72,7 @@ function client(
     extraHeaders: { ...headers, origin },
     auth,
   });
-  clients.push(socket);
-  return socket;
+  return track(socket);
 }
 
 function messages(lines: readonly LogLine[]): string[] {
@@ -108,7 +99,7 @@ describe('socket logs', () => {
     const socket = client(baseUrl);
     // Upgrading after the disconnect would never happen: wait for it so the test does not race.
     await new Promise((resolve) => socket.io.engine.once('upgrade', resolve));
-    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, { hello: 'battleship' });
+    await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.ECHO, { hello: 'battleship' });
     // The client clears its id on disconnect.
     const socketId = socket.id;
     socket.disconnect();
@@ -138,8 +129,7 @@ describe('socket logs', () => {
       socket.once('connect', resolve);
     });
 
-    await app?.close();
-    app = undefined;
+    await closeServer();
     expect(lines).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ msg: 'Socket event sent', event: SERVER_EVENTS.SERVER_SHUTDOWN, args: [{}] }),
@@ -150,7 +140,7 @@ describe('socket logs', () => {
   it('keep connections but not events at info', async () => {
     const { baseUrl, lines } = await start('info');
     const socket = client(baseUrl);
-    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
+    await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
 
     expect(messages(lines)).toContain('Socket connected');
     expect(messages(lines)).not.toContain('Socket event received');
@@ -159,7 +149,7 @@ describe('socket logs', () => {
   it('name the TCP peer and ignore X-Forwarded-For by default', async () => {
     const { baseUrl, lines } = await start('info');
     const socket = client(baseUrl, ALLOWED, undefined, { 'x-forwarded-for': CLIENT_ADDRESS });
-    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
+    await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
 
     expect(lines).toEqual(
       expect.arrayContaining([expect.objectContaining({ msg: 'Socket connected', address: '127.0.0.1' })]),
@@ -170,7 +160,7 @@ describe('socket logs', () => {
     const { baseUrl, lines } = await start('info', { trustProxyHops: 1 });
     const forwardedFor = `${SPOOFED_ADDRESS}, ${CLIENT_ADDRESS}`;
     const socket = client(baseUrl, ALLOWED, undefined, { 'x-forwarded-for': forwardedFor });
-    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
+    await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
     // Any route but /health, which is not logged at info; a 404 is logged like any request.
     await fetch(`${baseUrl}/missing`, { headers: { 'x-forwarded-for': forwardedFor } });
 
@@ -190,7 +180,7 @@ describe('socket logs', () => {
     const { baseUrl, lines } = await start('debug', { trustProxyHops: 1 });
     const forwardedFor = `${SPOOFED_ADDRESS}, ${CLIENT_ADDRESS}`;
     const socket = client(baseUrl, ALLOWED, undefined, { 'x-forwarded-for': forwardedFor });
-    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
+    await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.ECHO, 'ping');
 
     expect(lines).toEqual(
       expect.arrayContaining([expect.objectContaining({ msg: 'Socket address chain', forwardedFor })]),
@@ -198,12 +188,11 @@ describe('socket logs', () => {
   });
 
   it('report a rate-limited socket once per run of refused events', async () => {
-    const clock = new FakeClock(1_700_000_000_000);
-    const { baseUrl, lines } = await start('info', { clock });
+    const { baseUrl, lines } = await start('info');
     const socket = client(baseUrl);
     const flood = async (): Promise<void> => {
       for (let index = 0; index < RATE_LIMIT_EVENTS_PER_SECOND + 3; index++) {
-        await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.ECHO, index);
+        await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.ECHO, index);
       }
     };
     await flood();
@@ -232,10 +221,12 @@ describe('room logs', () => {
   it('record rooms and refused commands at info, with the violation', async () => {
     const { baseUrl, lines } = await start('info');
     const socket = client(baseUrl);
-    const created: unknown = await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const created: unknown = await socket
+      .timeout(ACK_TIMEOUT_MS)
+      .emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
     const { roomId } = created as { roomId: string };
     const ship = { type: SHIP_TYPES.CARRIER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.HORIZONTAL };
-    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [ship] });
+    await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [ship] });
 
     expect(lines).toEqual(
       expect.arrayContaining([
@@ -250,10 +241,11 @@ describe('room logs', () => {
   });
 
   it('record a seat that dropped and was forfeited, and the room it closed, at info', async () => {
-    const clock = new FakeClock(1_700_000_000_000);
-    const { baseUrl, lines } = await start('info', { clock });
+    const { baseUrl, lines } = await start('info');
     const socket = client(baseUrl);
-    const created: unknown = await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const created: unknown = await socket
+      .timeout(ACK_TIMEOUT_MS)
+      .emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
     const { roomId } = created as { roomId: string };
     socket.disconnect();
     await vi.waitFor(() => {
@@ -273,9 +265,11 @@ describe('room logs', () => {
   it('record a seat left and the room it closed at info', async () => {
     const { baseUrl, lines } = await start('info');
     const socket = client(baseUrl);
-    const created: unknown = await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const created: unknown = await socket
+      .timeout(ACK_TIMEOUT_MS)
+      .emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
     const { roomId } = created as { roomId: string };
-    await socket.timeout(2_000).emitWithAck(CLIENT_EVENTS.LEAVE_ROOM, {});
+    await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.LEAVE_ROOM, {});
 
     expect(lines).toEqual(
       expect.arrayContaining([
@@ -288,12 +282,16 @@ describe('room logs', () => {
   it('never contain a player secret, even at debug', async () => {
     const { baseUrl, lines } = await start('debug');
     const [p1, p2] = [client(baseUrl), client(baseUrl)];
-    const created: unknown = await p1.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const created: unknown = await p1
+      .timeout(ACK_TIMEOUT_MS)
+      .emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
     const { roomId, playerSecret } = created as { roomId: string; playerSecret: string };
-    const joined: unknown = await p2.timeout(2_000).emitWithAck(CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
+    const joined: unknown = await p2
+      .timeout(ACK_TIMEOUT_MS)
+      .emitWithAck(CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
     const ship = { type: SHIP_TYPES.CARRIER, start: { x: 0, y: 0 }, orientation: ORIENTATIONS.VERTICAL };
     const refused: unknown = await p2
-      .timeout(2_000)
+      .timeout(ACK_TIMEOUT_MS)
       .emitWithAck(CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: [ship, ship] });
 
     expect(refused).toEqual({ ok: false, error: ERROR_CODES.INVALID_PLACEMENT });
@@ -317,7 +315,9 @@ describe('session logs', () => {
   it('record refused handshakes, resumed and replaced sessions at info, never the secret even at debug', async () => {
     const { baseUrl, lines } = await start('debug');
     const first = client(baseUrl);
-    const created: unknown = await first.timeout(2_000).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const created: unknown = await first
+      .timeout(ACK_TIMEOUT_MS)
+      .emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
     const { roomId, playerSecret } = created as { roomId: string; playerSecret: string };
     // The client clears its id once the server disconnects it.
     const firstId = first.id;
