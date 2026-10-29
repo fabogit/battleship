@@ -1,0 +1,93 @@
+<div class="heading">
+  <h1>{{ text.heading }}</h1>
+  <ng-content />
+</div>
+<p>{{ text.intro(opponentNickname()) }}</p>
+
+<fieldset class="rules">
+  <legend class="visually-hidden">{{ text.legend }}</legend>
+
+  <label class="switch">
+    <span>{{ text.extraTurn }}</span>
+    <input
+      #ruleInput
+      type="checkbox"
+      role="switch"
+      name="isExtraTurnOnHitEnabled"
+      [checked]="store.rules().isExtraTurnOnHitEnabled"
+      (change)="store.change('isExtraTurnOnHitEnabled', isChecked($event))"
+    />
+  </label>
+  <label class="switch">
+    <span>{{ text.adjacentShips }}</span>
+    <input
+      #ruleInput
+      type="checkbox"
+      role="switch"
+      name="areAdjacentShipsAllowed"
+      [checked]="store.rules().areAdjacentShipsAllowed"
+      (change)="store.change('areAdjacentShipsAllowed', isChecked($event))"
+    />
+  </label>
+
+  <fieldset class="options">
+    <legend>{{ text.turnTimeLimit }}</legend>
+    <div class="segments">
+      @for (seconds of turnTimeLimits; track seconds) {
+        <label>
+          <input
+            #ruleInput
+            type="radio"
+            name="turnTimeLimitSeconds"
+            [value]="seconds"
+            [checked]="store.rules().turnTimeLimitSeconds === seconds"
+            (change)="store.change('turnTimeLimitSeconds', seconds)"
+          />
+          <span aria-hidden="true">{{ text.seconds(seconds) }}</span>
+          <span class="visually-hidden">{{ text.secondsName(seconds) }}</span>
+        </label>
+      }
+    </div>
+  </fieldset>
+
+  <fieldset class="options">
+    <legend>{{ text.timeoutAction }}</legend>
+    <div class="segments">
+      @for (action of timeoutActions; track action) {
+        <label>
+          <input
+            #ruleInput
+            type="radio"
+            name="timeoutAction"
+            [value]="action"
+            [checked]="store.rules().timeoutAction === action"
+            (change)="store.change('timeoutAction', action)"
+          />
+          <span>{{ text.timeoutActions[action] }}</span>
+        </label>
+      }
+    </div>
+  </fieldset>
+</fieldset>
+
+<div class="confirm">
+  <button
+    type="button"
+    class="primary"
+    [attr.aria-disabled]="store.canConfirm() ? null : 'true'"
+    (click)="store.confirm()"
+  >
+    {{ confirmLabel() }}
+  </button>
+  <ul class="confirmations" [attr.aria-label]="text.confirmationsLabel">
+    <li [class.ok]="store.hasConfirmed().me">{{ text.confirmation(text.you, store.hasConfirmed().me) }}</li>
+    <li [class.ok]="store.hasConfirmed().opponent">
+      {{ text.confirmation(opponentNickname(), store.hasConfirmed().opponent) }}
+    </li>
+  </ul>
+</div>
+
+<div class="messages">
+  <p class="notice" aria-live="polite">{{ noticeMessage() }}</p>
+  <p class="error" role="alert">{{ errorMessage() }}</p>
+</div>

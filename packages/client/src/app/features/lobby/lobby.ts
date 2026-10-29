@@ -27,8 +27,9 @@ export type ShareOutcome = (typeof SHARE_OUTCOMES)[keyof typeof SHARE_OUTCOMES];
 /**
  * The waiting screen of a room in `WAITING_FOR_OPPONENT` (docs/client.md#routes--lobby-flow): the room link, with
  * "Share link" and "Copy link". "Share link" opens the system share sheet on phones and tablets, and the share dialog
- * (a QR code of the link, the link and "Copy link") everywhere else or when the sheet fails (ADR-0079). The rules part
- * of the lobby comes with #27. Its content goes beside the heading: the room page's "Leave room" (ADR-0080).
+ * (a QR code of the link, the link and "Copy link") everywhere else or when the sheet fails (ADR-0079). Once the
+ * opponent joins, the rules screen takes its place. Its content goes beside the heading: the room page's "Leave room"
+ * (ADR-0080).
  */
 @Component({
   selector: 'app-lobby',
