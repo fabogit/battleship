@@ -173,6 +173,24 @@ describe('Rules', () => {
     expect(option(RULES_TEXT.turnTimeLimit, RULES_TEXT.secondsName(30)).checked).toBe(true);
   });
 
+  it('keeps "Confirm rules" active after a failed edit, and confirms the version on screen', async () => {
+    await render({ rulesVersion: 3 });
+    socket.emitWithAck.mockResolvedValueOnce({ ok: false, error: TRANSPORT_ERRORS.NOT_CONNECTED });
+
+    toggle(RULES_TEXT.adjacentShips).click();
+
+    await vi.waitFor(() => {
+      expect(screen().querySelector('[role="alert"]')?.textContent).toBe(RULES_TEXT.errors.NOT_CONNECTED);
+    });
+    expect(toggle(RULES_TEXT.adjacentShips).checked).toBe(false);
+    expect(confirmButton().hasAttribute('aria-disabled')).toBe(false);
+
+    confirmButton().click();
+    await fixture.whenStable();
+
+    expect(socket.emitWithAck).toHaveBeenLastCalledWith(CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 3 });
+  });
+
   it('confirms the version on screen, then says it is confirmed', async () => {
     await render({ rulesVersion: 4 });
 

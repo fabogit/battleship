@@ -190,6 +190,26 @@ describe('RulesStore', () => {
       expect(store.error()).toBe(reply.error);
     });
 
+    it.each([ERROR_CODES.INVALID_RULES, TRANSPORT_ERRORS.NOT_CONNECTED])(
+      'lets the player confirm again after an edit that failed with %s',
+      async (error) => {
+        createStore({ rulesVersion: 2 });
+        socket.emitWithAck.mockResolvedValueOnce({ ok: false, error });
+
+        store.change('areAdjacentShipsAllowed', true);
+        await settle();
+
+        expect(store.error()).toBe(error);
+        expect(store.rules()).toEqual(DEFAULT_RULES);
+        expect(store.isUpdatePending()).toBe(false);
+        expect(store.canConfirm()).toBe(true);
+
+        await store.confirm();
+
+        expect(sentConfirmations()).toEqual([2]);
+      },
+    );
+
     it('clears the error once a later command succeeds', async () => {
       createStore();
       socket.emitWithAck.mockResolvedValueOnce({ ok: false, error: ERROR_CODES.RATE_LIMITED });
