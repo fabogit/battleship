@@ -8,6 +8,7 @@ import {
   PLACEMENT_VIOLATIONS,
   REMATCH_CHOICES,
   ROOM_PHASES,
+  RULES_VIOLATIONS,
   SEATS,
   SERVER_EVENTS,
   SHIP_TYPES,
@@ -80,6 +81,10 @@ describe('wire values', () => {
       'DUPLICATE_TARGET',
       'ALREADY_TARGETED',
     ]);
+  });
+
+  it('RULES_VIOLATIONS', () => {
+    expect(Object.values(RULES_VIOLATIONS)).toEqual(['SALVO_WITH_EXTRA_TURN']);
   });
 
   it('ERROR_CODES, in the order of docs/protocol.md#error-codes', () => {

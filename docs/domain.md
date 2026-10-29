@@ -139,7 +139,7 @@ export type RematchChoice = (typeof REMATCH_CHOICES)[keyof typeof REMATCH_CHOICE
 ## Rules
 
 - `DEFAULT_RULES`: no extra turn on hit, adjacency not allowed, 30 s turns, no salvo, `AUTO_RANDOM_SHOT`.
-- `validateRules(rules)` (lands with [#26](https://github.com/fabogit/battleship/issues/26); until then rules are fixed to `DEFAULT_RULES`): checks the salvo/extra-turn exclusivity of a well-formed `GameRules`. The client UI disables the incompatible toggle; the server still rejects with `INVALID_RULES`. Field types and enum membership are checked earlier by the `UPDATE_RULES` guard (`INVALID_PAYLOAD`, [Payload validation](protocol.md#payload-validation)).
+- `validateRules(rules)`: checks the constraints between the fields of a well-formed `GameRules`, today only the salvo/extra-turn exclusivity ([ADR-0010](adr/0010-salvo-vs-extra-turn.md)). It returns `{ ok: true }` or `{ ok: false, reason }`, with `reason` one of `RULES_VIOLATIONS` (`SALVO_WITH_EXTRA_TURN`), logged by the server and never sent, like the placement and target violations. The client UI disables the incompatible toggle; the server still rejects with `INVALID_RULES`. Field types and enum membership are checked earlier by the `UPDATE_RULES` guard (`INVALID_PAYLOAD`, [Payload validation](protocol.md#payload-validation)).
 
 ## Randomness
 
