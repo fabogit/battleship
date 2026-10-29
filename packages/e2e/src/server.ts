@@ -1,4 +1,4 @@
-// The e2e server (ADR-0082): the production `createServer` on a skip clock, plus the control route that skips it.
+// The e2e server (ADR-0089): the production `createServer` on a skip clock, plus the control route that skips it.
 // Started by Playwright's `webServer` (playwright.config.ts); never deployed: Render runs packages/server/dist/index.js.
 // Usage: tsx --conditions=@battleship/source src/server.ts  (ports from the E2E_* variables, src/stack.ts)
 

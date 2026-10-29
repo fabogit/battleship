@@ -1,4 +1,4 @@
-// End-to-end journeys against a local stack (docs/development.md#end-to-end-journeys, ADR-0082).
+// End-to-end journeys against a local stack (docs/development.md#end-to-end-journeys, ADR-0089).
 import { defineConfig, devices } from '@playwright/test';
 
 import { STACK_VARIABLES, readStack } from './src/stack.ts';

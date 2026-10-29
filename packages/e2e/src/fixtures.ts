@@ -1,5 +1,5 @@
 // The journeys' Playwright fixtures (docs/development.md#end-to-end-journeys): one browser context per player, page
-// and console errors that fail the journey, and the server clock's skip (ADR-0082).
+// and console errors that fail the journey, and the server clock's skip (ADR-0089).
 
 import { test as base, expect, type BrowserContext, type BrowserContextOptions, type Page } from '@playwright/test';
 
@@ -26,7 +26,7 @@ export interface JourneyFixtures {
    */
   readonly openPlayer: (nickname: string, options?: BrowserContextOptions) => Promise<Player>;
   /**
-   * Skips the e2e server's clock forward, running every room timer the skip passes (ADR-0082). The pages keep their
+   * Skips the e2e server's clock forward, running every room timer the skip passes (ADR-0089). The pages keep their
    * own clocks: they learn the outcome from the `STATE` events those timers send.
    * @param ms How far to skip, in ms.
    */

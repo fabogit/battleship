@@ -26,7 +26,7 @@ const DEFAULT_CLIENT_PORT = 4900;
  */
 export const STACK_HOST = '127.0.0.1';
 
-/** The path of the control route that skips the e2e server's clock (ADR-0082); registered by `src/server.ts` only. */
+/** The path of the control route that skips the e2e server's clock (ADR-0089); registered by `src/server.ts` only. */
 export const CLOCK_ADVANCE_PATH = '/e2e/clock/advance';
 
 /** The body of a `POST` to `CLOCK_ADVANCE_PATH`. */

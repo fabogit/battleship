@@ -1,4 +1,4 @@
-// The e2e server's clock (ADR-0082): real time plus an offset that journeys skip forward through the control route.
+// The e2e server's clock (ADR-0089): real time plus an offset that journeys skip forward through the control route.
 
 import type { Clock, Timer } from '@battleship/server/clock';
 
