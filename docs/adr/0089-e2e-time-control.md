@@ -23,8 +23,8 @@ Details in [Development: End-to-end journeys](../development.md#end-to-end-journ
 ## Consequences
 
 - One worker runs the journeys in sequence: they share one server, and a skip moves the time of every room on it.
-- Rooms the journeys leave behind close within `DISCONNECT_FORFEIT_MS + GAME_OVER_TTL_MS` (5 minutes) of real time, sooner when a skip passes their timers. A run opens 8 rooms, so `MAX_ROOMS` (50) allows `--repeat-each` up to 6 on one server.
-- The timer journeys of #27, #28, #30 and #31 skip the server clock the same way; a journey that checks a countdown the page runs between snapshots (a dice roll, a ticking turn timer) adds `page.clock` for that page only.
+- Rooms the journeys leave behind close within `DISCONNECT_FORFEIT_MS + GAME_OVER_TTL_MS` (5 minutes) of real time, sooner when a skip passes their timers. A run opens 9 rooms, so `MAX_ROOMS` (50) allows `--repeat-each` up to 5 on one server.
+- The timer journeys of #28, #30 and #31 skip the server clock the same way; a journey that checks a countdown the page runs between snapshots (a dice roll, a ticking turn timer) adds `page.clock` for that page only.
 
 ## Links
 
