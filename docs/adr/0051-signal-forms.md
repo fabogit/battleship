@@ -21,6 +21,7 @@ Client forms use Angular's Signal Forms (`@angular/forms/signals`, stable since 
 
 - Added on 2026-10-08 for the nickname form ([#17](https://github.com/fabogit/battleship/issues/17)).
 - Amended on 2026-10-13 for the M1 review ([#52](https://github.com/fabogit/battleship/issues/52)): transfer size measured on Pages.
+- Amended on 2026-10-29 for the rules negotiation UI ([#27](https://github.com/fabogit/battleship/issues/27)): the rules screen, whose controls act on change, uses native inputs instead ([ADR-0087](0087-rules-controls-as-native-inputs.md)).
 - Spec: [Client: Routes & lobby flow](../client.md#routes--lobby-flow)
 - Related: [ADR-0031](0031-payload-guard-strictness.md) (the guards the forms reuse)
 - Issues: [#17](https://github.com/fabogit/battleship/issues/17), [#27](https://github.com/fabogit/battleship/issues/27) (rules negotiation UI)

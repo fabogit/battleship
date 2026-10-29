@@ -4,10 +4,10 @@ import { Router, provideRouter, withComponentInputBinding } from '@angular/route
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
   CLIENT_EVENTS,
+  DEFAULT_RULES,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
-  PLACEMENT_TIME_LIMIT_MS,
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
@@ -21,6 +21,7 @@ import {
   battleSnapshot,
   fromSeat,
   gameOverSnapshot,
+  negotiationSnapshot,
   placementSnapshot,
   provideFakeGameSocket,
   waitingSnapshot,
@@ -35,6 +36,7 @@ import { BATTLE_TEXT } from '../battle/battle.text';
 import { LOBBY_TEXT } from '../lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../placement/placement.text';
 import { PRESENCE_TEXT } from '../presence/presence.text';
+import { RULES_TEXT } from '../rules/rules.text';
 import { ROOM_VIEWS } from './room';
 import { ROOM_TEXT } from './room.text';
 import { createRoomId, createPlayerSecret } from '../../../testing/session-fixtures';
@@ -44,24 +46,17 @@ const NEXT_ROOM_ID = createRoomId(1);
 const PLAYER_SECRET = createPlayerSecret();
 
 /**
- * The room right after the joiner took the seat, seen by the joiner. Until rules negotiation lands (#26) the server
- * moves straight to `PLACEMENT` (docs/server.md#room-creation--joining).
+ * The room right after the joiner took the seat, seen by the joiner: the server opens rules negotiation
+ * (docs/server.md#room-creation--joining).
  * @returns The snapshot.
  */
 function joinedSnapshot(): PlayerStateSnapshot {
   const waiting = waitingSnapshot(ROOM_ID, 'Ada');
   return {
     ...waiting,
-    phase: ROOM_PHASES.PLACEMENT,
+    phase: ROOM_PHASES.RULES_NEGOTIATION,
     me: { seat: SEATS.P2, nickname: 'Grace', isConnected: true, forfeitRemainingMs: null },
     opponent: { ...waiting.me },
-    hasConfirmedRules: { me: true, opponent: true },
-    placement: {
-      myShips: [],
-      hasConfirmed: { me: false, opponent: false },
-      remainingMs: PLACEMENT_TIME_LIMIT_MS,
-      startCountdownMs: null,
-    },
   };
 }
 
@@ -176,6 +171,7 @@ describe('ROOM_VIEWS', () => {
       'entering',
       'left',
       'lobby',
+      'rules',
       'placement',
       'battle',
       'not-found',
@@ -212,8 +208,8 @@ describe('Room', () => {
 
       await receive(joinedSnapshot());
 
-      expect(heading()).toBe(PLACEMENT_TEXT.heading);
-      expect(page().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Ada'));
+      expect(heading()).toBe(RULES_TEXT.heading);
+      expect(page().textContent).toContain(RULES_TEXT.intro('Ada'));
     });
 
     it('shows a not-found screen with a way home for ROOM_NOT_FOUND', async () => {
@@ -292,8 +288,16 @@ describe('Room', () => {
       const joined = joinedSnapshot();
       await receive({ ...joined, me: joined.opponent ?? joined.me, opponent: joined.me });
 
+      expect(heading()).toBe(RULES_TEXT.heading);
+      expect(page().textContent).toContain(RULES_TEXT.intro('Grace'));
+    });
+
+    it('moves on to placement once both confirm the rules (#27)', async () => {
+      await receive(negotiationSnapshot(ROOM_ID, { hasConfirmedRules: { me: true, opponent: false } }));
+
+      await receive(placementSnapshot(ROOM_ID));
+
       expect(heading()).toBe(PLACEMENT_TEXT.heading);
-      expect(page().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Grace'));
     });
 
     it('shows the battle view once both fleets are confirmed, and the game-over screen after it', async () => {
@@ -413,6 +417,33 @@ describe('Room', () => {
         const cells = [...page().querySelectorAll(`[role="grid"][aria-label="${label}"] button`)];
         expect(cells.map((element) => element.getAttribute('aria-label'))).toContain(cell);
       }
+    });
+
+    it('shows the same rules, version and confirmations after a reload during negotiation (#27)', async () => {
+      const snapshot = negotiationSnapshot(ROOM_ID, {
+        rules: { ...DEFAULT_RULES, turnTimeLimitSeconds: 60 },
+        rulesVersion: 3,
+        hasConfirmedRules: { me: false, opponent: true },
+      });
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+      await receive(snapshot);
+
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+      expect(page().textContent).toContain(ROOM_TEXT.entering);
+      await receive(snapshot);
+
+      expect(heading()).toBe(RULES_TEXT.heading);
+      const checked = page().querySelector<HTMLInputElement>('input[name="turnTimeLimitSeconds"]:checked');
+      expect(checked?.value).toBe('60');
+      expect(page().textContent).toContain(RULES_TEXT.confirmation('Grace', true));
+      expect(page().textContent).toContain(RULES_TEXT.confirmation(RULES_TEXT.you, false));
+      // The version on screen is the one confirmed.
+      socket.emitWithAck.mockResolvedValue({ ok: true });
+      [...page().querySelectorAll('button')]
+        .find((button) => button.textContent.trim() === RULES_TEXT.confirm)
+        ?.click();
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 3 });
     });
 
     it('still says a left room was left after a reload', async () => {
@@ -566,10 +597,15 @@ describe('Room', () => {
       await harness.navigateByUrl(`/r/${ROOM_ID}`);
     });
 
-    it('shows above the waiting screen, placement and battle, but not while entering', async () => {
+    it('shows above the waiting screen, the rules screen, placement and battle, but not while entering', async () => {
       expect(page().querySelector('app-presence')).toBeNull();
 
-      for (const snapshot of [waitingSnapshot(ROOM_ID), placementSnapshot(ROOM_ID), battleSnapshot(ROOM_ID)]) {
+      for (const snapshot of [
+        waitingSnapshot(ROOM_ID),
+        negotiationSnapshot(ROOM_ID),
+        placementSnapshot(ROOM_ID),
+        battleSnapshot(ROOM_ID),
+      ]) {
         await receive(snapshot);
         expect(page().querySelector('app-presence')).not.toBeNull();
       }
@@ -603,6 +639,7 @@ describe('Room', () => {
 
     it.each([
       ['the waiting screen', waitingSnapshot(ROOM_ID)],
+      ['the rules screen', negotiationSnapshot(ROOM_ID)],
       ['placement', placementSnapshot(ROOM_ID)],
     ])('gives up the seat from %s, forgets it and goes home', async (_view, snapshot) => {
       await receive(snapshot);
@@ -651,6 +688,7 @@ describe('Room', () => {
 
     it.each([
       ['the waiting screen', waitingSnapshot(ROOM_ID), LOBBY_TEXT.heading],
+      ['the rules screen', negotiationSnapshot(ROOM_ID), RULES_TEXT.heading],
       ['placement', placementSnapshot(ROOM_ID), PLACEMENT_TEXT.heading],
     ])('sits beside the heading of %s, above the rest of the view (ADR-0080)', async (_view, snapshot, viewHeading) => {
       await receive(snapshot);

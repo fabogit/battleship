@@ -89,5 +89,8 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0083](0083-rules-kept-when-a-seat-is-freed.md) | Rules kept when a seat is freed            | Accepted, 2026-10-29   |
 | [ADR-0084](0084-protocol-version-3.md)              | Protocol version 3 for rules negotiation   | Accepted, 2026-10-29   |
 | [ADR-0085](0085-salvo-refused-until-implemented.md) | Salvo refused until it is implemented      | Accepted, 2026-10-29   |
+| [ADR-0086](0086-rules-edits-sent-at-once.md)        | Rules edits sent at once                   | Accepted, 2026-10-29   |
+| [ADR-0087](0087-rules-controls-as-native-inputs.md) | Rules controls as native inputs            | Accepted, 2026-10-29   |
+| [ADR-0088](0088-rules-change-notices.md)            | Rules change notices                       | Accepted, 2026-10-29   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
