@@ -92,7 +92,7 @@ describe('room closing', () => {
     clock.advance(DISCONNECT_FORFEIT_MS - 1);
 
     await player({ roomId: created.roomId, playerSecret: created.playerSecret });
-    clock.advance(10 * DISCONNECT_FORFEIT_MS);
+    clock.advance(DISCONNECT_FORFEIT_MS);
     expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
   });
 
@@ -114,13 +114,17 @@ describe('room closing', () => {
     expect(rooms.get(roomId)).toBeUndefined();
   });
 
-  it('starts counting when a socket moves to another room', async () => {
+  // A socket leaving a waiting room frees its seat at once instead (ADR-0095, test/room-places.test.ts).
+  it('starts counting when a socket moves on from a room past the wait', async () => {
     await start();
-    const alice = await player();
+    const [alice, bob] = await Promise.all([player(), player()]);
     const first = await createRoom(alice);
+    await send(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId: first, nickname: 'Bob' });
     const second = await createRoom(alice);
-    clock.advance(DISCONNECT_FORFEIT_MS);
-    expect(rooms.get(first)).toBeUndefined();
+    clock.advance(DISCONNECT_FORFEIT_MS - 1);
+    expect(rooms.get(first)?.players.P1).not.toBeNull();
+    clock.advance(1);
+    expect(rooms.get(first)).toMatchObject({ phase: ROOM_PHASES.WAITING_FOR_OPPONENT, players: { P1: null } });
     expect(rooms.get(second)).toBeDefined();
   });
 

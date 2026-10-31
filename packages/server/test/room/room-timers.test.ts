@@ -15,7 +15,12 @@ function setup(): { clock: FakeClock; timers: RoomTimers } {
 describe('RoomTimers', () => {
   // Written out on purpose (ADR-0043): the kinds appear in the logs ("Room expired").
   it('pins the ROOM_TIMER_KINDS values', () => {
-    expect(Object.values(ROOM_TIMER_KINDS)).toEqual(['DISCONNECT_FORFEIT', 'GAME_OVER', 'PLACEMENT']);
+    expect(Object.values(ROOM_TIMER_KINDS)).toEqual([
+      'DISCONNECT_FORFEIT',
+      'GAME_OVER',
+      'PLACEMENT',
+      'WAITING_FOR_OPPONENT',
+    ]);
   });
 
   it('runs a timer at its deadline and then forgets it', () => {

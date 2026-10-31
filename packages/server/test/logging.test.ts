@@ -10,6 +10,7 @@ import {
   SEATS,
   SERVER_EVENTS,
   SHIP_TYPES,
+  WAITING_TTL_MS,
 } from '@battleship/core';
 import { io as connect } from 'socket.io-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -290,6 +291,38 @@ describe('room logs', () => {
         expect.objectContaining({ msg: 'Dice rolled', roomId, rolls: dice.rolls, starter: dice.starter }),
         expect.objectContaining({ msg: 'Room phase changed', roomId, phase: ROOM_PHASES.IN_PROGRESS }),
       ]),
+    );
+  });
+
+  it('record a waiting room closed by a socket moving on, with the command that moved it, at info', async () => {
+    const { baseUrl, lines } = await start('info');
+    const socket = client(baseUrl);
+    const created: unknown = await socket
+      .timeout(ACK_TIMEOUT_MS)
+      .emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const { roomId } = created as { roomId: string };
+    await socket.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Seat left', roomId, seat: SEATS.P1 }),
+        // The new room is already open.
+        expect.objectContaining({ msg: 'Room closed', roomId, reason: CLIENT_EVENTS.CREATE_ROOM, roomCount: 1 }),
+      ]),
+    );
+  });
+
+  it('record a waiting room expired after WAITING_TTL_MS at info', async () => {
+    const { baseUrl, lines } = await start('info');
+    const socket = client(baseUrl);
+    const created: unknown = await socket
+      .timeout(ACK_TIMEOUT_MS)
+      .emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const { roomId } = created as { roomId: string };
+    clock.advance(WAITING_TTL_MS);
+
+    expect(lines).toContainEqual(
+      expect.objectContaining({ msg: 'Room expired', roomId, reason: 'WAITING_FOR_OPPONENT', roomCount: 0 }),
     );
   });
 

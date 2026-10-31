@@ -16,6 +16,11 @@ export const ROOM_TIMER_KINDS = {
    * deadline otherwise, where unconfirmed fleets are completed first (docs/server.md#placement, ADR-0090).
    */
   PLACEMENT: 'PLACEMENT',
+  /**
+   * Removes a room nobody joins, `WAITING_TTL_MS` after it entered `WAITING_FOR_OPPONENT`: at creation, or when a seat
+   * was freed before the match (docs/server.md#room-lifecycle, ADR-0096).
+   */
+  WAITING_FOR_OPPONENT: 'WAITING_FOR_OPPONENT',
 } as const;
 
 /** One of the `ROOM_TIMER_KINDS`. */

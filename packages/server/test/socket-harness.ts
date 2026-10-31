@@ -19,6 +19,7 @@ import {
   type HandshakeAuth,
   type PlacedShip,
   type PlayerStateSnapshot,
+  type RoomClosedPayload,
   type Seat,
   type ServerToClientEvents,
   type SessionCredentials,
@@ -202,6 +203,13 @@ export class Inbox {
     const message = await this.next();
     expect(message.event).toBe(SERVER_EVENTS.SHOT_RESOLVED);
     return message.payload as ShotResolvedPayload;
+  }
+
+  /** The next event, which must be `ROOM_CLOSED`. */
+  async roomClosed(): Promise<RoomClosedPayload> {
+    const message = await this.next();
+    expect(message.event).toBe(SERVER_EVENTS.ROOM_CLOSED);
+    return message.payload as RoomClosedPayload;
   }
 
   /** The next entry, which must be an ack recorded with `recordAck`; returns its reply. */

@@ -13,6 +13,7 @@ export {
   ROOM_ID_LENGTH,
   SESSION_STORE_TTL_MS,
   START_COUNTDOWN_MS,
+  WAITING_TTL_MS,
 } from './constants.js';
 export { CELL_COUNT, toCellIndex, toCoordinate } from './grid.js';
 export { createPlayerSecret, generateRoomId } from './identifiers.js';
@@ -71,6 +72,7 @@ export type {
   PlayerStateSnapshot,
   PlayerView,
   RematchChoicePayload,
+  RoomClosedPayload,
   ServerToClientEvents,
   SessionCredentials,
   SetPausedPayload,
@@ -89,6 +91,7 @@ export {
   GAME_OVER_REASONS,
   ORIENTATIONS,
   REMATCH_CHOICES,
+  ROOM_CLOSED_REASONS,
   ROOM_PHASES,
   SEATS,
   SHIP_LENGTH,
@@ -103,6 +106,7 @@ export type {
   Orientation,
   PlacedShip,
   RematchChoice,
+  RoomClosedReason,
   RoomPhase,
   Seat,
   ShipPlacement,

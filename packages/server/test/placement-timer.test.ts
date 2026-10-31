@@ -285,7 +285,8 @@ describe('the placement timer', () => {
     await bothConfirmed(p1, p2);
     expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: true });
     expect(await p1.inbox.state()).toMatchObject({ phase: ROOM_PHASES.WAITING_FOR_OPPONENT, placement: null });
-    expect(clock.pendingCount).toBe(0);
+    // Only the waiting TTL runs now (ADR-0096).
+    expect(clock.pendingCount).toBe(1);
 
     clock.advance(PLACEMENT_TIME_LIMIT_MS);
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);

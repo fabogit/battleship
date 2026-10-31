@@ -2,9 +2,10 @@
 
 /**
  * Bumped on any breaking protocol change; checked in the Socket.io handshake (ADR-0017). 2: the game-over snapshot
- * carries both final boards (ADR-0064). 3: `JOIN_ROOM` opens rules negotiation instead of placement (ADR-0084).
+ * carries both final boards (ADR-0064). 3: `JOIN_ROOM` opens rules negotiation instead of placement (ADR-0084). 4: a room
+ * the server closes tells the sockets still in it with `ROOM_CLOSED` (ADR-0097).
  */
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** Side length of the square board, in cells. */
 export const BOARD_SIZE = 10;
@@ -30,6 +31,13 @@ export const DISCONNECT_FORFEIT_MS = 180_000;
 
 /** Lifetime of a room idle in `GAME_OVER` without a rematch agreement. */
 export const GAME_OVER_TTL_MS = 120_000;
+
+/**
+ * Lifetime of a room in `WAITING_FOR_OPPONENT` that nobody joins, counted from each entry into that phase (ADR-0096):
+ * long enough to share the link and wait for a friend, short enough that a waiting room cannot hold its place under
+ * `MAX_ROOMS` for long.
+ */
+export const WAITING_TTL_MS = 600_000;
 
 /** Nicknames are trimmed, non-empty and rendered as text only. Counted in UTF-16 code units, like HTML `maxlength`. */
 export const NICKNAME_MAX_LENGTH = 20;

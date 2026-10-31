@@ -25,14 +25,16 @@ description: |-
      `GAME_OVER` with reason `DISCONNECT_FORFEIT`.
   7. `LEAVE_ROOM` (P1) during the match: `NOT_ALLOWED` (leaving a match is a surrender, #35).
   8. `CREATE_ROOM` (P1) again: P1 moves to a new room. `LEAVE_ROOM` there frees the seat at once and closes
-     the room; before the match it sends the other player, if any, back to `WAITING_FOR_OPPONENT`.
+     the room; before the match it sends the other player, if any, back to `WAITING_FOR_OPPONENT`. Moving on with
+     `CREATE_ROOM` or `JOIN_ROOM` from a room still waiting for an opponent closes that room the same way (ADR-0095).
 
   Every accepted command acks `{ "ok": true }` (plus credentials for `CREATE_ROOM` / `JOIN_ROOM`, `rulesVersion` for `UPDATE_RULES`); a refused one
   `{ "ok": false, "error": "<ErrorCode>" }` and nothing else. `CREATE_ROOM — invalid payload` shows `INVALID_PAYLOAD`.
   The URL carries `protocolVersion` as a query parameter: Postman cannot send the handshake `auth` (ADR-0062).
   It cannot send a `session` either, so a reconnected Postman socket has no seat: reconnect means starting a new room.
   A seat whose socket is gone is kept for 3 minutes, then forfeited; a room closes when its last player leaves or
-  forfeits, a finished one 2 minutes after game over. The server answers `SERVER_FULL` while 50 rooms are open. More than 20 messages in one second from one connection are refused with `RATE_LIMITED`.
+  forfeits, a waiting one 10 minutes after it started waiting if nobody joins, a finished one 2 minutes after game
+  over; a seat still in an expiring room gets `ROOM_CLOSED` with the reason. The server answers `SERVER_FULL` while 50 rooms are open. More than 20 messages in one second from one connection are refused with `RATE_LIMITED`.
   `packages/server/test/postman.test.ts` replays every saved message in this order inside `pnpm test`.
 url: '{{baseUrl}}?protocolVersion={{protocolVersion}}'
 events:
@@ -50,6 +52,9 @@ events:
     subscribeOnConnect: true
   - name: SERVER_SHUTDOWN
     description: The server is restarting; any match in progress is lost (docs/deployment.md#backend-render).
+    subscribeOnConnect: true
+  - name: ROOM_CLOSED
+    description: The server closed this seat's room, with the reason (`WAITING_TTL`, `GAME_OVER_TTL`); the socket stays connected in no room (ADR-0097).
     subscribeOnConnect: true
 settings:
   version: '4'
