@@ -427,6 +427,17 @@ describe('Room', () => {
       expect(heading()).toBe(LOBBY_TEXT.heading);
     });
 
+    it('shows a later room that drew the same id, once this tab sits in it', async () => {
+      await receive(waitingSnapshot(ROOM_ID));
+      await close(ROOM_ID, ROOM_CLOSED_REASONS.WAITING_TTL);
+      await harness.navigateByUrl('/');
+
+      await createRoom(ROOM_ID);
+      await receive(waitingSnapshot(ROOM_ID));
+
+      expect(heading()).toBe(LOBBY_TEXT.heading);
+    });
+
     it('keeps the waiting screen when another room closes', async () => {
       await receive(waitingSnapshot(ROOM_ID));
 
