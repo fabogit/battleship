@@ -14,7 +14,8 @@ battleship/
 ├── .git-blame-ignore-revs         # Formatting-only commits, skipped by git blame
 ├── .editorconfig
 ├── .nvmrc                         # 24
-├── .github/workflows/ci.yml       # install → format:check → typecheck → lint → test → build, required on main
+├── .github/workflows/ci.yml       # ci: install → format:check → typecheck → lint → test → build, required on main;
+│                                  # e2e: the browser journeys (End-to-end journeys)
 ├── .vscode/                       # Debug configurations, format on save, YAML schema override for postman/ (D28)
 │   └── extensions.json            # Recommended extensions: Prettier
 ├── .postman/                      # Postman Native Git workspace link (D28)
@@ -66,24 +67,35 @@ battleship/
     │   └── test/                      # Vitest: room/ unit tests (seeded fleets, fake clock) + socket integration tests,
     │                                  # Postman message replay (D68); socket-harness.ts: the shared server and clients
     │
-    └── client/                    # Angular 22, @angular/build (esbuild), unit tests on Vitest + jsdom
-        ├── vitest-base.config.ts  # `ng test` runnerConfig: resolves core from source (D22)
-        ├── scripts/ng.ts          # `build`/`dev`: SERVER_URL → ng build|serve --define, stops when missing (ADR-0052)
-        ├── .env.example           # Local SERVER_URL (http://localhost:3000): copy to .env (Local tooling)
-        └── src/
-            ├── build-defines.d.ts # BUILD_SERVER_URL, read only by the SERVER_URL token
-            ├── app/
-            │   ├── app.routes.ts  # `/` home, `/r/:roomId` room (D49)
-            │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService,
-            │   │                  # ServerWakeService, createSyncedDraft (the draft sync of placement, battle and rules)
-            │   ├── features/      # home (nickname, create), room (one view per phase, refused-seat explanation, leave),
-            │   │                  # lobby (waiting screen, share dialog D79), rules (+ RulesStore, D86–D88),
-            │   │                  # placement (+ PlacementStore), battle (+ BattleStore; also the game-over screen, D58),
-            │   │                  # presence (opponent's connection, pause control, D77)
-            │   └── shared/        # board-grid/, nickname-form/, qr-code/ (D79), server-status/, connection-screen/ (D75),
-            │                      # countdown.ts
-            │                      # Not yet: I18nService (#37), dice (#29), timers UI (#31)
-            └── testing/           # Test doubles shared by the specs (FakeGameSocket, FakeServerWake), id and secret generators, the setup file; left out of the app build
+    ├── client/                    # Angular 22, @angular/build (esbuild), unit tests on Vitest + jsdom
+    │   ├── vitest-base.config.ts  # `ng test` runnerConfig: resolves core from source (D22)
+    │   ├── scripts/ng.ts          # `build`/`dev`: SERVER_URL → ng build|serve --define, stops when missing (ADR-0052)
+    │   ├── .env.example           # Local SERVER_URL (http://localhost:3000): copy to .env (Local tooling)
+    │   └── src/
+    │       ├── build-defines.d.ts # BUILD_SERVER_URL, read only by the SERVER_URL token
+    │       ├── app/
+    │       │   ├── app.routes.ts  # `/` home, `/r/:roomId` room (D49)
+    │       │   ├── core/          # GameSocketService, GameStateService, SessionStore, RoomEntryService,
+    │       │   │                  # ServerWakeService, createSyncedDraft (the draft sync of placement, battle and rules)
+    │       │   ├── features/      # home (nickname, create), room (one view per phase, refused-seat explanation, leave),
+    │       │   │                  # lobby (waiting screen, share dialog D79), rules (+ RulesStore, D86–D88),
+    │       │   │                  # placement (+ PlacementStore), battle (+ BattleStore; also the game-over screen, D58),
+    │       │   │                  # presence (opponent's connection, pause control, D77)
+    │       │   └── shared/        # board-grid/, nickname-form/, qr-code/ (D79), server-status/, connection-screen/ (D75),
+    │       │                      # countdown.ts
+    │       │                      # Not yet: I18nService (#37), dice (#29), timers UI (#31)
+    │       └── testing/           # Test doubles shared by the specs (FakeGameSocket, FakeServerWake), id and secret generators, the setup file; left out of the app build
+    │
+    └── e2e/                       # Browser journeys (Playwright), private; `pnpm e2e`, outside test and verify (D89)
+        ├── playwright.config.ts   # One Chromium project, one worker, the two webServer entries, traces on failure
+        ├── src/
+        │   ├── stack.ts           # E2E_* ports and Chromium path, 127.0.0.1, the control route's path and body
+        │   ├── skip-clock.ts      # SkipClock: real time + an offset; advance(ms) runs the timers it passes (D89)
+        │   ├── server.ts          # e2e server: createServer on a SkipClock + POST /e2e/clock/advance, loopback only
+        │   ├── client.ts          # Builds core and the production bundle against it, serves it as an SPA
+        │   ├── fixtures.ts        # openPlayer (a browser context each, errors fail the journey), skipServerClock
+        │   └── flows.ts           # Shared steps: create, join, agree on rules, random fleet, fire; selectors from *_TEXT
+        └── journeys/              # One *.spec.ts per journey
 ```
 
 ## Resolving `@battleship/core`
@@ -101,6 +113,15 @@ Decision: [ADR-0022](adr/0022-workspace-type-resolution.md).
 | `ng serve` prebundling                   | `prebundle.exclude: ["@battleship/core"]` on the `serve` target               | Prebundled packages are resolved by Vite, which ignores the build `conditions`; excluded, core is bundled by esbuild with them and rebuilt on every change.                                                                                                                                                                                                                                                     |
 | Client tests (`ng test`)                 | `runnerConfig: "vitest-base.config.ts"` with `resolve.conditions`             | The unit-test build leaves packages external and Vitest resolves them at runtime; its conditions are added to the builder's own.                                                                                                                                                                                                                                                                                |
 | `ngc`/`tsc` typecheck of the client      | `customConditions` in `packages/client/tsconfig.json`                         | Inherited by `tsconfig.app.json` and `tsconfig.spec.json`.                                                                                                                                                                                                                                                                                                                                                      |
+
+`packages/server/package.json` exports `./server` and `./clock` the same way, for its one consumer, the e2e package; nothing else imports the server, and Render runs `dist/index.js` directly.
+
+| Consumer                            | Setting                                                                          | Notes                                                                                                                                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| e2e typecheck and ESLint            | `customConditions` in `packages/e2e/tsconfig.json`                               | With `moduleResolution: "bundler"`, so the client's extensionless specifiers resolve when the journeys import its text constants.                                                                               |
+| Playwright runner (`pnpm e2e`)      | `NODE_OPTIONS=--conditions=@battleship/source` in the e2e package's `e2e` script | Playwright loads the journeys, and through them the client's `*.text.ts` and core, with its own TypeScript loader, which honours Node's conditions. Running `playwright test` without the script fails on core. |
+| e2e server (`src/server.ts`)        | `tsx --conditions=@battleship/source` in the `webServer` command                 | Server and core from their sources, as `pnpm dev` runs them: no server build before a run.                                                                                                                      |
+| e2e client bundle (`src/client.ts`) | none: the production configuration                                               | Builds core first, then the client with `--output-path packages/e2e/dist/client`, so the journeys test what Pages serves.                                                                                       |
 
 A new consumer of core (or a new workspace package consumed the same way) needs the matching row before it works on a checkout without `dist/`.
 
@@ -171,3 +192,43 @@ Decisions: [ADR-0028](adr/0028-local-tooling.md), [ADR-0029](adr/0029-watch-mode
 - **Pre-commit hook:** `pnpm install` sets it up (root `prepare` script, Husky). lint-staged runs `prettier --write` on the staged files only and adds the result to the commit; unstaged changes are left alone. It does nothing else, so commits stay fast; `git commit --no-verify` skips it, and CI still checks the format.
 - **Blame:** GitHub skips the commits in `.git-blame-ignore-revs`; for local `git blame`, run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once. A formatting-only commit (a Prettier or plugin upgrade that changes its output) goes into the file, with its full SHA, and its pull request is merged with a merge commit so the SHA survives.
 - **YAML schema:** SchemaStore's CrowdSec schema matches `**/collections/*/*.yaml`, so `.vscode/settings.json` maps `postman/**` to a permissive schema. Postman publishes no JSON schema for Collection v3; `postman-cli collection lint` checks the request files, and the saved messages are checked by sending them (Manual checks above).
+
+## End-to-end journeys
+
+Decision: [ADR-0089](adr/0089-e2e-time-control.md).
+
+`packages/e2e` plays whole matches in Chromium with Playwright, against a local server and the production client bundle; never against Render. The unit and integration tests stay where they are: `pnpm test` and `pnpm verify` do not run the journeys, and CI runs them in a job of its own, `e2e`, next to `ci`.
+
+| Journey (`packages/e2e/journeys/`) | What it plays                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `full-match.spec.ts`               | Create, join, the default rules confirmed by both, random fleets, battle to game over: the winner's and the loser's headings and reasons, and the loser's Enemy waters revealing the winner's whole fleet.                                                                                                                                                                                                                                                     |
+| `reload.spec.ts`                   | A reload mid-match: the same boards and heading come back, the opponent sees "Ada is back.", and both fire once more.                                                                                                                                                                                                                                                                                                                                          |
+| `leave-room.spec.ts`               | "Leave room" during placement: the leaver is on the home screen, the other player sees "Grace left the room, …" and the waiting screen.                                                                                                                                                                                                                                                                                                                        |
+| `disconnect-forfeit.spec.ts`       | A page closed mid-match: the opponent's banner and countdown, a clock skip of `DISCONNECT_FORFEIT_MS`, the win by forfeit, the loss on return.                                                                                                                                                                                                                                                                                                                 |
+| `layout.spec.ts`                   | 320×568 (touch) and 1280×800, light and dark: no sideways scroll; "Leave room" in view at the top of the page in the lobby, the rules screen and placement; "Confirm rules" at the top of the page; "Confirm fleet", under the placement board, whole once scrolled to; "Fire" at the top on the laptop, once scrolled to on the phone (in view without a scroll: #31); the share dialog whole and not scrolling, with a stubbed `navigator.share` that fails. |
+| `custom-rules.spec.ts`             | Custom rules agreed by both ("Ships may touch" on, 60 seconds per turn, "Pass the turn"): each sees the other's edits and their notices, and the other's confirmation; then placement takes five ships in touching rows and the server locks the fleet.                                                                                                                                                                                                        |
+
+- **Run:** `pnpm e2e` at the root. Playwright starts the stack (`webServer` in `playwright.config.ts`), runs the journeys one at a time and stops the stack. Arguments go to Playwright: `pnpm e2e journeys/reload.spec.ts`, `pnpm e2e -g layout`, `pnpm e2e --repeat-each=3`, `pnpm e2e --headed`. A run takes about a minute, half of it the client build.
+- **The stack:** `src/server.ts` runs the production `createServer` on a skip clock, with the clock's control route, on `127.0.0.1` (sources through `tsx`, nothing built). `src/client.ts` builds core and the production bundle with `SERVER_URL` at that server, into `packages/e2e/dist/client`, then serves it as an SPA (every path without a file gets `index.html`, as on Pages). The server allows only the client's origin.
+- **Variables**, all optional:
+
+  | Variable            | Default | What                                                                                                           |
+  | ------------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+  | `E2E_SERVER_PORT`   | `3900`  | The e2e server's port; the defaults clash with neither the dev pair (3000/4200), the worktrees' nor the hub's. |
+  | `E2E_CLIENT_PORT`   | `4900`  | The port the bundle is served on, and the server's only allowed origin.                                        |
+  | `E2E_CHROMIUM_PATH` | unset   | A Chromium to run instead of Playwright's own, e.g. `/usr/bin/chromium`.                                       |
+  | `LOG_LEVEL`         | `warn`  | The e2e server's Pino level; `debug` logs every socket event (`stdout` shows as `[WebServer]` lines).          |
+  | `CI`                | unset   | Set by GitHub Actions: `test.only` fails the run, and a stack already listening is not reused.                 |
+
+- **Chromium:** `pnpm install` downloads no browser (Playwright has no install script). Either point `E2E_CHROMIUM_PATH` at the system Chromium (`E2E_CHROMIUM_PATH=/usr/bin/chromium pnpm e2e`; any recent version works), or download Playwright's own once per Playwright version: `pnpm --filter @battleship/e2e exec playwright install chromium` (into `~/.cache/ms-playwright`).
+- **Keeping the stack up** between runs: start the two `webServer` commands yourself, from `packages/e2e`, in two terminals: `pnpm exec tsx --conditions=@battleship/source src/server.ts` and `pnpm exec tsx src/client.ts`. Outside CI, `pnpm e2e` reuses a stack already listening on its ports. Restart `client.ts` after a client change: it builds once, at start.
+- **A failed journey:** the list output names the failed assertion and its locator. Each failure keeps a screenshot per page and a trace per player (`packages/e2e/test-results/<journey>/trace*.zip`): open one with `pnpm --filter @battleship/e2e exec playwright show-trace <path>`, which steps through every action with the page's DOM, console and network at that moment. `pnpm --filter @battleship/e2e exec playwright show-report` opens the HTML report of the last run. In CI, the `e2e` job uploads both folders as the `playwright-report` artifact when a journey fails; download it from the run's summary page and open the same way. `pnpm e2e --debug` steps through a journey in the Playwright inspector, `pnpm e2e --ui` in its UI mode.
+- **Errors fail the journey:** every page error and console error of a player's context is collected, and the journey fails at its end with the list ("no page or console errors").
+- **Adding a journey:** a new `journeys/<name>.spec.ts`, importing `test` and `expect` from `../src/fixtures.ts`.
+  - Each player is `openPlayer(nickname, contextOptions)`: a browser context of their own, as a separate device; a viewport, touch or a color scheme go in the options. A new page in the same context is the same player (the session lives in the context's storage).
+  - Selectors go by ARIA role and the client's `*_TEXT` constants, imported from its sources (`../../client/src/app/…/*.text`), never retyped. Shared steps live in `src/flows.ts` (`createRoom`, `joinRoom`, `agreeOnRules`, `enterPlacement`, `confirmRandomFleet`, `startBattle`, `fire`, `shipCells`).
+  - Only web-first assertions (`await expect(locator).toHave…`, `expect.poll`), no `waitForTimeout`.
+  - A server timer is reached with `skipServerClock(ms)`, after the journey has seen the state the timer belongs to (the opponent shown as away, say). `page.clock` is only for a countdown the page runs by itself between snapshots, on that page only (ADR-0089).
+  - A run opens about 9 rooms, which close within 5 minutes of real time; `MAX_ROOMS` (50) therefore allows `--repeat-each` up to 5 on one server.
+- **The full match is short by construction:** Ada fires only at the 17 cells of Grace's fleet, read from Grace's own board ("B7, ship"), and Grace only at Ada's empty water, so the match ends after 33 shots, about 9 s on a laptop.
+- **CI (`e2e` job):** `pnpm install --frozen-lockfile`, the Playwright browser cache (`~/.cache/ms-playwright`, keyed by the Playwright version), `playwright install --with-deps chromium` (the download is skipped on a cache hit; the system libraries are installed every time), `pnpm e2e`, and on failure the upload of the report and traces. The job is not part of the ruleset's required checks; that is the maintainer's call.

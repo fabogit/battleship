@@ -1,0 +1,217 @@
+// Steps the journeys share: entering a room, agreeing on the rules, placing a fleet, firing. Selectors go by ARIA role and the client's own
+// text constants, imported from its sources, so a reworded label changes the journeys with it.
+
+import { BOARD_SIZE } from '@battleship/core';
+import type { Locator, Page } from '@playwright/test';
+
+import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
+import { HOME_TEXT } from '../../client/src/app/features/home/home.text';
+import { LOBBY_TEXT } from '../../client/src/app/features/lobby/lobby.text';
+import { PLACEMENT_TEXT } from '../../client/src/app/features/placement/placement.text';
+import { ROOM_TEXT } from '../../client/src/app/features/room/room.text';
+import { RULES_TEXT } from '../../client/src/app/features/rules/rules.text';
+import { BOARD_GRID_TEXT } from '../../client/src/app/shared/board-grid/board-grid.text';
+import { formatCoordinate } from '../../client/src/app/shared/board-grid/coordinates';
+import { NICKNAME_FORM_TEXT } from '../../client/src/app/shared/nickname-form/nickname-form.text';
+import { expect, type Player } from './fixtures.ts';
+
+/** Every cell name of the board, row by row: `A1` … `J10`. */
+export const ALL_CELLS: readonly string[] = Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) =>
+  formatCoordinate({ x: index % BOARD_SIZE, y: Math.floor(index / BOARD_SIZE) }),
+);
+
+/**
+ * The page's main heading: the screen's title, or whose turn it is during the battle.
+ * @param page The player's page.
+ * @returns Its `h1`.
+ */
+export function mainHeading(page: Page): Locator {
+  return page.getByRole('heading', { level: 1 });
+}
+
+/**
+ * A board of the placement or battle view.
+ * @param page The player's page.
+ * @param name The board's accessible name: `BATTLE_TEXT.myFleet` (also the placement board) or `.enemyWaters`.
+ * @returns The grid.
+ */
+export function board(page: Page, name: string): Locator {
+  return page.getByRole('grid', { name, exact: true });
+}
+
+/**
+ * One cell of a board, by name, whatever its state.
+ * @param grid The board.
+ * @param cell The cell's name, e.g. `B7`.
+ * @returns The cell's button, named `B7` or `B7, <state>…` (`cellLabel`).
+ */
+export function cell(grid: Locator, cell: string): Locator {
+  return grid.getByRole('button', { name: new RegExp(`^${cell}(,|$)`) });
+}
+
+/**
+ * Reads the accessible names of a board's cells, as a screen reader would get them: `B7`, `B7, ship`, `B7, hit`, ….
+ * @param grid The board, once it shows.
+ * @returns The 100 names, row by row.
+ */
+export async function cellLabels(grid: Locator): Promise<string[]> {
+  await expect(grid.getByRole('button')).toHaveCount(ALL_CELLS.length);
+  return grid
+    .getByRole('button')
+    .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') ?? ''));
+}
+
+/**
+ * Lists the cells of a board that show an intact ship.
+ * @param grid The board, once it shows.
+ * @returns Their names, e.g. `B7`, row by row: 17 on a fresh fleet.
+ */
+export async function shipCells(grid: Locator): Promise<string[]> {
+  const suffix = `, ${BOARD_GRID_TEXT.states.ship ?? ''}`;
+  return (await cellLabels(grid))
+    .filter((label) => label.endsWith(suffix))
+    .map((label) => label.slice(0, -suffix.length));
+}
+
+/**
+ * Creates a room from the home screen and waits for the lobby.
+ * @param player The creator, on a blank page.
+ * @returns The room's link, as the lobby shows it.
+ */
+export async function createRoom(player: Player): Promise<string> {
+  const { page } = player;
+  await page.goto('/');
+  await page.getByLabel(NICKNAME_FORM_TEXT.label).fill(player.nickname);
+  // Disabled (`aria-disabled`) until the socket connects; `click` waits for it.
+  await page.getByRole('button', { name: HOME_TEXT.create }).click();
+  await expect(mainHeading(page)).toHaveText(LOBBY_TEXT.heading);
+  return page.getByRole('textbox', { name: LOBBY_TEXT.linkLabel }).inputValue();
+}
+
+/**
+ * Opens a room's link and takes its free seat, which starts rules negotiation.
+ * @param player The joiner, on any page.
+ * @param roomUrl The link the creator shares.
+ */
+export async function joinRoom(player: Player, roomUrl: string): Promise<void> {
+  const { page } = player;
+  await page.goto(roomUrl);
+  await expect(mainHeading(page)).toHaveText(ROOM_TEXT.joinHeading);
+  await page.getByLabel(NICKNAME_FORM_TEXT.label).fill(player.nickname);
+  await page.getByRole('button', { name: ROOM_TEXT.join }).click();
+  await expect(mainHeading(page)).toHaveText(RULES_TEXT.heading);
+}
+
+/**
+ * Both players confirm the rules on screen, one after the other, which starts placement (ADR-0003).
+ * @param players The two players, both on the rules screen.
+ */
+export async function agreeOnRules(players: readonly [Player, Player]): Promise<void> {
+  for (const { page } of players) {
+    await expect(mainHeading(page)).toHaveText(RULES_TEXT.heading);
+    // Disabled while an edit or a confirmation is on its way; `click` waits for it.
+    await page.getByRole('button', { name: RULES_TEXT.confirm }).click();
+  }
+  for (const { page } of players) {
+    await expect(mainHeading(page)).toHaveText(PLACEMENT_TEXT.heading);
+  }
+}
+
+/**
+ * Creates a room, joins it and agrees on the default rules: the shortest way into placement.
+ * @param creator The player who creates the room and sits in `P1`.
+ * @param joiner The player who joins it.
+ * @returns The room's link.
+ */
+export async function enterPlacement(creator: Player, joiner: Player): Promise<string> {
+  const roomUrl = await createRoom(creator);
+  await joinRoom(joiner, roomUrl);
+  await agreeOnRules([creator, joiner]);
+  return roomUrl;
+}
+
+/**
+ * Places a random fleet and confirms it; once both fleets are confirmed, the battle starts.
+ * @param player A player in placement.
+ */
+export async function confirmRandomFleet(player: Player): Promise<void> {
+  const { page } = player;
+  await expect(mainHeading(page)).toHaveText(PLACEMENT_TEXT.heading);
+  await page.getByRole('button', { name: PLACEMENT_TEXT.randomize }).click();
+  // Disabled until the fleet is valid; `click` waits for it.
+  await page.getByRole('button', { name: PLACEMENT_TEXT.confirm }).click();
+}
+
+/**
+ * Creates a room, joins it, agrees on the default rules and confirms two random fleets: the shortest way into the
+ * battle.
+ * @param creator The player who creates the room and sits in `P1`.
+ * @param joiner The player who joins it.
+ * @returns The room's link.
+ */
+export async function startBattle(creator: Player, joiner: Player): Promise<string> {
+  const roomUrl = await enterPlacement(creator, joiner);
+  await confirmRandomFleet(creator);
+  await confirmRandomFleet(joiner);
+  for (const player of [creator, joiner]) {
+    await expect(mainHeading(player.page)).toHaveText(turnHeadings(player === creator ? joiner : creator));
+  }
+  return roomUrl;
+}
+
+/**
+ * Who fires first: the player whose heading says it is their turn.
+ * @param players The two players, both in the battle.
+ * @returns The player who has the turn.
+ */
+export async function firstShooter(players: readonly [Player, Player]): Promise<Player> {
+  let shooter: Player | undefined;
+  await expect
+    .poll(async () => {
+      for (const player of players) {
+        if ((await mainHeading(player.page).textContent()) === BATTLE_TEXT.myTurn) {
+          shooter = player;
+        }
+      }
+      return shooter?.nickname;
+    }, 'one of the players has the first turn')
+    .toBeDefined();
+  if (shooter === undefined) {
+    throw new Error('no shooter');
+  }
+  return shooter;
+}
+
+/**
+ * Fires one shot, aiming through Enemy waters as a player would, and waits for the server's answer.
+ * @param shooter The player whose turn it is.
+ * @param target The cell to fire at, e.g. `B7`.
+ */
+export async function fire(shooter: Player, target: string): Promise<void> {
+  const { page } = shooter;
+  const enemyWaters = board(page, BATTLE_TEXT.enemyWaters);
+  // Inactive (`aria-disabled`) outside the player's turn; `click` waits for it.
+  await cell(enemyWaters, target).click();
+  await expect(page.getByText(BATTLE_TEXT.aimingAt(target))).toBeVisible();
+  await page.getByRole('button', { name: BATTLE_TEXT.fire, exact: true }).click();
+  // The shot's result replaces the bare name: `B7, miss`, `B7, hit` or `B7, sunk`.
+  await expect(cell(enemyWaters, target)).not.toHaveAccessibleName(target);
+}
+
+/**
+ * The headings a player sees while the battle runs.
+ * @param opponent The player's opponent.
+ * @returns A pattern matching both turns: "Your turn" and "<opponent>'s turn".
+ */
+export function turnHeadings(opponent: Player): RegExp {
+  return new RegExp(`^(${escape(BATTLE_TEXT.myTurn)}|${escape(BATTLE_TEXT.opponentTurn(opponent.nickname))})$`);
+}
+
+/**
+ * Escapes a text for use inside a regular expression.
+ * @param text Any text, e.g. a nickname or a sentence.
+ * @returns The text with every special character escaped.
+ */
+export function escape(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

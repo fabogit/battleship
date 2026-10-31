@@ -17,6 +17,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "e2e": "pnpm --filter @battleship/e2e e2e",
     "prepare": "husky || true"
   },
   "devDependencies": {

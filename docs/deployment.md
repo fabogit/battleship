@@ -67,9 +67,9 @@ Set in **Settings → Variables and Secrets**, as plain text, in **both** the Pr
 | `COREPACK_ENABLE_DOWNLOAD_PROMPT` | `0`                                           | `corepack pnpm` downloads pnpm `11.21.0` without waiting for a confirmation.                                                                                                                                                                                                                                                                   |
 | `SERVER_URL`                      | `https://battleship-server-jumc.onrender.com` | Server URL baked into the bundle ([ADR-0052](adr/0052-server-url-build-variable.md)). The build stops when it is missing or not `https://` (`http://` is accepted only for `localhost`, for local builds). Both environments point at the one Render server today; a preview could target a staging server by changing only its Preview value. |
 
-### GitHub Actions (`ci` job)
+### GitHub Actions (`ci` and `e2e` jobs)
 
-`SERVER_URL` is set in the job's `env` in `.github/workflows/ci.yml` (the Render URL; not a secret), so `pnpm build` there behaves like Pages. Nothing is set in the repository settings.
+`SERVER_URL` is set in the job's `env` in `.github/workflows/ci.yml` (the Render URL; not a secret), so `pnpm build` there behaves like Pages. Nothing is set in the repository settings. The `e2e` job sets nothing: its client bundle is built against the local e2e server, whose URL `packages/e2e/src/client.ts` passes as `SERVER_URL` itself ([Development: End-to-end journeys](development.md#end-to-end-journeys)).
 
 ### Local
 
