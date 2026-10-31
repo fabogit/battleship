@@ -1,5 +1,6 @@
 // The placement timer over real sockets: the start countdown, the deadline and its auto-completion, and the timers a
-// freed seat or a closed room stops (docs/server.md#placement, ADR-0006, ADR-0090, ADR-0091).
+// freed seat or a closed room stops (docs/server.md#placement, ADR-0006, ADR-0090, ADR-0091). Every match starts with
+// `DICE_ROLLED`, drawn from the registry's `Rng` after the completed fleets (ADR-0092).
 
 import {
   CLIENT_EVENTS,
@@ -10,12 +11,14 @@ import {
   FLEET,
   generateRoomId,
   PLACEMENT_TIME_LIMIT_MS,
+  rollDice,
   ROOM_PHASES,
   SEATS,
   START_COUNTDOWN_MS,
   validateFleet,
   type CommandEvent,
   type CommandPayload,
+  type DiceRolledPayload,
   type PlacedShip,
   type PlayerStateSnapshot,
 } from '@battleship/core';
@@ -71,7 +74,19 @@ async function bothConfirmed(p1: Player, p2: Player): Promise<[PlayerStateSnapsh
   return [p1State, p2State];
 }
 
-/** The `Rng` of the test registry once it has drawn the first room's id: the fleets the deadline completes come next. */
+/**
+ * Reads the start of the match on one player's side: `DICE_ROLLED`, then the `STATE` in battle (ADR-0092).
+ * @returns The roll and the snapshot.
+ */
+async function matchStart(target: Player): Promise<[DiceRolledPayload, PlayerStateSnapshot]> {
+  const dice = await target.inbox.dice();
+  return [dice, await target.inbox.state()];
+}
+
+/**
+ * The `Rng` of the test registry once it has drawn the first room's id: the fleets the deadline completes come next,
+ * then the dice.
+ */
 function registryRngAfterOneRoom(): ReturnType<typeof createSeededRng> {
   const rng = createSeededRng(ROOM_SEED);
   generateRoomId(rng);
@@ -97,11 +112,14 @@ describe('the start countdown', () => {
     clock.advance(START_COUNTDOWN_MS - 1);
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
     clock.advance(1);
-    for (const [{ inbox }, seed] of [
+    for (const [target, seed] of [
       [p1, P1_FLEET_SEED],
       [p2, P2_FLEET_SEED],
     ] as const) {
-      expect(await inbox.state()).toMatchObject({
+      const [dice, snapshot] = await matchStart(target);
+      expect(dice).toEqual({ rolls: [{ P1: 6, P2: 1 }], starter: SEATS.P1 });
+      expect(dice).toEqual(rollDice(registryRngAfterOneRoom()));
+      expect(snapshot).toMatchObject({
         phase: ROOM_PHASES.IN_PROGRESS,
         placement: null,
         battle: { currentTurn: SEATS.P1, myShips: placedFleet(seed), isPaused: false },
@@ -127,8 +145,8 @@ describe('the start countdown', () => {
       expect(snapshot.placement?.startCountdownMs).toBe(START_COUNTDOWN_MS);
     }
     clock.advance(START_COUNTDOWN_MS);
-    expect((await p1.inbox.state()).phase).toBe(ROOM_PHASES.IN_PROGRESS);
-    expect((await p2.inbox.state()).phase).toBe(ROOM_PHASES.IN_PROGRESS);
+    expect((await matchStart(p1))[1].phase).toBe(ROOM_PHASES.IN_PROGRESS);
+    expect((await matchStart(p2))[1].phase).toBe(ROOM_PHASES.IN_PROGRESS);
   });
 
   it('restarts on a re-confirmation, capped by the deadline, and the confirmed fleets start the match', async () => {
@@ -144,8 +162,8 @@ describe('the start countdown', () => {
     clock.advance(1_999);
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
     clock.advance(1);
-    expect((await p1.inbox.state()).battle?.myShips).toEqual(placedFleet(P1_FLEET_SEED));
-    expect((await p2.inbox.state()).battle?.myShips).toEqual(placedFleet(P2_FLEET_SEED));
+    expect((await matchStart(p1))[1].battle?.myShips).toEqual(placedFleet(P1_FLEET_SEED));
+    expect((await matchStart(p2))[1].battle?.myShips).toEqual(placedFleet(P2_FLEET_SEED));
   });
 
   it('shows a player who reconnects during it the time left, and starts the match once it ends', async () => {
@@ -172,8 +190,11 @@ describe('the start countdown', () => {
     expect((await p1.inbox.state()).opponent?.isConnected).toBe(true);
 
     clock.advance(START_COUNTDOWN_MS - 2_000);
-    for (const { inbox } of [p1, back]) {
-      expect(await inbox.state()).toMatchObject({ phase: ROOM_PHASES.IN_PROGRESS, battle: { isPaused: false } });
+    for (const target of [p1, back]) {
+      expect((await matchStart(target))[1]).toMatchObject({
+        phase: ROOM_PHASES.IN_PROGRESS,
+        battle: { isPaused: false },
+      });
     }
   });
 });
@@ -189,13 +210,20 @@ describe('the placement deadline', () => {
     clock.advance(PLACEMENT_TIME_LIMIT_MS - 1);
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
     clock.advance(1);
-    expect((await p1.inbox.state()).battle).toMatchObject({
+    const rng = registryRngAfterOneRoom();
+    const expectedFleet = completeFleet(partial, DEFAULT_RULES, rng);
+    const expectedDice = rollDice(rng);
+    const [p1Dice, p1State] = await matchStart(p1);
+    expect(p1Dice).toEqual(expectedDice);
+    expect(p1State.battle).toMatchObject({
       myShips: placedFleet(P1_FLEET_SEED),
-      currentTurn: SEATS.P1,
+      currentTurn: expectedDice.starter,
       isPaused: false,
     });
-    const completed = (await p2.inbox.state()).battle?.myShips ?? [];
-    expect(completed).toEqual(completeFleet(partial, DEFAULT_RULES, registryRngAfterOneRoom()));
+    const [p2Dice, p2State] = await matchStart(p2);
+    expect(p2Dice).toEqual(expectedDice);
+    const completed = p2State.battle?.myShips ?? [];
+    expect(completed).toEqual(expectedFleet);
     expect(completed).toEqual(expect.arrayContaining(partial));
     expect(validateFleet(completed, DEFAULT_RULES).ok).toBe(true);
   });
@@ -207,8 +235,16 @@ describe('the placement deadline', () => {
 
     clock.advance(PLACEMENT_TIME_LIMIT_MS);
     const rng = registryRngAfterOneRoom();
-    expect((await p1.inbox.state()).battle?.myShips).toEqual(completeFleet(partial, DEFAULT_RULES, rng));
-    expect((await p2.inbox.state()).battle?.myShips).toEqual(completeFleet([], DEFAULT_RULES, rng));
+    const expected = { P1: completeFleet(partial, DEFAULT_RULES, rng), P2: completeFleet([], DEFAULT_RULES, rng) };
+    const expectedDice = rollDice(rng);
+    for (const [target, seat] of [
+      [p1, SEATS.P1],
+      [p2, SEATS.P2],
+    ] as const) {
+      const [dice, snapshot] = await matchStart(target);
+      expect(dice).toEqual(expectedDice);
+      expect(snapshot.battle).toMatchObject({ myShips: expected[seat], currentTurn: expectedDice.starter });
+    }
   });
 
   it('completes the fleet of a player who is away; the match starts paused and their forfeit clock runs on', async () => {
@@ -222,15 +258,21 @@ describe('the placement deadline', () => {
     await p2.inbox.state();
 
     clock.advance(PLACEMENT_TIME_LIMIT_MS - 10_000);
-    expect(await p2.inbox.state()).toMatchObject({
+    const rng = registryRngAfterOneRoom();
+    completeFleet(partial, DEFAULT_RULES, rng);
+    const expectedDice = rollDice(rng);
+    const [dice, started] = await matchStart(p2);
+    expect(dice).toEqual(expectedDice);
+    expect(started).toMatchObject({
       phase: ROOM_PHASES.IN_PROGRESS,
       opponent: { isConnected: false, forfeitRemainingMs: DISCONNECT_FORFEIT_MS - (PLACEMENT_TIME_LIMIT_MS - 10_000) },
-      battle: { isPaused: true, myShips: placedFleet(P2_FLEET_SEED) },
+      battle: { isPaused: true, myShips: placedFleet(P2_FLEET_SEED), currentTurn: expectedDice.starter },
     });
 
+    // The player who was away gets the snapshot only: the roll is not sent again (ADR-0094).
     const back = await player(sessions.P1);
     const snapshot = await back.inbox.state();
-    expect(snapshot.battle).toMatchObject({ isPaused: false, currentTurn: SEATS.P1 });
+    expect(snapshot.battle).toMatchObject({ isPaused: false, currentTurn: expectedDice.starter });
     expect(snapshot.battle?.myShips).toEqual(expect.arrayContaining(partial));
     expect(validateFleet(snapshot.battle?.myShips ?? [], DEFAULT_RULES).ok).toBe(true);
   });

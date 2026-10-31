@@ -3,6 +3,7 @@ import {
   createPlayerSecret,
   createSeededRng,
   DEFAULT_RULES,
+  DICE_ANIMATION_MS,
   ERROR_CODES,
   GAME_OVER_REASONS,
   completeFleet,
@@ -10,6 +11,7 @@ import {
   PLACEMENT_TIME_LIMIT_MS,
   PLACEMENT_VIOLATIONS,
   randomTargets,
+  rollDice,
   ROOM_PHASES,
   RULES_VIOLATIONS,
   SEATS,
@@ -28,10 +30,12 @@ import {
 } from '@battleship/core';
 import { describe, expect, it } from 'vitest';
 
+import { disconnectSeat } from '../../src/room/presence.js';
 import {
   applyCommand,
   endPlacement,
   placementEndsAt,
+  type BattleRoom,
   type GameOverRoom,
   type NegotiationRoom,
   type PlacementRoom,
@@ -490,6 +494,109 @@ describe('the end of placement (ADR-0090, ADR-0091)', () => {
     const ended = endPlacement(placement, placement.deadline, createSeededRng(3));
     expect(ended?.state.rules).toEqual(EDITED_RULES);
     expect(ended?.state.battle.boards.P1.ships).toEqual(completeFleet([], EDITED_RULES, createSeededRng(3)));
+  });
+});
+
+describe('the dice roll (ADR-0002, ADR-0092, ADR-0093)', () => {
+  /** When the start countdown of `bothConfirmed()` ends. */
+  const STARTS_AT = NOW + START_COUNTDOWN_MS;
+
+  /** Both fleets confirmed at `NOW`, so placement ends with the start countdown and no fleet is completed. */
+  function bothConfirmed(): PlacementRoom {
+    return placeAndConfirm(placeAndConfirm(placementRoom(), SEATS.P1, fleet(1)), SEATS.P2, fleet(2)) as PlacementRoom;
+  }
+
+  /** Ends the placement of `bothConfirmed()` on time with a seeded `Rng`. */
+  function started(seed: number, now = STARTS_AT): { state: BattleRoom; dice: ReturnType<typeof rollDice> } {
+    const ended = endPlacement(bothConfirmed(), now, createSeededRng(seed));
+    if (ended === null) {
+      expect.fail('Expected placement to end');
+    }
+    return ended;
+  }
+
+  it('rolls again after a tie, and the higher face of the decisive round fires first', () => {
+    expect(started(1).dice).toEqual({
+      rolls: [
+        { P1: 5, P2: 5 },
+        { P1: 6, P2: 4 },
+      ],
+      starter: SEATS.P1,
+    });
+    expect(started(1).state.battle.currentTurn).toBe(SEATS.P1);
+    expect(started(8).dice).toEqual({
+      rolls: [
+        { P1: 3, P2: 3 },
+        { P1: 3, P2: 4 },
+      ],
+      starter: SEATS.P2,
+    });
+    expect(started(8).state.battle.currentTurn).toBe(SEATS.P2);
+  });
+
+  it('gives the first turn to P1 or to P2, as the dice say', () => {
+    expect(started(0)).toMatchObject({
+      dice: { rolls: [{ P1: 6, P2: 4 }], starter: SEATS.P1 },
+      state: { battle: { currentTurn: SEATS.P1 } },
+    });
+    const p2First = started(5);
+    expect(p2First).toMatchObject({
+      dice: { rolls: [{ P1: 1, P2: 3 }], starter: SEATS.P2 },
+      state: { battle: { currentTurn: SEATS.P2 } },
+    });
+    const target = { targets: [cell(0, 0)] };
+    expect(
+      applyCommand(p2First.state, { type: CLIENT_EVENTS.FIRE, seat: SEATS.P1, payload: target }, STARTS_AT),
+    ).toEqual({ ok: false, error: ERROR_CODES.NOT_YOUR_TURN });
+    const fired = expectAccepted(
+      applyCommand(p2First.state, { type: CLIENT_EVENTS.FIRE, seat: SEATS.P2, payload: target }, STARTS_AT),
+    );
+    expect(fired.effects).toMatchObject([{ type: SERVER_EVENTS.SHOT_RESOLVED, payload: { shooter: SEATS.P2 } }]);
+  });
+
+  it('rolls after the fleets are completed, from the same Rng', () => {
+    const ended = endPlacement(placementRoom(), DEADLINE, createSeededRng(9));
+    const rng = createSeededRng(9);
+    completeFleet([], DEFAULT_RULES, rng);
+    completeFleet([], DEFAULT_RULES, rng);
+    const dice = rollDice(rng);
+    expect(ended?.dice).toEqual(dice);
+    expect(ended?.state.battle.currentTurn).toBe(dice.starter);
+  });
+
+  it('starts the first turn timer DICE_ANIMATION_MS after the roll, however late the timer ran', () => {
+    expect(started(0).state.firstTurnStartsAt).toBe(STARTS_AT + DICE_ANIMATION_MS);
+    expect(started(0, STARTS_AT + 500).state.firstTurnStartsAt).toBe(STARTS_AT + 500 + DICE_ANIMATION_MS);
+  });
+
+  it('lets the starter draft and fire while the dice animation plays, and keeps when the first turn starts', () => {
+    const { state } = started(5);
+    const during = STARTS_AT + 1;
+    const drafted = apply(
+      state,
+      { type: CLIENT_EVENTS.UPDATE_TARGETS, seat: SEATS.P2, payload: { targets: [cell(1, 1)] } },
+      during,
+    );
+    const fired = apply(
+      drafted,
+      { type: CLIENT_EVENTS.FIRE, seat: SEATS.P2, payload: { targets: [cell(1, 1)] } },
+      during,
+    );
+    expect(fired).toMatchObject({
+      battle: { currentTurn: SEATS.P1 },
+      firstTurnStartsAt: STARTS_AT + DICE_ANIMATION_MS,
+    });
+  });
+
+  it('rolls for a match that starts paused, a player being away', () => {
+    const p1Away = disconnectSeat(bothConfirmed(), SEATS.P1, NOW + 1_000);
+    const ended = endPlacement(p1Away as PlacementRoom, STARTS_AT, createSeededRng(8));
+    expect(ended?.dice).toEqual(rollDice(createSeededRng(8)));
+    expect(ended?.state).toMatchObject({
+      isPaused: true,
+      battle: { currentTurn: SEATS.P2 },
+      firstTurnStartsAt: STARTS_AT + DICE_ANIMATION_MS,
+    });
   });
 });
 

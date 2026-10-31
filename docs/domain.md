@@ -213,7 +213,7 @@ export function completeFleet(draft: readonly ShipPlacement[], rules: GameRules,
 
 ## Shot engine
 
-Decisions: [ADR-0033](adr/0033-turn-resolution.md) (turn resolution), [ADR-0034](adr/0034-shot-history.md) (shot history).
+Decisions: [ADR-0002](adr/0002-who-starts.md) (who starts), [ADR-0033](adr/0033-turn-resolution.md) (turn resolution), [ADR-0034](adr/0034-shot-history.md) (shot history).
 
 ```typescript
 export interface Board {
@@ -243,8 +243,10 @@ export function shotsAllowed(battle: Battle, rules: GameRules): number;
 export function validateTargets(targets: readonly Coordinate[], shots: readonly ShotResult[], count: number): TargetValidation;
 export function resolveTurn(battle: Battle, targets: readonly Coordinate[], rules: GameRules): TurnResolution;
 export function randomTargets(battle: Battle, count: number, rng: Rng): Coordinate[];
+export function rollDice(rng: Rng): DiceRolledPayload; // the protocol's DICE_ROLLED payload
 ```
 
+- **Who starts** (`rollDice`): a d6 per seat, `P1`'s die drawn first, both rolled again while they show the same face; the seat with the higher face in the last round fires first. It returns every round, the ties first, and the `starter`, as `DICE_ROLLED` carries them ([Server: Placement](server.md#placement), [ADR-0092](adr/0092-dice-roll-at-match-start.md)). Two draws per round, so the same seed gives the same rounds; it ends after one round five times in six.
 - **Unified model:** every turn fires a list of targets. Standard mode is a salvo of size 1.
 - **State:** a `Battle` holds each seat's own `Board` (its fleet and the opponent's shots at it) and `currentTurn`, the seat that fires next. The shots on a board are the snapshot's lists as they are: the owner's `incomingShots`, the opponent's `outgoingShots`. Hits and sinks are derived from the shot coordinates and the fleet, never from the stored outcomes.
 - **Shots allowed per turn** (`shotsAllowed`): standard → `1`; salvo → `min(shooter's surviving ships, opponent's unshot cells)`. Salvo lands with [#32](https://github.com/fabogit/battleship/issues/32): until then `shotsAllowed`, and so `resolveTurn`, throw when `isSalvoModeEnabled` is true. The signature already takes the `Battle` salvo needs.

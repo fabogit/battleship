@@ -224,9 +224,11 @@ describe('a match between two real clients', () => {
         placement: { hasConfirmed: { me: true, opponent: true }, startCountdownMs: START_COUNTDOWN_MS },
       });
     }
-    // The start countdown ends and the match starts (ADR-0090).
+    // The start countdown ends: both get the dice roll, then the match starts with its starter to fire (ADR-0090,
+    // ADR-0092).
     clock.advance(START_COUNTDOWN_MS);
     for (const { inbox } of [p1, p2]) {
+      expect(await inbox.dice()).toEqual({ rolls: [{ P1: 6, P2: 1 }], starter: SEATS.P1 });
       expect(await inbox.state()).toMatchObject({
         phase: ROOM_PHASES.IN_PROGRESS,
         placement: null,
@@ -724,6 +726,7 @@ describe('seat presence', () => {
     await send(p2, CLIENT_EVENTS.CONFIRM_PLACEMENT, {});
     expect((await p2.inbox.state()).placement?.startCountdownMs).toBe(START_COUNTDOWN_MS);
     clock.advance(START_COUNTDOWN_MS);
+    expect((await p2.inbox.dice()).starter).toBe(SEATS.P1);
     expect(await p2.inbox.state()).toMatchObject({
       phase: ROOM_PHASES.IN_PROGRESS,
       opponent: { isConnected: false, forfeitRemainingMs: DISCONNECT_FORFEIT_MS - START_COUNTDOWN_MS },

@@ -1,8 +1,9 @@
-// Shot engine: shot allowance, target validation, turn resolution and auto shots (docs/domain.md#shot-engine,
-// ADR-0033, ADR-0034).
+// Shot engine: the starting dice roll, shot allowance, target validation, turn resolution and auto shots
+// (docs/domain.md#shot-engine, ADR-0002, ADR-0033, ADR-0034).
 
 import { BOARD_SIZE } from './constants.js';
 import { isOnBoard, toCellIndex } from './grid.js';
+import type { DiceRoll, DiceRolledPayload } from './protocol.js';
 import type { Rng } from './random.js';
 import { SEATS, SHOT_OUTCOMES } from './types.js';
 import type { Coordinate, GameRules, PlacedShip, Seat, ShotResult } from './types.js';
@@ -87,6 +88,28 @@ export type TurnResolution = ResolvedTurn | InvalidTargets;
 
 /** Targets a standard-mode turn fires. */
 const STANDARD_SHOTS_PER_TURN = 1;
+
+/** Faces of the starting die: each roll is 1 to 6 (ADR-0002). */
+const DIE_FACES = 6;
+
+/**
+ * Rolls for the first turn (docs/domain.md#shot-engine, ADR-0002): a d6 per seat, `P1`'s first, rolled again as long as
+ * both show the same face. Ends after one round five times in six; a generator that kept giving ties would never end,
+ * which neither `createSeededRng` nor `createCryptoRng` does.
+ * @param rng The source of every face; two draws per round, so the same seed gives the same rounds.
+ * @returns Every round in order, the ties first, and the seat with the higher face in the last one, which fires first.
+ * @example
+ * const { rolls, starter } = rollDice(createSeededRng(1)); // [{ P1: 5, P2: 5 }, { P1: 6, P2: 4 }], 'P1'
+ */
+export function rollDice(rng: Rng): DiceRolledPayload {
+  const rolls: DiceRoll[] = [];
+  let roll: DiceRoll;
+  do {
+    roll = { P1: rng.nextInt(DIE_FACES) + 1, P2: rng.nextInt(DIE_FACES) + 1 };
+    rolls.push(roll);
+  } while (roll.P1 === roll.P2);
+  return { rolls, starter: roll.P1 > roll.P2 ? SEATS.P1 : SEATS.P2 };
+}
 
 /**
  * Counts the targets the current turn must fire (docs/domain.md#shot-engine): 1 in standard mode. Salvo mode,

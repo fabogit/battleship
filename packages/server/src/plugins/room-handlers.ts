@@ -103,10 +103,11 @@ interface CommandContext {
  * refused with `INVALID_PAYLOAD` before room logic sees it; a command sent without an ack callback is ignored. An
  * accepted command is acked first, then its effects (`SHOT_RESOLVED`) go to the room and each seated socket gets its
  * own `STATE` projection (ADR-0047). Placement ends on a room timer, at the end of the start countdown or at the
- * deadline, and the match starts (ADR-0090). Seat presence is tracked here too (docs/server.md#seat-presence, ADR-0072): a
- * seat with no socket bound to it is away, its forfeit clock runs as a room timer, and every socket of the room gets
- * `STATE` when a seat drops or comes back. A room in `GAME_OVER` expires after `GAME_OVER_TTL_MS`, and one nobody is
- * left in closes (docs/server.md#room-lifecycle); the sockets still in it lose their seat.
+ * deadline, and the match starts with `DICE_ROLLED` (ADR-0090, ADR-0092). Seat presence is tracked here too
+ * (docs/server.md#seat-presence, ADR-0072): a seat with no socket bound to it is away, its forfeit clock runs as a room
+ * timer, and every socket of the room gets `STATE` when a seat drops or comes back. A room in `GAME_OVER` expires after
+ * `GAME_OVER_TTL_MS`, and one nobody is left in closes (docs/server.md#room-lifecycle); the sockets still in it lose
+ * their seat.
  */
 export default fp<RoomHandlersOptions>(
   (app, { rooms, clock }, done) => {
@@ -169,7 +170,8 @@ export default fp<RoomHandlersOptions>(
 
     /**
      * Ends a room's placement when its timer fires: unconfirmed fleets are completed and locked, and the match starts
-     * (ADR-0090, ADR-0091).
+     * with the dice roll (ADR-0090, ADR-0091, ADR-0092). `DICE_ROLLED` goes to every socket of the room, then each
+     * seated socket gets `STATE`, as an effect precedes the snapshot after a command (ADR-0047).
      * @param roomId The room whose `PLACEMENT` timer ran out.
      */
     const endPlacement = (roomId: string): void => {
@@ -182,7 +184,9 @@ export default fp<RoomHandlersOptions>(
       if (ended.completedSeats.length > 0) {
         app.log.info({ roomId, seats: ended.completedSeats }, 'Fleets completed');
       }
+      app.log.info({ roomId, rolls: ended.dice.rolls, starter: ended.dice.starter }, 'Dice rolled');
       app.log.info({ roomId, phase: ended.state.phase }, 'Room phase changed');
+      io.to(roomId).emit(SERVER_EVENTS.DICE_ROLLED, ended.dice);
       sendState(io, ended.state, at);
       reviewTimers(roomId);
     };

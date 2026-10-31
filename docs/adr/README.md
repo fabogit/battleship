@@ -95,5 +95,8 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0089](0089-e2e-time-control.md)                 | Time control in the end-to-end suite       | Accepted, 2026-10-29   |
 | [ADR-0090](0090-placement-timer.md)                  | Placement timer                            | Accepted, 2026-10-29   |
 | [ADR-0091](0091-fleet-completion-at-the-deadline.md) | Fleet completion at the deadline           | Accepted, 2026-10-29   |
+| [ADR-0092](0092-dice-roll-at-match-start.md)         | Dice roll at the start of every match      | Accepted, 2026-10-31   |
+| [ADR-0093](0093-dice-animation.md)                   | The dice animation is the starter's turn   | Accepted, 2026-10-31   |
+| [ADR-0094](0094-dice-roll-on-reconnect.md)           | The dice roll on reconnect                 | Accepted, 2026-10-31   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

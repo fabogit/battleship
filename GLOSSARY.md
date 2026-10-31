@@ -115,6 +115,9 @@ _Avoid_: auto placement
 The server-side d6 roll for each player, ties re-rolled, that decides who starts; it is repeated every match.
 _Avoid_: coin toss
 
+**Dice animation**:
+The `DICE_ANIMATION_MS` after the dice roll while the clients show it. It is already the starter's turn; the first turn's timer starts at its end.
+
 ### Battle
 
 **Match**:

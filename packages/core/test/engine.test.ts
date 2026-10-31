@@ -7,6 +7,7 @@ import {
   ORIENTATIONS,
   randomTargets,
   resolveTurn,
+  rollDice,
   SEATS,
   SHIP_TYPES,
   SHOT_OUTCOMES,
@@ -385,5 +386,65 @@ describe('randomTargets', () => {
     const before = deepFreeze(battle([miss(2, 2)]));
     randomTargets(before, 4, createSeededRng(3));
     expect(before).toEqual(battle([miss(2, 2)]));
+  });
+});
+
+describe('rollDice', () => {
+  it('rolls again after a tie, and the higher face of the decisive round starts (seeded)', () => {
+    expect(rollDice(createSeededRng(1))).toEqual({
+      rolls: [
+        { P1: 5, P2: 5 },
+        { P1: 6, P2: 4 },
+      ],
+      starter: SEATS.P1,
+    });
+    expect(rollDice(createSeededRng(8))).toEqual({
+      rolls: [
+        { P1: 3, P2: 3 },
+        { P1: 3, P2: 4 },
+      ],
+      starter: SEATS.P2,
+    });
+  });
+
+  it('ends after one round without a tie, either seat starting', () => {
+    expect(rollDice(createSeededRng(0))).toEqual({ rolls: [{ P1: 6, P2: 4 }], starter: SEATS.P1 });
+    expect(rollDice(createSeededRng(5))).toEqual({ rolls: [{ P1: 1, P2: 3 }], starter: SEATS.P2 });
+  });
+
+  it("draws P1's face first, two draws a round", () => {
+    const rng = createSeededRng(1);
+    const faces = [rng.nextInt(6), rng.nextInt(6), rng.nextInt(6), rng.nextInt(6)].map((face) => face + 1);
+    expect(rollDice(createSeededRng(1)).rolls).toEqual([
+      { P1: faces[0], P2: faces[1] },
+      { P1: faces[2], P2: faces[3] },
+    ]);
+  });
+
+  it('keeps every face from 1 to 6, ties only before the last round, over many seeds', () => {
+    const faces = new Set<number>();
+    const starters = new Set<Seat>();
+    let tieCount = 0;
+    for (let seed = 0; seed < SEED_COUNT; seed++) {
+      const { rolls, starter } = rollDice(createSeededRng(seed));
+      const last = rolls.at(-1);
+      expect(last?.P1).not.toBe(last?.P2);
+      expect(starter).toBe((last?.P1 ?? 0) > (last?.P2 ?? 0) ? SEATS.P1 : SEATS.P2);
+      for (const roll of rolls.slice(0, -1)) {
+        expect(roll.P1).toBe(roll.P2);
+        tieCount++;
+      }
+      for (const roll of rolls) {
+        faces.add(roll.P1).add(roll.P2);
+      }
+      starters.add(starter);
+    }
+    expect([...faces].sort()).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(starters).toEqual(new Set([SEATS.P1, SEATS.P2]));
+    expect(tieCount).toBeGreaterThan(0);
+  });
+
+  it('gives the same rounds for the same seed', () => {
+    expect(rollDice(createSeededRng(42))).toEqual(rollDice(createSeededRng(42)));
   });
 });

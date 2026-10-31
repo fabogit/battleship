@@ -8,12 +8,14 @@ import {
   DEFAULT_RULES,
   generateRandomFleet,
   PROTOCOL_VERSION,
+  SEATS,
   SERVER_EVENTS,
   START_COUNTDOWN_MS,
   type ClientToServerEvents,
   type CommandEvent,
   type CommandPayload,
   type Coordinate,
+  type DiceRolledPayload,
   type HandshakeAuth,
   type PlacedShip,
   type PlayerStateSnapshot,
@@ -46,7 +48,10 @@ export const ACK_TIMEOUT_MS = 2_000;
 export const TURN_MS = 1_000;
 /** The origin the test server allows. */
 export const ALLOWED_ORIGIN = 'https://battleship.example';
-/** Seed of the registry's room ids, so the first room id is known in advance. */
+/**
+ * Seed of the registry's `Rng`, so the first room id is known in advance; with it, the first match on a server that
+ * drew one room id and completed no fleet starts with `P1` (6 against 1).
+ */
 export const ROOM_SEED = 7;
 /** Seed of P1's fleet. */
 export const P1_FLEET_SEED = 1;
@@ -72,16 +77,19 @@ let isServerRunning = false;
 const clients: Socket[] = [];
 
 /** What a test may change about its server; everything else is the same for every test. */
-export type StartOptions = Partial<Pick<ServerOptions, 'allowedOrigins' | 'logger' | 'trustProxyHops'>>;
+export type StartOptions = Partial<Pick<ServerOptions, 'allowedOrigins' | 'logger' | 'trustProxyHops'>> & {
+  /** Seed of the registry's `Rng`: room ids, completed fleets and dice; `ROOM_SEED` by default. */
+  readonly seed?: number;
+};
 
 /**
  * Starts a server with a seeded registry (ADR-0030) and a fake clock at `NOW` (ADR-0065), and sets `app`, `rooms`,
  * `clock` and `baseUrl`.
- * @param options The allowed origins (`ALLOWED_ORIGIN` by default), the logger (none by default) and the trusted proxy
- * hops.
+ * @param options The registry's seed, the allowed origins (`ALLOWED_ORIGIN` by default), the logger (none by default)
+ * and the trusted proxy hops.
  */
-export async function start(options: StartOptions = {}): Promise<void> {
-  rooms = new RoomManager({ rng: createSeededRng(ROOM_SEED) });
+export async function start({ seed = ROOM_SEED, ...options }: StartOptions = {}): Promise<void> {
+  rooms = new RoomManager({ rng: createSeededRng(seed) });
   clock = new FakeClock(NOW);
   app = createServer({
     allowedOrigins: [ALLOWED_ORIGIN],
@@ -180,6 +188,13 @@ export class Inbox {
     const message = await this.next();
     expect(message.event).toBe(SERVER_EVENTS.STATE);
     return message.payload as PlayerStateSnapshot;
+  }
+
+  /** The next event, which must be `DICE_ROLLED`. */
+  async dice(): Promise<DiceRolledPayload> {
+    const message = await this.next();
+    expect(message.event).toBe(SERVER_EVENTS.DICE_ROLLED);
+    return message.payload as DiceRolledPayload;
   }
 
   /** The next event, which must be `SHOT_RESOLVED`. */
@@ -329,8 +344,8 @@ export async function agreeOnRules(p1: Player, p2: Player, rulesVersion = 0): Pr
 
 /**
  * Both players place and confirm the fleets of `P1_FLEET_SEED` and `P2_FLEET_SEED`, then the clock runs the start
- * countdown, which starts the match with `P1` to fire. The inboxes are not read: each player gets one `STATE` per
- * command and one when the match starts, five in all.
+ * countdown, which rolls the dice and starts the match. The inboxes are not read: each player gets one `STATE` per
+ * command, then `DICE_ROLLED` and the `STATE` that starts the match.
  */
 export async function placeFleets(p1: Player, p2: Player): Promise<void> {
   for (const [from, seed] of [
@@ -355,35 +370,65 @@ export async function placingPlayers(): Promise<SeatedPlayers> {
   return seated;
 }
 
+/** Two seated players whose match has started, with the dice roll that picked who fires first. */
+export interface StartedMatch extends SeatedPlayers {
+  /** The `DICE_ROLLED` both players got. */
+  readonly dice: DiceRolledPayload;
+}
+
 /**
- * Two seated players who agreed on `DEFAULT_RULES` and whose match has started, `P1` to fire; the snapshots this sends
- * are read.
+ * Two seated players who agreed on `DEFAULT_RULES` and whose match has started; the events this sends are read. With
+ * `ROOM_SEED`, `P1` fires first when the room is the server's first.
  */
-export async function startedMatch(): Promise<SeatedPlayers> {
+export async function startedMatch(): Promise<StartedMatch> {
   const seated = await placingPlayers();
   const { p1, p2 } = seated;
   await placeFleets(p1, p2);
-  // One snapshot per accepted command, and one at the end of the countdown, to each player.
-  await p1.inbox.states(5);
-  await p2.inbox.states(5);
-  return seated;
+  const rolls: DiceRolledPayload[] = [];
+  for (const { inbox } of [p1, p2]) {
+    // One snapshot per accepted command, then the dice roll and the snapshot that starts the match.
+    await inbox.states(4);
+    rolls.push(await inbox.dice());
+    expect((await inbox.state()).battle?.currentTurn).toBe(rolls.at(-1)?.starter);
+  }
+  const [dice] = rolls;
+  if (dice === undefined) {
+    expect.fail('no dice roll');
+  }
+  expect(rolls[1]).toEqual(dice);
+  return { ...seated, dice };
 }
 
 /**
  * Plays a started match to its end without reading the inboxes: P1 fires at every cell of P2's fleet, P2 at water in
- * between, so P1 wins with its last shot. The clock moves `TURN_MS` per round.
+ * between (and first, when it starts), so P1 wins with its last shot. The clock moves `TURN_MS` per round.
+ * @param starter The seat the dice picked; `P1` by default, as `ROOM_SEED` rolls it in a server's first room.
  * @returns The cells each player fired at, in order.
  */
-export async function playToVictory(p1: Player, p2: Player): Promise<Record<Seat, Coordinate[]>> {
+export async function playToVictory(
+  p1: Player,
+  p2: Player,
+  starter: Seat = SEATS.P1,
+): Promise<Record<Seat, Coordinate[]>> {
   const p1Targets = placedFleet(P2_FLEET_SEED).flatMap((ship) => ship.coordinates);
-  const p2Targets = waterOf(placedFleet(P1_FLEET_SEED)).slice(0, p1Targets.length - 1);
-  for (const [turn, target] of p1Targets.entries()) {
-    // One turn per second for each player, under the rate limit whatever the test sent before.
-    clock.advance(TURN_MS);
-    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [target] })).toEqual({ ok: true });
+  const p2ShotCount = starter === SEATS.P1 ? p1Targets.length - 1 : p1Targets.length;
+  const p2Targets = waterOf(placedFleet(P1_FLEET_SEED)).slice(0, p2ShotCount);
+  /** Fires P2's shot of a round, if it has one left. */
+  const fireP2 = async (turn: number): Promise<void> => {
     const p2Target = p2Targets[turn];
     if (p2Target !== undefined) {
       expect(await send(p2, CLIENT_EVENTS.FIRE, { targets: [p2Target] })).toEqual({ ok: true });
+    }
+  };
+  for (const [turn, target] of p1Targets.entries()) {
+    // One turn per second for each player, under the rate limit whatever the test sent before.
+    clock.advance(TURN_MS);
+    if (starter === SEATS.P2) {
+      await fireP2(turn);
+    }
+    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [target] })).toEqual({ ok: true });
+    if (starter === SEATS.P1) {
+      await fireP2(turn);
     }
   }
   return { P1: p1Targets, P2: p2Targets };
