@@ -13,10 +13,12 @@ description: |-
      the current `rulesVersion` when you edit the rules more than once.
   4. `UPDATE_PLACEMENT` and `CONFIRM_PLACEMENT` from each seat; `UNLOCK_PLACEMENT` reverts a confirmed fleet.
      The second confirmation starts a 5-second countdown (`startCountdownMs`); an unlock cancels it. When it runs
-     out, both get a `STATE` in `IN_PROGRESS`, `P1` first: wait for it before firing. A fleet still unconfirmed
-     60 seconds after placement started is completed and locked, and the match starts.
-  5. `UPDATE_TARGETS` (optional draft) and `FIRE` from the seat whose turn it is; each `FIRE` sends `SHOT_RESOLVED`,
-     then `STATE`, to both. Edit the target before firing again: a cell already shot is `INVALID_TARGETS`.
+     out, both get `DICE_ROLLED` (a d6 per seat, ties rolled again: every round in `rolls`, and the `starter`), then
+     a `STATE` in `IN_PROGRESS` with the starter in `currentTurn`: wait for it before firing. A fleet still
+     unconfirmed 60 seconds after placement started is completed and locked, and the match starts the same way.
+  5. `UPDATE_TARGETS` (optional draft) and `FIRE` from the seat whose turn it is, the starter first: the saved
+     messages fire P1 then P2, so send P2's first when P2 starts. Each `FIRE` sends `SHOT_RESOLVED`, then `STATE`, to
+     both. Edit the target before firing again: a cell already shot is `INVALID_TARGETS`.
   6. `SET_PAUSED` (P1) while P2 is connected: `NOT_ALLOWED`. Disconnect **Seat P2**: P1 gets a `STATE` with the
      opponent away (`isConnected: false`, `forfeitRemainingMs`) and the match paused. Now `SET_PAUSED — resume`
      and `SET_PAUSED` are accepted, each followed by a `STATE`. After 3 minutes P2's seat is forfeited:
@@ -39,6 +41,9 @@ events:
     subscribeOnConnect: true
   - name: SHOT_RESOLVED
     description: A fired turn, for animation; sent to both players before the STATE that reflects it.
+    subscribeOnConnect: true
+  - name: DICE_ROLLED
+    description: The dice roll that starts the match (ADR-0092), a d6 per seat with every tie rolled again; `rolls` lists every round and `starter` fires first. Sent to both players before the STATE in IN_PROGRESS; the first turn's timer starts 3 seconds later.
     subscribeOnConnect: true
   - name: SESSION_REPLACED
     description: A newer socket took this seat (ADR-0014, ADR-0063); a server disconnect follows. Postman cannot send a session, so only the tests and a socket.io-client script trigger it.

@@ -213,8 +213,11 @@ describe('the agreed rules', () => {
     const version = await edit(p1, p2, rules);
     await agreeOnRules(p1, p2, version);
     await placeFleets(p1, p2);
-    await p1.inbox.states(7);
-    await p2.inbox.states(7);
+    for (const { inbox } of [p1, p2]) {
+      await inbox.states(6);
+      expect((await inbox.dice()).starter).toBe(SEATS.P1);
+      await inbox.state();
+    }
 
     const [hit] = placedFleet(P2_FLEET_SEED).flatMap((ship) => ship.coordinates);
     const [miss] = waterOf(placedFleet(P2_FLEET_SEED));
@@ -257,9 +260,11 @@ describe('the rules commands outside negotiation', () => {
     const placing = await placingPlayers();
     expect(await send(placing.p2, event, payload)).toEqual(wrongPhase);
 
-    const { p1, p2, roomId } = await startedMatch();
+    // The registry drew three room ids before this roll, so P2 starts.
+    const { p1, p2, roomId, dice } = await startedMatch();
+    expect(dice.starter).toBe(SEATS.P2);
     expect(await send(p1, event, payload)).toEqual(wrongPhase);
-    await playToVictory(p1, p2);
+    await playToVictory(p1, p2, dice.starter);
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.GAME_OVER);
     expect(await send(p2, event, payload)).toEqual(wrongPhase);
   });

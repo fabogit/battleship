@@ -4,11 +4,13 @@ import {
   CLIENT_EVENTS,
   completeFleet,
   DEFAULT_RULES,
+  DICE_ANIMATION_MS,
   ERROR_CODES,
   GAME_OVER_REASONS,
   otherSeat,
   PLACEMENT_TIME_LIMIT_MS,
   resolveTurn,
+  rollDice,
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
@@ -22,6 +24,7 @@ import {
   type Battle,
   type CommandPayload,
   type Coordinate,
+  type DiceRolledPayload,
   type ErrorCode,
   type GameRules,
   type JoinRoomPayload,
@@ -137,6 +140,11 @@ export interface BattleRoom extends RoomBase {
   /** The current turn's draft from `UPDATE_TARGETS`; cleared whenever the turn is fired. */
   readonly draftTargets: readonly Coordinate[];
   /**
+   * When the first turn's timer starts, in epoch ms: `DICE_ANIMATION_MS` after the dice roll, while the clients show it
+   * (ADR-0093). The starter may fire before then. Nothing reads it until the turn timer lands (#30).
+   */
+  readonly firstTurnStartsAt: number;
+  /**
    * Whether the turn timer is frozen (ADR-0008, ADR-0074): set when a seat loses its last socket, cleared when both
    * are connected again, and switched by `SET_PAUSED` from the connected player while the opponent is away. Nothing
    * else stops while paused: the forfeit clock runs and the active player may still fire.
@@ -217,8 +225,9 @@ export type RoomCommand = JoinRoomCommand | SeatCommand;
 
 /**
  * Something the caller must do besides sending `STATE`, which it sends to every seated player after any accepted
- * command (ADR-0037). `DICE_ROLLED` (#29) will join this union; timers are not effects, since the socket layer reads
- * them from the stored deadlines (ADR-0065, ADR-0090).
+ * command (ADR-0037). Timers are not effects, since the socket layer reads them from the stored deadlines (ADR-0065,
+ * ADR-0090), and neither is `DICE_ROLLED`: the match starts on the `PLACEMENT` timer, never on a command, and
+ * `endPlacement` returns the roll itself (ADR-0092).
  */
 export interface ShotResolvedEffect {
   /** Discriminant, named after the event to emit to both players. */
@@ -264,9 +273,6 @@ const NO_CONFIRMATIONS: Readonly<Record<Seat, boolean>> = { P1: false, P2: false
 
 /** A placement fleet before the player's first update. */
 const EMPTY_FLEET: PlacementFleet = { ships: [], hasConfirmed: false };
-
-/** The seat that starts every match until the dice roll lands (#29); `startBattle` is its only reader. */
-const FIRST_SEAT: Seat = SEATS.P1;
 
 /** Both seats connected, or empty: no forfeit clock running. */
 const ALL_CONNECTED: Readonly<Record<Seat, number | null>> = { P1: null, P2: null };
@@ -331,23 +337,27 @@ export function placementEndsAt(state: PlacementRoom): number {
   return state.countdownEndsAt ?? state.deadline;
 }
 
-/** Placement as it ended: the room in battle, and which seats had their fleets completed. */
+/** Placement as it ended: the room in battle, which seats had their fleets completed, and the dice roll. */
 export interface EndedPlacement {
-  /** The room in `IN_PROGRESS`. */
+  /** The room in `IN_PROGRESS`, `dice.starter` to fire. */
   readonly state: BattleRoom;
   /** The seats whose fleets were not confirmed at the deadline, `P1` first; empty after a countdown. */
   readonly completedSeats: readonly Seat[];
+  /** Who starts and every round that decided it, for `DICE_ROLLED` to both players before their `STATE` (ADR-0092). */
+  readonly dice: DiceRolledPayload;
 }
 
 /**
  * Ends placement when the `PLACEMENT` room timer fires (docs/server.md#placement, ADR-0006, ADR-0090): every
  * unconfirmed fleet is completed with `completeFleet` from its current draft and locked (ADR-0091), then the match
- * starts. Confirmed fleets are kept as they are. A command the server handled before the timer ran has already
- * changed the room, so it counts: a confirmation that lands at the deadline locks the player's own fleet.
+ * starts with the dice roll (ADR-0092). Confirmed fleets are kept as they are. A command the server handled before the
+ * timer ran has already changed the room, so it counts: a confirmation that lands at the deadline locks the player's
+ * own fleet.
  * @param state The room in `PLACEMENT`.
- * @param now Current time in epoch ms.
- * @param rng The server's random source; the fleets are completed `P1` first, so a seed gives the same fleets.
- * @returns The room in battle and the seats completed, or `null` while `placementEndsAt` is still ahead.
+ * @param now Current time in epoch ms; the dice roll lands at it.
+ * @param rng The server's random source: the fleets are completed `P1` first, then the dice are rolled, so a seed
+ * gives the same fleets and the same starter.
+ * @returns The room in battle, the seats completed and the roll, or `null` while `placementEndsAt` is still ahead.
  */
 export function endPlacement(state: PlacementRoom, now: number, rng: Rng): EndedPlacement | null {
   if (now < placementEndsAt(state)) {
@@ -359,7 +369,7 @@ export function endPlacement(state: PlacementRoom, now: number, rng: Rng): Ended
     const ships = completeFleet(placed.fleets[seat].ships, state.rules, rng);
     placed = withFleet(placed, seat, { ships, hasConfirmed: true });
   }
-  return { state: startBattle(placed), completedSeats };
+  return { ...startBattle(placed, now, rng), completedSeats };
 }
 
 /**
@@ -590,14 +600,18 @@ function setPaused(
 }
 
 /**
- * Moves a room whose fleets are both locked into battle, with empty shot lists and `FIRST_SEAT` to fire: the one
- * hand-off from placement to the match, which the dice roll (#29) replaces. A player who is away at that moment finds
- * the match paused (docs/server.md#placement), with their forfeit clock still counting from the drop.
+ * Moves a room whose fleets are both locked into battle, with empty shot lists and the dice roll's starter to fire
+ * (ADR-0002, ADR-0092): the one hand-off from placement to the match, so every match rolls, a rematch's included. A
+ * player who is away at that moment finds the match paused (docs/server.md#placement), with their forfeit clock still
+ * counting from the drop; the dice are rolled all the same.
  * @param state The room in `PLACEMENT`, both fleets locked.
- * @returns The room in `IN_PROGRESS`.
+ * @param now Current time in epoch ms; the first turn's timer starts `DICE_ANIMATION_MS` later (ADR-0093).
+ * @param rng The server's random source, for the dice.
+ * @returns The room in `IN_PROGRESS` and the roll that picked its first turn.
  */
-function startBattle(state: PlacementRoom): BattleRoom {
-  return {
+function startBattle(state: PlacementRoom, now: number, rng: Rng): { state: BattleRoom; dice: DiceRolledPayload } {
+  const dice = rollDice(rng);
+  const battleRoom: BattleRoom = {
     phase: ROOM_PHASES.IN_PROGRESS,
     roomId: state.roomId,
     rules: state.rules,
@@ -609,11 +623,13 @@ function startBattle(state: PlacementRoom): BattleRoom {
         P1: { ships: state.fleets.P1.ships, shots: [] },
         P2: { ships: state.fleets.P2.ships, shots: [] },
       },
-      currentTurn: FIRST_SEAT,
+      currentTurn: dice.starter,
     },
     draftTargets: [],
+    firstTurnStartsAt: now + DICE_ANIMATION_MS,
     isPaused: state.disconnectedAt.P1 !== null || state.disconnectedAt.P2 !== null,
   };
+  return { state: battleRoom, dice };
 }
 
 /**

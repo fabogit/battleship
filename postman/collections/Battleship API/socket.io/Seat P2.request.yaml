@@ -13,6 +13,9 @@ events:
   - name: SHOT_RESOLVED
     description: A fired turn, for animation; sent to both players before the STATE that reflects it.
     subscribeOnConnect: true
+  - name: DICE_ROLLED
+    description: The dice roll that starts the match (ADR-0092), a d6 per seat with every tie rolled again; `rolls` lists every round and `starter` fires first. Sent to both players before the STATE in IN_PROGRESS; the first turn's timer starts 3 seconds later.
+    subscribeOnConnect: true
   - name: SESSION_REPLACED
     description: A newer socket took this seat (ADR-0014, ADR-0063); a server disconnect follows. Postman cannot send a session, so only the tests and a socket.io-client script trigger it.
     subscribeOnConnect: true

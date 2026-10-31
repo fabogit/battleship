@@ -108,8 +108,9 @@ function toPlacementSnapshot(state: PlacementRoom, seat: Seat, now: number): Pla
  * opponent's board (ADR-0034), never the opponent's ships.
  * @param state The room in `IN_PROGRESS`.
  * @param seat The receiver.
- * @returns The battle part. `turnRemainingMs` stays `null` and `afkCount` zero until the turn timer lands (#30); `isPaused`
- * is the room's, though no timer is frozen yet.
+ * @returns The battle part. `turnRemainingMs` stays `null` and `afkCount` zero until the turn timer lands (#30); from
+ * then on `turnRemainingMs` is still `null` before `firstTurnStartsAt`, while the dice animation plays (ADR-0093).
+ * `isPaused` is the room's, though no timer is frozen yet.
  */
 function toBattleSnapshot(state: BattleRoom, seat: Seat): BattleSnapshot {
   const { boards, currentTurn } = state.battle;

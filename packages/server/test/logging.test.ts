@@ -6,6 +6,7 @@ import {
   PLACEMENT_VIOLATIONS,
   PROTOCOL_VERSION,
   RATE_LIMIT_EVENTS_PER_SECOND,
+  ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
   SHIP_TYPES,
@@ -21,6 +22,7 @@ import {
   clock,
   closeServer,
   start as startServer,
+  startedMatch,
   stop,
   track,
   type ClientSocket,
@@ -275,6 +277,18 @@ describe('room logs', () => {
       expect.arrayContaining([
         expect.objectContaining({ msg: 'Seat left', roomId, seat: SEATS.P1 }),
         expect.objectContaining({ msg: 'Room closed', roomId, reason: CLIENT_EVENTS.LEAVE_ROOM, roomCount: 0 }),
+      ]),
+    );
+  });
+
+  it('record the dice roll and the start of the match at info', async () => {
+    const { lines } = await start('info');
+    const { roomId, dice } = await startedMatch();
+
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Dice rolled', roomId, rolls: dice.rolls, starter: dice.starter }),
+        expect.objectContaining({ msg: 'Room phase changed', roomId, phase: ROOM_PHASES.IN_PROGRESS }),
       ]),
     );
   });

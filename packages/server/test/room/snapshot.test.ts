@@ -171,6 +171,16 @@ describe('projectSnapshot', () => {
     expect(projectSnapshot(bothConfirmed, SEATS.P1, pastEnd).placement?.startCountdownMs).toBe(0);
   });
 
+  // ADR-0093: no turn time during the dice animation; the turn timer (#30) sets it from `firstTurnStartsAt` on.
+  it('shows no turn time while the dice animation plays, nor after it until the turn timer lands', () => {
+    const state = battleRoom();
+    for (const at of [state.firstTurnStartsAt - 1, state.firstTurnStartsAt, state.firstTurnStartsAt + 60_000]) {
+      for (const seat of Object.values(SEATS)) {
+        expect(projectSnapshot(state, seat, at).battle?.turnRemainingMs).toBeNull();
+      }
+    }
+  });
+
   it('shows the draft targets to the active player only', () => {
     const state = apply(battleRoom(), {
       type: CLIENT_EVENTS.UPDATE_TARGETS,

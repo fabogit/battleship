@@ -16,7 +16,15 @@ export {
 } from './constants.js';
 export { CELL_COUNT, toCellIndex, toCoordinate } from './grid.js';
 export { createPlayerSecret, generateRoomId } from './identifiers.js';
-export { otherSeat, randomTargets, resolveTurn, shotsAllowed, TARGET_VIOLATIONS, validateTargets } from './engine.js';
+export {
+  otherSeat,
+  randomTargets,
+  resolveTurn,
+  rollDice,
+  shotsAllowed,
+  TARGET_VIOLATIONS,
+  validateTargets,
+} from './engine.js';
 export type {
   Battle,
   Board,

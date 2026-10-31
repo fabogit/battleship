@@ -4,7 +4,15 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 
-import { CLIENT_EVENTS, ERROR_CODES, PROTOCOL_VERSION, START_COUNTDOWN_MS } from '@battleship/core';
+import {
+  CLIENT_EVENTS,
+  ERROR_CODES,
+  PROTOCOL_VERSION,
+  SEATS,
+  SERVER_EVENTS,
+  START_COUNTDOWN_MS,
+  type DiceRolledPayload,
+} from '@battleship/core';
 import { io as connect, type Socket } from 'socket.io-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
@@ -21,6 +29,8 @@ const STEP_MS = 1_000;
 interface SocketIoRequest {
   readonly url: string;
   readonly headers?: readonly { readonly key: string; readonly value: string }[];
+  /** The server events Postman listens to on this connection. */
+  readonly events?: readonly { readonly name: string }[];
   /** The folder of its saved messages, relative to the request file. */
   readonly messages?: string;
 }
@@ -59,6 +69,13 @@ type Step =
       readonly disconnect: true;
     }
   | {
+      readonly request: string;
+      /** A server event the request's open connection must have received, as its listener shows it; it sends nothing. */
+      readonly receives: string;
+      /** The event's payload, compared with `toEqual`. */
+      readonly payload: unknown;
+    }
+  | {
       /** Moves the clock this far, as a person waits for a countdown to run out; it sends nothing. */
       readonly waitMs: number;
     };
@@ -66,6 +83,8 @@ type Step =
 const OK = { ok: true };
 const NOT_ALLOWED = { ok: false, error: ERROR_CODES.NOT_ALLOWED };
 const OK_WITH_SECRET = { ok: true, playerSecret: expect.any(String) as unknown };
+/** The roll of the replay's match: the test registry's seed, after the one room id it drew, makes `P1` start. */
+const REPLAY_DICE: DiceRolledPayload = { rolls: [{ P1: 6, P2: 1 }], starter: SEATS.P1 };
 
 /**
  * The replay. Every saved message must be sent at least once and every Socket.IO request connected, or the coverage
@@ -105,9 +124,12 @@ const STEPS: readonly Step[] = [
   { request: 'Seat P2', message: CLIENT_EVENTS.CONFIRM_PLACEMENT, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.UNLOCK_PLACEMENT, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.CONFIRM_PLACEMENT, ack: OK },
-  // The second fleet locked starts the start countdown; when it runs out, the match starts, P1 first (ADR-0090).
+  // The second fleet locked starts the start countdown; when it runs out, both seats get the dice roll and the match
+  // starts with its starter, P1 here (ADR-0090, ADR-0092).
   { request: 'Seat P1', message: CLIENT_EVENTS.CONFIRM_PLACEMENT, ack: OK },
   { waitMs: START_COUNTDOWN_MS },
+  { request: 'Seat P1', receives: SERVER_EVENTS.DICE_ROLLED, payload: REPLAY_DICE },
+  { request: 'Seat P2', receives: SERVER_EVENTS.DICE_ROLLED, payload: REPLAY_DICE },
   { request: 'Seat P1', message: CLIENT_EVENTS.UPDATE_TARGETS, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.FIRE, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.UPDATE_TARGETS, ack: OK },
@@ -154,6 +176,8 @@ interface LoadedRequest {
   readonly url: string;
   readonly headers: readonly { readonly key: string; readonly value: string }[];
   readonly messageDir: string | undefined;
+  /** The names of the server events it listens to. */
+  readonly events: readonly string[];
 }
 
 /** The Socket.IO requests by name. */
@@ -165,6 +189,7 @@ function socketIoRequests(): Map<string, LoadedRequest> {
       requests.set(basename(file, '.request.yaml'), {
         url: request.url,
         headers: request.headers ?? [],
+        events: (request.events ?? []).map(({ name }) => name),
         messageDir: request.messages === undefined ? undefined : resolve(dirname(file), request.messages),
       });
     }
@@ -235,6 +260,20 @@ describe('the Postman collection', () => {
     ).toEqual([]);
   });
 
+  it('listens to every server event on each request that sends room commands', () => {
+    const requests = socketIoRequests();
+    const commands = Object.values(CLIENT_EVENTS).filter((event) => event !== CLIENT_EVENTS.ECHO);
+    const playing = new Set(
+      STEPS.flatMap((step) =>
+        'message' in step && commands.some((command) => step.message.startsWith(command)) ? [step.request] : [],
+      ),
+    );
+    expect([...playing].sort()).toEqual(['Seat P1', 'Seat P2']);
+    for (const name of playing) {
+      expect(requests.get(name)?.events, name).toEqual(Object.values(SERVER_EVENTS));
+    }
+  });
+
   it('gets the expected reply to every saved message from the server', async () => {
     await replay(socketIoRequests());
   });
@@ -295,6 +334,8 @@ async function replay(requests: ReadonlyMap<string, LoadedRequest>): Promise<voi
   await start({ allowedOrigins: [variables.get('allowedOrigin') ?? ''] });
   variables.set('baseUrl', baseUrl);
   const open = new Map<string, Socket>();
+  /** Every event each request's connection received, in order, as Postman's listeners would show them. */
+  const received = new Map<string, { event: string; payload: unknown }[]>();
 
   for (const [index, step] of STEPS.entries()) {
     if ('waitMs' in step) {
@@ -304,6 +345,15 @@ async function replay(requests: ReadonlyMap<string, LoadedRequest>): Promise<voi
     const label = `step ${String(index + 1)}: ${step.request}${'message' in step ? ` › ${step.message}` : ''}`;
     if ('disconnect' in step) {
       await disconnect(open, step.request, label);
+      continue;
+    }
+    if ('receives' in step) {
+      await vi.waitFor(() => {
+        expect(received.get(step.request), `${label}: ${step.receives}`).toContainEqual({
+          event: step.receives,
+          payload: step.payload,
+        });
+      });
       continue;
     }
     clock.advance(STEP_MS);
@@ -333,6 +383,11 @@ async function replay(requests: ReadonlyMap<string, LoadedRequest>): Promise<voi
     if (socket === undefined) {
       socket = connectRequest();
       open.set(step.request, socket);
+      const events: { event: string; payload: unknown }[] = [];
+      received.set(step.request, events);
+      socket.onAny((event: string, payload: unknown) => {
+        events.push({ event, payload });
+      });
       expect(await connection(socket), `${label}: connect_error`).toBeUndefined();
     }
     const message = readYaml(messageFile(request.messageDir, step.message)) as SocketIoMessage;
