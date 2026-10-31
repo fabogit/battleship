@@ -3,10 +3,13 @@ import { PRESENCE_TEXT } from '../../client/src/app/features/presence/presence.t
 import { test, expect } from '../src/fixtures.ts';
 import { ALL_CELLS, board, cell, cellLabels, fire, firstShooter, mainHeading, startBattle } from '../src/flows.ts';
 
-test('a reload mid-match brings the same boards back, and the match goes on', async ({ openPlayer }) => {
+test('a reload mid-match brings the same boards back, and the match goes on', async ({
+  openPlayer,
+  skipServerClock,
+}) => {
   const ada = await openPlayer('Ada');
   const grace = await openPlayer('Grace');
-  await startBattle(ada, grace);
+  await startBattle(ada, grace, skipServerClock);
 
   // Two turns each, so both of Ada's boards carry shots: the first cells of the board, a miss or a hit.
   let shooter = await firstShooter([ada, grace]);

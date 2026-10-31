@@ -2,7 +2,7 @@
 
 import type { Clock, Timer } from '../clock.js';
 
-/** What a room timer is for. The placement timer (#28) and the turn timer (#30) join this set as they land. */
+/** What a room timer is for. The turn timer (#30) joins this set when it lands. */
 export const ROOM_TIMER_KINDS = {
   /**
    * Forfeits the seat away longest, `DISCONNECT_FORFEIT_MS` after it lost its last socket; one timer per room, at the
@@ -11,6 +11,11 @@ export const ROOM_TIMER_KINDS = {
   DISCONNECT_FORFEIT: 'DISCONNECT_FORFEIT',
   /** Removes a room `GAME_OVER_TTL_MS` after its match ended (docs/server.md#room-lifecycle). */
   GAME_OVER: 'GAME_OVER',
+  /**
+   * Ends placement and starts the match: at the end of the start countdown while both fleets are confirmed, at the
+   * deadline otherwise, where unconfirmed fleets are completed first (docs/server.md#placement, ADR-0090).
+   */
+  PLACEMENT: 'PLACEMENT',
 } as const;
 
 /** One of the `ROOM_TIMER_KINDS`. */

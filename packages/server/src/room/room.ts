@@ -2,6 +2,7 @@
 
 import {
   CLIENT_EVENTS,
+  completeFleet,
   DEFAULT_RULES,
   ERROR_CODES,
   GAME_OVER_REASONS,
@@ -12,6 +13,7 @@ import {
   SEATS,
   SERVER_EVENTS,
   shotsAllowed,
+  START_COUNTDOWN_MS,
   TARGET_VIOLATIONS,
   validateDraft,
   validateFleet,
@@ -25,6 +27,7 @@ import {
   type JoinRoomPayload,
   type PlacedShip,
   type PlacementViolation,
+  type Rng,
   type RulesViolation,
   type Seat,
   type ShotResolvedPayload,
@@ -111,10 +114,16 @@ export interface PlacementRoom extends RoomBase {
   /** Each seat's draft or locked fleet. */
   readonly fleets: Readonly<Record<Seat, PlacementFleet>>;
   /**
-   * When unconfirmed fleets will be completed and locked, in epoch ms: `PLACEMENT_TIME_LIMIT_MS` after phase entry.
-   * Only projected as `remainingMs` until the placement timer enforces it (#28).
+   * When unconfirmed fleets are completed and locked and the match starts, in epoch ms: `PLACEMENT_TIME_LIMIT_MS` after
+   * phase entry (ADR-0006). The `PLACEMENT` room timer enforces it (ADR-0090).
    */
   readonly deadline: number;
+  /**
+   * When the start countdown ends and the match starts, in epoch ms, while both fleets are confirmed; `null` otherwise.
+   * Set by the second confirmation to `START_COUNTDOWN_MS` later, capped by `deadline`, and cleared by an unlock
+   * (ADR-0090).
+   */
+  readonly countdownEndsAt: number | null;
 }
 
 /** A room whose match is being played. */
@@ -208,7 +217,8 @@ export type RoomCommand = JoinRoomCommand | SeatCommand;
 
 /**
  * Something the caller must do besides sending `STATE`, which it sends to every seated player after any accepted
- * command (ADR-0037). Timer scheduling (#28, #30) and `DICE_ROLLED` (#29) will join this union.
+ * command (ADR-0037). `DICE_ROLLED` (#29) will join this union; timers are not effects, since the socket layer reads
+ * them from the stored deadlines (ADR-0065, ADR-0090).
  */
 export interface ShotResolvedEffect {
   /** Discriminant, named after the event to emit to both players. */
@@ -255,7 +265,7 @@ const NO_CONFIRMATIONS: Readonly<Record<Seat, boolean>> = { P1: false, P2: false
 /** A placement fleet before the player's first update. */
 const EMPTY_FLEET: PlacementFleet = { ships: [], hasConfirmed: false };
 
-/** The seat that starts every match until the dice roll lands (#29). */
+/** The seat that starts every match until the dice roll lands (#29); `startBattle` is its only reader. */
 const FIRST_SEAT: Seat = SEATS.P1;
 
 /** Both seats connected, or empty: no forfeit clock running. */
@@ -299,7 +309,7 @@ export function applyCommand(state: RoomState, command: RoomCommand, now: number
     case CLIENT_EVENTS.CONFIRM_PLACEMENT:
     case CLIENT_EVENTS.UNLOCK_PLACEMENT:
       return state.phase === ROOM_PHASES.PLACEMENT
-        ? applyPlacementCommand(state, command)
+        ? applyPlacementCommand(state, command, now)
         : reject(ERROR_CODES.WRONG_PHASE);
     case CLIENT_EVENTS.UPDATE_TARGETS:
     case CLIENT_EVENTS.FIRE:
@@ -309,6 +319,47 @@ export function applyCommand(state: RoomState, command: RoomCommand, now: number
     case CLIENT_EVENTS.SET_PAUSED:
       return state.phase === ROOM_PHASES.IN_PROGRESS ? setPaused(state, command) : reject(ERROR_CODES.WRONG_PHASE);
   }
+}
+
+/**
+ * When a room's placement ends (ADR-0090): at the end of the start countdown while both fleets are confirmed, at the
+ * deadline otherwise. The countdown is capped by the deadline, so the first never comes after the second.
+ * @param state The room in `PLACEMENT`.
+ * @returns The time in epoch ms, which the `PLACEMENT` room timer is set to.
+ */
+export function placementEndsAt(state: PlacementRoom): number {
+  return state.countdownEndsAt ?? state.deadline;
+}
+
+/** Placement as it ended: the room in battle, and which seats had their fleets completed. */
+export interface EndedPlacement {
+  /** The room in `IN_PROGRESS`. */
+  readonly state: BattleRoom;
+  /** The seats whose fleets were not confirmed at the deadline, `P1` first; empty after a countdown. */
+  readonly completedSeats: readonly Seat[];
+}
+
+/**
+ * Ends placement when the `PLACEMENT` room timer fires (docs/server.md#placement, ADR-0006, ADR-0090): every
+ * unconfirmed fleet is completed with `completeFleet` from its current draft and locked (ADR-0091), then the match
+ * starts. Confirmed fleets are kept as they are. A command the server handled before the timer ran has already
+ * changed the room, so it counts: a confirmation that lands at the deadline locks the player's own fleet.
+ * @param state The room in `PLACEMENT`.
+ * @param now Current time in epoch ms.
+ * @param rng The server's random source; the fleets are completed `P1` first, so a seed gives the same fleets.
+ * @returns The room in battle and the seats completed, or `null` while `placementEndsAt` is still ahead.
+ */
+export function endPlacement(state: PlacementRoom, now: number, rng: Rng): EndedPlacement | null {
+  if (now < placementEndsAt(state)) {
+    return null;
+  }
+  const completedSeats = Object.values(SEATS).filter((seat) => !state.fleets[seat].hasConfirmed);
+  let placed = state;
+  for (const seat of completedSeats) {
+    const ships = completeFleet(placed.fleets[seat].ships, state.rules, rng);
+    placed = withFleet(placed, seat, { ships, hasConfirmed: true });
+  }
+  return { state: startBattle(placed), completedSeats };
 }
 
 /**
@@ -424,19 +475,24 @@ function startPlacement(state: NegotiationRoom, now: number): PlacementRoom {
     disconnectedAt: state.disconnectedAt,
     fleets: { P1: EMPTY_FLEET, P2: EMPTY_FLEET },
     deadline: now + PLACEMENT_TIME_LIMIT_MS,
+    countdownEndsAt: null,
   };
 }
 
 /**
  * Handles the placement commands (docs/server.md#placement): draft updates, confirmation and unlock. The second
- * confirmation starts the match at once, `P1` first; the start countdown (#28) and the dice roll (#29) come later.
+ * confirmation starts the start countdown, `START_COUNTDOWN_MS` capped by the deadline; an unlock cancels it, and the
+ * next double confirmation starts it again from its own time (ADR-0006, ADR-0090). The match itself starts only when
+ * the `PLACEMENT` room timer runs `endPlacement`.
  * @param state The room in `PLACEMENT`.
  * @param command A placement command.
+ * @param now Current time in epoch ms; the countdown counts from it.
  * @returns The updated room, or the error for the ack.
  */
 function applyPlacementCommand(
   state: PlacementRoom,
   command: Extract<SeatCommand, { type: PlacementCommandEvent }>,
+  now: number,
 ): TransitionResult {
   const fleet = state.fleets[command.seat];
   switch (command.type) {
@@ -459,11 +515,16 @@ function applyPlacementCommand(
         return reject(ERROR_CODES.INVALID_PLACEMENT, validation.reason);
       }
       const next = withFleet(state, command.seat, { ships: fleet.ships, hasConfirmed: true });
-      return accept(next.fleets.P1.hasConfirmed && next.fleets.P2.hasConfirmed ? startBattle(next) : next);
+      const haveBothConfirmed = next.fleets.P1.hasConfirmed && next.fleets.P2.hasConfirmed;
+      return accept(
+        haveBothConfirmed ? { ...next, countdownEndsAt: Math.min(now + START_COUNTDOWN_MS, state.deadline) } : next,
+      );
     }
     case CLIENT_EVENTS.UNLOCK_PLACEMENT:
       return accept(
-        fleet.hasConfirmed ? withFleet(state, command.seat, { ships: fleet.ships, hasConfirmed: false }) : state,
+        fleet.hasConfirmed
+          ? { ...withFleet(state, command.seat, { ships: fleet.ships, hasConfirmed: false }), countdownEndsAt: null }
+          : state,
       );
   }
 }
@@ -529,9 +590,10 @@ function setPaused(
 }
 
 /**
- * Moves a room whose fleets are both confirmed into battle, with empty shot lists and `FIRST_SEAT` to fire. A player
- * who is away at that moment finds the match paused (docs/server.md#placement).
- * @param state The room in `PLACEMENT`, both fleets confirmed.
+ * Moves a room whose fleets are both locked into battle, with empty shot lists and `FIRST_SEAT` to fire: the one
+ * hand-off from placement to the match, which the dice roll (#29) replaces. A player who is away at that moment finds
+ * the match paused (docs/server.md#placement), with their forfeit clock still counting from the drop.
+ * @param state The room in `PLACEMENT`, both fleets locked.
  * @returns The room in `IN_PROGRESS`.
  */
 function startBattle(state: PlacementRoom): BattleRoom {

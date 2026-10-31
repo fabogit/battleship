@@ -29,6 +29,7 @@ With the disconnect forfeit in place ([ADR-0072](0072-seat-presence.md)), seats 
 
 - Added on 2026-10-15 for disconnection rules ([#23](https://github.com/fabogit/battleship/issues/23)).
 - Amended on 2026-10-29 ([#26](https://github.com/fabogit/battleship/issues/26)): `RULES_NEGOTIATION` is a phase before the match too, and the rules kept include edits still under negotiation ([ADR-0083](0083-rules-kept-when-a-seat-is-freed.md)).
+- Amended on 2026-10-29 ([#28](https://github.com/fabogit/battleship/issues/28)): a freed seat stops the placement timer, and a placement whose players are both away ends at its deadline, so that room ends as a match: paused, forfeited by the first to have dropped, then expired. The bound `DISCONNECT_FORFEIT_MS + GAME_OVER_TTL_MS` still holds ([ADR-0090](0090-placement-timer.md)).
 - Spec: [Server: Room lifecycle](../server.md#room-lifecycle) · [Server: Leaving](../server.md#leaving) · [Domain: Constants](../domain.md#constants)
 - Amends: [ADR-0065](0065-clock-and-room-timers.md) (no `EMPTY_ROOM` timer) · [ADR-0039](0039-room-registry.md) (rooms also leave the registry when nobody is left in them)
 - Related: [ADR-0072](0072-seat-presence.md) (seat presence)

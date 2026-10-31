@@ -4,10 +4,13 @@ import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
 import { test, expect } from '../src/fixtures.ts';
 import { ALL_CELLS, board, fire, firstShooter, mainHeading, shipCells, startBattle } from '../src/flows.ts';
 
-test('a full match from create and join to game over, with the fleet revealed', async ({ openPlayer }) => {
+test('a full match from create and join to game over, with the fleet revealed', async ({
+  openPlayer,
+  skipServerClock,
+}) => {
   const ada = await openPlayer('Ada');
   const grace = await openPlayer('Grace');
-  await startBattle(ada, grace);
+  await startBattle(ada, grace, skipServerClock);
 
   // Ada wins: she fires only at Grace's ships, read off Grace's own board, and Grace only at Ada's empty water.
   const adaFleet = await shipCells(board(ada.page, BATTLE_TEXT.myFleet));

@@ -4,6 +4,7 @@ import {
   DEFAULT_RULES,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
+  FLEET,
   GAME_OVER_REASONS,
   ROOM_PHASES,
   SEATS,
@@ -25,6 +26,7 @@ import {
   apply,
   battleRoom,
   deepFreeze,
+  endPlacementNow,
   expectAccepted,
   fleet,
   negotiationRoom,
@@ -298,8 +300,18 @@ describe('a match that starts with a player away', () => {
       payload: { ships: fleet(2) },
     });
     const p1Away = disconnectSeat(placed, SEATS.P1, NOW);
-    const started = apply(p1Away, { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat: SEATS.P2, payload: {} });
+    const started = endPlacementNow(
+      apply(p1Away, { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat: SEATS.P2, payload: {} }),
+    );
     expect(started).toMatchObject({ phase: ROOM_PHASES.IN_PROGRESS, isPaused: true, disconnectedAt: { P1: NOW } });
+  });
+
+  it('completes the fleet of a player away at the deadline and starts paused (ADR-0091)', () => {
+    const p2Confirmed = placeAndConfirm(placementRoom(), SEATS.P2, fleet(2));
+    const started = endPlacementNow(disconnectSeat(p2Confirmed, SEATS.P1, NOW + 1_000));
+    expect(started).toMatchObject({ isPaused: true, disconnectedAt: { P1: NOW + 1_000 } });
+    expect(started.battle.boards.P1.ships).toHaveLength(FLEET.length);
+    expect(forfeitDeadline(started, SEATS.P1)).toBe(NOW + 1_000 + DISCONNECT_FORFEIT_MS);
   });
 
   it('starts running when both are connected', () => {

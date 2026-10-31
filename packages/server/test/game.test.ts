@@ -18,6 +18,7 @@ import {
   SEATS,
   SERVER_EVENTS,
   SHOT_OUTCOMES,
+  START_COUNTDOWN_MS,
   type CommandEvent,
   type CommandPayload,
   type PlayerStateSnapshot,
@@ -219,6 +220,14 @@ describe('a match between two real clients', () => {
     expect(await send(p2, CLIENT_EVENTS.CONFIRM_PLACEMENT, {})).toEqual({ ok: true });
     for (const { inbox } of [p1, p2]) {
       expect(await inbox.states(3)).toMatchObject({
+        phase: ROOM_PHASES.PLACEMENT,
+        placement: { hasConfirmed: { me: true, opponent: true }, startCountdownMs: START_COUNTDOWN_MS },
+      });
+    }
+    // The start countdown ends and the match starts (ADR-0090).
+    clock.advance(START_COUNTDOWN_MS);
+    for (const { inbox } of [p1, p2]) {
+      expect(await inbox.state()).toMatchObject({
         phase: ROOM_PHASES.IN_PROGRESS,
         placement: null,
         battle: { currentTurn: SEATS.P1, incomingShots: [], outgoingShots: [] },
@@ -687,18 +696,18 @@ describe('seat presence', () => {
       forfeitRemainingMs: DISCONNECT_FORFEIT_MS,
     });
 
-    clock.advance(DISCONNECT_FORFEIT_MS - 1);
+    // Placement ends before the forfeit could (PLACEMENT_TIME_LIMIT_MS < DISCONNECT_FORFEIT_MS), so come back sooner.
+    clock.advance(30_000);
     const back = await player(sessions.P2);
     expect((await back.inbox.state()).me).toMatchObject({ seat: SEATS.P2, isConnected: true });
     expect((await p1.inbox.state()).opponent).toMatchObject({ isConnected: true, forfeitRemainingMs: null });
-    clock.advance(10 * DISCONNECT_FORFEIT_MS);
     expect(await send(back, CLIENT_EVENTS.CONFIRM_PLACEMENT, {})).toEqual({
       ok: false,
       error: ERROR_CODES.INVALID_PLACEMENT,
     });
   });
 
-  it('starts the match paused when a player is away at the second confirmation', async () => {
+  it('starts the match paused when a player is away at the end of the countdown', async () => {
     await start();
     const { p1, p2, roomId } = await placingPlayers();
     for (const [from, seed] of [
@@ -713,9 +722,11 @@ describe('seat presence', () => {
     await p2.inbox.state();
 
     await send(p2, CLIENT_EVENTS.CONFIRM_PLACEMENT, {});
+    expect((await p2.inbox.state()).placement?.startCountdownMs).toBe(START_COUNTDOWN_MS);
+    clock.advance(START_COUNTDOWN_MS);
     expect(await p2.inbox.state()).toMatchObject({
       phase: ROOM_PHASES.IN_PROGRESS,
-      opponent: { isConnected: false, forfeitRemainingMs: DISCONNECT_FORFEIT_MS },
+      opponent: { isConnected: false, forfeitRemainingMs: DISCONNECT_FORFEIT_MS - START_COUNTDOWN_MS },
       battle: { isPaused: true },
     });
   });
@@ -826,14 +837,20 @@ describe('disconnect forfeit', () => {
 
   it('sends the other player back to WAITING_FOR_OPPONENT when a seat is forfeited in placement', async () => {
     await start();
-    const { p1, p2, roomId, sessions } = await placingPlayers();
-    await send(p2, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements(placedFleet(P2_FLEET_SEED)) });
+    const { p1, p2, roomId, sessions } = await seatedPlayers();
+    // P1 confirms the rules and drops; P2 confirms late enough that P1's forfeit falls before the placement deadline.
+    expect(await send(p1, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 })).toEqual({ ok: true });
     await p2.inbox.state();
-    await p1.inbox.state();
     p1.socket.close();
     await p2.inbox.state();
+    const beforeForfeit = 10_000;
+    clock.advance(DISCONNECT_FORFEIT_MS - PLACEMENT_TIME_LIMIT_MS + beforeForfeit);
+    expect(await send(p2, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 })).toEqual({ ok: true });
+    expect((await p2.inbox.state()).placement?.remainingMs).toBe(PLACEMENT_TIME_LIMIT_MS);
+    await send(p2, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements(placedFleet(P2_FLEET_SEED)) });
+    await p2.inbox.state();
 
-    clock.advance(DISCONNECT_FORFEIT_MS);
+    clock.advance(PLACEMENT_TIME_LIMIT_MS - beforeForfeit);
     expect(await p2.inbox.state()).toMatchObject({
       phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
       me: { seat: SEATS.P2, nickname: 'Bob', isConnected: true },
@@ -858,9 +875,14 @@ describe('disconnect forfeit', () => {
       phase: ROOM_PHASES.RULES_NEGOTIATION,
       opponent: { seat: SEATS.P1, nickname: 'Carol' },
     });
+    // The freed seat stopped the placement timer: the old deadline passes without ending anything.
+    clock.advance(beforeForfeit);
     await agreeOnRules(carol, p2);
     await carol.inbox.states(2);
-    expect(await p2.inbox.states(2)).toMatchObject({ phase: ROOM_PHASES.PLACEMENT, placement: { myShips: [] } });
+    expect(await p2.inbox.states(2)).toMatchObject({
+      phase: ROOM_PHASES.PLACEMENT,
+      placement: { myShips: [], remainingMs: PLACEMENT_TIME_LIMIT_MS },
+    });
   });
 });
 
@@ -932,6 +954,7 @@ describe('LEAVE_ROOM', () => {
       await send(from, CLIENT_EVENTS.UPDATE_PLACEMENT, { ships: placements(placedFleet(seed)) });
       await send(from, CLIENT_EVENTS.CONFIRM_PLACEMENT, {});
     }
+    clock.advance(START_COUNTDOWN_MS);
     expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
     // The shot went out before the server read the probe below, so on the leaver's connection it would come first.
     await expectNothingPending(p2);

@@ -5,6 +5,7 @@ import {
   DEFAULT_RULES,
   ERROR_CODES,
   GAME_OVER_REASONS,
+  completeFleet,
   ORIENTATIONS,
   PLACEMENT_TIME_LIMIT_MS,
   PLACEMENT_VIOLATIONS,
@@ -15,9 +16,11 @@ import {
   SERVER_EVENTS,
   SHIP_TYPES,
   SHOT_OUTCOMES,
+  START_COUNTDOWN_MS,
   TARGET_VIOLATIONS,
   TIMEOUT_ACTIONS,
   toPlacedShip,
+  validateFleet,
   type Coordinate,
   type GameRules,
   type RoomPhase,
@@ -27,8 +30,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyCommand,
+  endPlacement,
+  placementEndsAt,
   type GameOverRoom,
   type NegotiationRoom,
+  type PlacementRoom,
   type RoomCommand,
   type RoomState,
   type SeatCommand,
@@ -225,6 +231,7 @@ describe('rules negotiation', () => {
       disconnectedAt: { P1: null, P2: null },
       fleets: { P1: { ships: [], hasConfirmed: false }, P2: { ships: [], hasConfirmed: false } },
       deadline: NOW + 5_000 + PLACEMENT_TIME_LIMIT_MS,
+      countdownEndsAt: null,
     });
   });
 
@@ -324,27 +331,165 @@ describe('placement', () => {
         .state,
     ).toBe(draft);
   });
+});
 
-  it('starts the battle when both fleets are confirmed, P1 first, with no effect', () => {
-    const p1Confirmed = placeAndConfirm(placementRoom(), SEATS.P1, fleet(1));
-    const placed = apply(p1Confirmed, {
-      type: CLIENT_EVENTS.UPDATE_PLACEMENT,
-      seat: SEATS.P2,
-      payload: { ships: fleet(2) },
-    });
-    const result = expectAccepted(
-      applyCommand(placed, { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat: SEATS.P2, payload: {} }, NOW),
-    );
+/** P1's fleet confirmed and P2's complete draft placed, so P2's confirmation is the second one. */
+function oneConfirmed(): RoomState {
+  return apply(placeAndConfirm(placementRoom(), SEATS.P1, fleet(1)), {
+    type: CLIENT_EVENTS.UPDATE_PLACEMENT,
+    seat: SEATS.P2,
+    payload: { ships: fleet(2) },
+  });
+}
+
+const CONFIRM_P2: SeatCommand = { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat: SEATS.P2, payload: {} };
+const UNLOCK_P1: SeatCommand = { type: CLIENT_EVENTS.UNLOCK_PLACEMENT, seat: SEATS.P1, payload: {} };
+const CONFIRM_P1: SeatCommand = { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat: SEATS.P1, payload: {} };
+/** The deadline of every `placementRoom()`. */
+const DEADLINE = NOW + PLACEMENT_TIME_LIMIT_MS;
+
+describe('the start countdown (ADR-0006, ADR-0090)', () => {
+  it('starts on the second confirmation, START_COUNTDOWN_MS from it, and leaves the match to the timer', () => {
+    const result = expectAccepted(applyCommand(oneConfirmed(), CONFIRM_P2, NOW + 1_000));
     expect(result.effects).toEqual([]);
     expect(result.state).toMatchObject({
+      phase: ROOM_PHASES.PLACEMENT,
+      countdownEndsAt: NOW + 1_000 + START_COUNTDOWN_MS,
+    });
+    expect(placementEndsAt(result.state as PlacementRoom)).toBe(NOW + 1_000 + START_COUNTDOWN_MS);
+  });
+
+  it('does not run while only one fleet is confirmed: placement ends at the deadline', () => {
+    const state = oneConfirmed() as PlacementRoom;
+    expect(state.countdownEndsAt).toBeNull();
+    expect(placementEndsAt(state)).toBe(DEADLINE);
+  });
+
+  it('is capped by the deadline', () => {
+    const state = apply(oneConfirmed(), CONFIRM_P2, DEADLINE - 2_000);
+    expect(state).toMatchObject({ countdownEndsAt: DEADLINE });
+  });
+
+  it('is cancelled by an unlock from either player', () => {
+    const counting = apply(oneConfirmed(), CONFIRM_P2, NOW + 1_000);
+    for (const seat of Object.values(SEATS)) {
+      const unlocked = apply(counting, { type: CLIENT_EVENTS.UNLOCK_PLACEMENT, seat, payload: {} });
+      expect(unlocked).toMatchObject({ countdownEndsAt: null, fleets: { [seat]: { hasConfirmed: false } } });
+      expect(placementEndsAt(unlocked as PlacementRoom)).toBe(DEADLINE);
+    }
+  });
+
+  it('restarts from the new confirmation, still capped by the deadline', () => {
+    const counting = apply(oneConfirmed(), CONFIRM_P2, NOW + 1_000);
+    const unlocked = apply(counting, UNLOCK_P1, NOW + 3_000);
+    expect(apply(unlocked, CONFIRM_P1, NOW + 4_000)).toMatchObject({
+      countdownEndsAt: NOW + 4_000 + START_COUNTDOWN_MS,
+    });
+    expect(apply(unlocked, CONFIRM_P1, DEADLINE - 1_000)).toMatchObject({ countdownEndsAt: DEADLINE });
+  });
+
+  it('is not moved by a repeated confirmation', () => {
+    const counting = apply(oneConfirmed(), CONFIRM_P2, NOW + 1_000);
+    expect(expectAccepted(applyCommand(counting, CONFIRM_P2, NOW + 2_000)).state).toBe(counting);
+  });
+
+  it('lets a confirmation that reaches the room at the deadline win, with a countdown of zero', () => {
+    const late = apply(oneConfirmed(), CONFIRM_P2, DEADLINE);
+    expect(late).toMatchObject({ countdownEndsAt: DEADLINE });
+    const ended = endPlacement(late as PlacementRoom, DEADLINE, createSeededRng(0));
+    expect(ended?.completedSeats).toEqual([]);
+    expect(ended?.state.battle.boards.P2.ships).toEqual(fleet(2).map(toPlacedShip));
+  });
+});
+
+describe('the end of placement (ADR-0090, ADR-0091)', () => {
+  it('waits for the countdown, then starts the battle with the confirmed fleets, P1 first, completing none', () => {
+    const counting = apply(oneConfirmed(), CONFIRM_P2, NOW + 1_000) as PlacementRoom;
+    const endsAt = NOW + 1_000 + START_COUNTDOWN_MS;
+    expect(endPlacement(counting, endsAt - 1, createSeededRng(0))).toBeNull();
+    const ended = endPlacement(counting, endsAt, createSeededRng(0));
+    expect(ended?.completedSeats).toEqual([]);
+    expect(ended?.state).toMatchObject({
       phase: ROOM_PHASES.IN_PROGRESS,
       battle: { currentTurn: SEATS.P1 },
       draftTargets: [],
+      isPaused: false,
     });
-    expect(result.state.phase === ROOM_PHASES.IN_PROGRESS && result.state.battle.boards).toEqual({
+    expect(ended?.state.battle.boards).toEqual({
       P1: { ships: fleet(1).map(toPlacedShip), shots: [] },
       P2: { ships: fleet(2).map(toPlacedShip), shots: [] },
     });
+  });
+
+  it('waits for the deadline while a fleet is unconfirmed', () => {
+    expect(endPlacement(placementRoom(), DEADLINE - 1, createSeededRng(0))).toBeNull();
+  });
+
+  it('completes an unconfirmed fleet from its draft at the deadline and keeps the confirmed one', () => {
+    const carrier = { type: SHIP_TYPES.CARRIER, start: cell(2, 3), orientation: ORIENTATIONS.VERTICAL };
+    const drafted = apply(placeAndConfirm(placementRoom(), SEATS.P1, fleet(1)), {
+      type: CLIENT_EVENTS.UPDATE_PLACEMENT,
+      seat: SEATS.P2,
+      payload: { ships: [carrier] },
+    }) as PlacementRoom;
+    const ended = endPlacement(drafted, DEADLINE, createSeededRng(5));
+    expect(ended?.completedSeats).toEqual([SEATS.P2]);
+    expect(ended?.state.battle.boards.P1.ships).toEqual(fleet(1).map(toPlacedShip));
+    const completed = ended?.state.battle.boards.P2.ships ?? [];
+    expect(completed).toEqual(completeFleet([carrier], DEFAULT_RULES, createSeededRng(5)));
+    expect(completed).toContainEqual(toPlacedShip(carrier));
+    expect(validateFleet(completed, DEFAULT_RULES).ok).toBe(true);
+  });
+
+  it('completes from the last accepted draft: a refused update leaves it as it was', () => {
+    const carrier = { type: SHIP_TYPES.CARRIER, start: cell(0, 0), orientation: ORIENTATIONS.HORIZONTAL };
+    const drafted = apply(placementRoom(), {
+      type: CLIENT_EVENTS.UPDATE_PLACEMENT,
+      seat: SEATS.P1,
+      payload: { ships: [carrier] },
+    });
+    const offBoard = { type: SHIP_TYPES.CARRIER, start: cell(8, 0), orientation: ORIENTATIONS.HORIZONTAL };
+    expect(
+      applyCommand(
+        drafted,
+        { type: CLIENT_EVENTS.UPDATE_PLACEMENT, seat: SEATS.P1, payload: { ships: [offBoard] } },
+        NOW,
+      ),
+    ).toMatchObject({ ok: false, error: ERROR_CODES.INVALID_PLACEMENT });
+    const ended = endPlacement(drafted as PlacementRoom, DEADLINE, createSeededRng(5));
+    expect(ended?.state.battle.boards.P1.ships).toContainEqual(toPlacedShip(carrier));
+  });
+
+  it('keeps a complete draft that was never confirmed as it is', () => {
+    const drafted = apply(placementRoom(), {
+      type: CLIENT_EVENTS.UPDATE_PLACEMENT,
+      seat: SEATS.P1,
+      payload: { ships: fleet(1) },
+    }) as PlacementRoom;
+    const ended = endPlacement(drafted, DEADLINE, createSeededRng(5));
+    expect(ended?.completedSeats).toEqual([SEATS.P1, SEATS.P2]);
+    expect(ended?.state.battle.boards.P1.ships).toEqual(fleet(1).map(toPlacedShip));
+  });
+
+  it('completes both fleets, P1 first, from one Rng, the same for the same seed', () => {
+    const ended = endPlacement(placementRoom(), DEADLINE, createSeededRng(9));
+    expect(ended?.completedSeats).toEqual([SEATS.P1, SEATS.P2]);
+    const rng = createSeededRng(9);
+    const expected = { P1: completeFleet([], DEFAULT_RULES, rng), P2: completeFleet([], DEFAULT_RULES, rng) };
+    expect(ended?.state.battle.boards).toEqual({
+      P1: { ships: expected.P1, shots: [] },
+      P2: { ships: expected.P2, shots: [] },
+    });
+    expect(endPlacement(placementRoom(), DEADLINE, createSeededRng(9))).toEqual(ended);
+  });
+
+  it('completes under the agreed rules', () => {
+    const edited = expectAccepted(updateRules(negotiationRoom(), SEATS.P1, EDITED_RULES)).state;
+    const agreed = expectAccepted(confirmRules(expectAccepted(confirmRules(edited, SEATS.P1, 1)).state, SEATS.P2, 1));
+    const placement = agreed.state as PlacementRoom;
+    const ended = endPlacement(placement, placement.deadline, createSeededRng(3));
+    expect(ended?.state.rules).toEqual(EDITED_RULES);
+    expect(ended?.state.battle.boards.P1.ships).toEqual(completeFleet([], EDITED_RULES, createSeededRng(3)));
   });
 });
 

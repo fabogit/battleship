@@ -41,11 +41,13 @@ battleship/
     ├── server/
     │   ├── src/
     │   │   ├── room/                  # Room logic, no timers, sockets or I/O (server.md#room-logic)
-    │   │   │   ├── room.ts            # RoomState per phase, createRoom, applyCommand(state, command, now) → state + effects
+    │   │   │   ├── room.ts            # RoomState per phase, createRoom, applyCommand(state, command, now) → state + effects,
+    │   │   │   │                      # endPlacement at the countdown's end or the deadline (D90, D91)
     │   │   │   ├── snapshot.ts        # projectSnapshot(state, seat, now): one player's snapshot, with fog-of-war
     │   │   │   ├── presence.ts        # Seat presence: drops, returns, disconnect forfeit, LEAVE_ROOM (D72, D73)
     │   │   │   ├── room-manager.ts    # RoomManager: rooms by id, room ids, secrets, MAX_ROOMS cap, presence, remove
-    │   │   │   └── room-timers.ts     # RoomTimers: one timer per room and kind (forfeit, game-over TTL; turn timer later) (D65)
+    │   │   │   └── room-timers.ts     # RoomTimers: one timer per room and kind (placement, forfeit, game-over TTL; turn timer
+    │   │   │                          # later) (D65, D90)
     │   │   ├── plugins/               # fastify-plugin wrapped, composed by createServer (server.md#plugins)
     │   │   │   ├── origin-policy.ts   # HTTP side of the origin policy: 403 onRequest hook + @fastify/cors (D21)
     │   │   │   ├── socket-io.ts       # Socket.io on the HTTP server: allowRequest origin check, 16 KiB cap, app.io, logs
@@ -61,7 +63,7 @@ battleship/
     │   │   ├── server.ts              # createServer: plugins + /health; rooms and clock injectable for tests
     │   │   ├── shutdown.ts            # SIGTERM/SIGINT → app.close(); repeats ignored, 10 s deadline (D27)
     │   │   └── index.ts               # Entry point: config, server, signal handling, listen
-    │   │                              # Not yet: placement and turn timers (#28, #30)
+    │   │                              # Not yet: turn timer (#30)
     │   ├── scripts/echo-client.ts     # Production smoke test: handshake + ECHO round trip (D48)
     │   ├── .env.example               # Local PORT / ALLOWED_ORIGINS / LOG_* / TRUST_PROXY_HOPS: copy to .env
     │   └── test/                      # Vitest: room/ unit tests (seeded fleets, fake clock) + socket integration tests,
@@ -206,6 +208,8 @@ Decision: [ADR-0089](adr/0089-e2e-time-control.md).
 | `leave-room.spec.ts`               | "Leave room" during placement: the leaver is on the home screen, the other player sees "Grace left the room, …" and the waiting screen.                                                                                                                                                                                                                                                                                                                        |
 | `disconnect-forfeit.spec.ts`       | A page closed mid-match: the opponent's banner and countdown, a clock skip of `DISCONNECT_FORFEIT_MS`, the win by forfeit, the loss on return.                                                                                                                                                                                                                                                                                                                 |
 | `layout.spec.ts`                   | 320×568 (touch) and 1280×800, light and dark: no sideways scroll; "Leave room" in view at the top of the page in the lobby, the rules screen and placement; "Confirm rules" at the top of the page; "Confirm fleet", under the placement board, whole once scrolled to; "Fire" at the top on the laptop, once scrolled to on the phone (in view without a scroll: #31); the share dialog whole and not scrolling, with a stubbed `navigator.share` that fails. |
+| `placement-deadline.spec.ts`       | One fleet confirmed, the other never placed: a clock skip of `PLACEMENT_TIME_LIMIT_MS` completes and locks the empty one (17 ship cells on that player's board), and the battle starts with the confirmed fleet unchanged ([ADR-0090](adr/0090-placement-timer.md)).                                                                                                                                                                                           |
+| `start-countdown.spec.ts`          | Both fleets confirmed: both see the start countdown; an unlock removes it on both sides and a skip of `START_COUNTDOWN_MS` starts nothing; a re-confirmation shows a new countdown, and its end starts the battle.                                                                                                                                                                                                                                             |
 | `custom-rules.spec.ts`             | Custom rules agreed by both ("Ships may touch" on, 60 seconds per turn, "Pass the turn"): each sees the other's edits and their notices, and the other's confirmation; then placement takes five ships in touching rows and the server locks the fleet.                                                                                                                                                                                                        |
 
 - **Run:** `pnpm e2e` at the root. Playwright starts the stack (`webServer` in `playwright.config.ts`), runs the journeys one at a time and stops the stack. Arguments go to Playwright: `pnpm e2e journeys/reload.spec.ts`, `pnpm e2e -g layout`, `pnpm e2e --repeat-each=3`, `pnpm e2e --headed`. A run takes about a minute, half of it the client build.
@@ -226,9 +230,9 @@ Decision: [ADR-0089](adr/0089-e2e-time-control.md).
 - **Errors fail the journey:** every page error and console error of a player's context is collected, and the journey fails at its end with the list ("no page or console errors").
 - **Adding a journey:** a new `journeys/<name>.spec.ts`, importing `test` and `expect` from `../src/fixtures.ts`.
   - Each player is `openPlayer(nickname, contextOptions)`: a browser context of their own, as a separate device; a viewport, touch or a color scheme go in the options. A new page in the same context is the same player (the session lives in the context's storage).
-  - Selectors go by ARIA role and the client's `*_TEXT` constants, imported from its sources (`../../client/src/app/…/*.text`), never retyped. Shared steps live in `src/flows.ts` (`createRoom`, `joinRoom`, `agreeOnRules`, `enterPlacement`, `confirmRandomFleet`, `startBattle`, `fire`, `shipCells`).
+  - Selectors go by ARIA role and the client's `*_TEXT` constants, imported from its sources (`../../client/src/app/…/*.text`), never retyped. Shared steps live in `src/flows.ts` (`createRoom`, `joinRoom`, `agreeOnRules`, `enterPlacement`, `confirmRandomFleet`, `endStartCountdown`, `startBattle`, `fire`, `shipCells`). `endStartCountdown` waits until both pages show the start countdown and skips the server clock past it, so no journey waits `START_COUNTDOWN_MS` in real time; `startBattle` takes the `skipServerClock` fixture for it.
   - Only web-first assertions (`await expect(locator).toHave…`, `expect.poll`), no `waitForTimeout`.
   - A server timer is reached with `skipServerClock(ms)`, after the journey has seen the state the timer belongs to (the opponent shown as away, say). `page.clock` is only for a countdown the page runs by itself between snapshots, on that page only (ADR-0089).
-  - A run opens about 9 rooms, which close within 5 minutes of real time; `MAX_ROOMS` (50) therefore allows `--repeat-each` up to 5 on one server.
+  - A run opens about 11 rooms, which close within 5 minutes of real time; `MAX_ROOMS` (50) therefore allows `--repeat-each` up to 4 on one server.
 - **The full match is short by construction:** Ada fires only at the 17 cells of Grace's fleet, read from Grace's own board ("B7, ship"), and Grace only at Ada's empty water, so the match ends after 33 shots, about 9 s on a laptop.
-- **CI (`e2e` job):** `pnpm install --frozen-lockfile`, the Playwright browser cache (`~/.cache/ms-playwright`, keyed by the Playwright version), `playwright install --with-deps chromium` (the download is skipped on a cache hit; the system libraries are installed every time), `pnpm e2e`, and on failure the upload of the report and traces. The job is not part of the ruleset's required checks; that is the maintainer's call.
+- **CI (`e2e` job):** `pnpm install --frozen-lockfile`, the Playwright browser cache (`~/.cache/ms-playwright`, keyed by the Playwright version), `playwright install --with-deps chromium` (the download is skipped on a cache hit; the system libraries are installed every time), `pnpm e2e`, and on failure the upload of the report and traces. The job is one of the ruleset's required checks, next to `ci`.
