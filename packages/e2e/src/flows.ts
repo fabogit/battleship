@@ -1,7 +1,7 @@
 // Steps the journeys share: entering a room, agreeing on the rules, placing a fleet, firing. Selectors go by ARIA role and the client's own
 // text constants, imported from its sources, so a reworded label changes the journeys with it.
 
-import { BOARD_SIZE, START_COUNTDOWN_MS } from '@battleship/core';
+import { BOARD_SIZE, DEFAULT_RULES, DICE_ANIMATION_MS, START_COUNTDOWN_MS, type TimeoutAction } from '@battleship/core';
 import type { Locator, Page } from '@playwright/test';
 
 import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
@@ -77,6 +77,18 @@ export async function shipCells(grid: Locator): Promise<string[]> {
 }
 
 /**
+ * Lists the cells of a board that a shot has landed on, whatever it found.
+ * @param grid The board, once it shows.
+ * @returns Their names, e.g. `B7`, row by row.
+ */
+export async function firedCells(grid: Locator): Promise<string[]> {
+  const outcomes = [BOARD_GRID_TEXT.states.miss, BOARD_GRID_TEXT.states.hit, BOARD_GRID_TEXT.states.sunk];
+  return (await cellLabels(grid))
+    .filter((label) => outcomes.some((outcome) => label.endsWith(`, ${outcome ?? ''}`)))
+    .map((label) => label.slice(0, label.indexOf(',')));
+}
+
+/**
  * Creates a room from the home screen and waits for the lobby.
  * @param player The creator, on a blank page.
  * @returns The room's link, as the lobby shows it.
@@ -121,14 +133,25 @@ export async function agreeOnRules(players: readonly [Player, Player]): Promise<
 }
 
 /**
- * Creates a room, joins it and agrees on the default rules: the shortest way into placement.
+ * Creates a room, joins it and agrees on the rules: the shortest way into placement.
  * @param creator The player who creates the room and sits in `P1`.
  * @param joiner The player who joins it.
+ * @param timeoutAction What a turn that runs out of time does; any other than the default is picked by the creator,
+ * and the joiner sees it before both confirm.
  * @returns The room's link.
  */
-export async function enterPlacement(creator: Player, joiner: Player): Promise<string> {
+export async function enterPlacement(
+  creator: Player,
+  joiner: Player,
+  timeoutAction: TimeoutAction = DEFAULT_RULES.timeoutAction,
+): Promise<string> {
   const roomUrl = await createRoom(creator);
   await joinRoom(joiner, roomUrl);
+  if (timeoutAction !== DEFAULT_RULES.timeoutAction) {
+    const name = RULES_TEXT.timeoutActions[timeoutAction];
+    await creator.page.getByRole('radio', { name }).click();
+    await expect(joiner.page.getByRole('radio', { name })).toBeChecked();
+  }
   await agreeOnRules([creator, joiner]);
   return roomUrl;
 }
@@ -162,19 +185,21 @@ export async function endStartCountdown(
 }
 
 /**
- * Creates a room, joins it, agrees on the default rules, confirms two random fleets and skips the start countdown: the
- * shortest way into the battle.
+ * Creates a room, joins it, agrees on the rules, confirms two random fleets and skips the start countdown: the shortest
+ * way into the battle.
  * @param creator The player who creates the room and sits in `P1`.
  * @param joiner The player who joins it.
  * @param skipServerClock The journey's `skipServerClock` fixture.
+ * @param timeoutAction What a turn that runs out of time does; the default rules' by default.
  * @returns The room's link.
  */
 export async function startBattle(
   creator: Player,
   joiner: Player,
   skipServerClock: JourneyFixtures['skipServerClock'],
+  timeoutAction: TimeoutAction = DEFAULT_RULES.timeoutAction,
 ): Promise<string> {
-  const roomUrl = await enterPlacement(creator, joiner);
+  const roomUrl = await enterPlacement(creator, joiner, timeoutAction);
   await confirmRandomFleet(creator);
   await confirmRandomFleet(joiner);
   await endStartCountdown([creator, joiner], skipServerClock);
@@ -205,6 +230,32 @@ export async function firstShooter(players: readonly [Player, Player]): Promise<
     throw new Error('no shooter');
   }
   return shooter;
+}
+
+/**
+ * Waits for the dice animation's end on both pages, skipping the server clock to it, so the first turn's timer runs
+ * (ADR-0093): each page shows the whole turn time.
+ * @param players The two players, both in the battle.
+ * @param skipServerClock The journey's `skipServerClock` fixture.
+ */
+export async function startTurnTimer(
+  players: readonly [Player, Player],
+  skipServerClock: JourneyFixtures['skipServerClock'],
+): Promise<void> {
+  await skipServerClock(DICE_ANIMATION_MS);
+  for (const { page } of players) {
+    await expect(turnTimer(page)).toBeVisible();
+  }
+}
+
+/**
+ * The turn's time left, while the snapshot carries one.
+ * @param page The player's page.
+ * @returns The `timer` reading "Time left: m:ss".
+ */
+export function turnTimer(page: Page): Locator {
+  const pattern = new RegExp(`^${escape(BATTLE_TEXT.timeLeft('@')).replace('@', '\\d+:\\d{2}')}$`);
+  return page.getByRole('timer').filter({ hasText: pattern });
 }
 
 /**

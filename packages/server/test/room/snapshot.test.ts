@@ -171,14 +171,30 @@ describe('projectSnapshot', () => {
     expect(projectSnapshot(bothConfirmed, SEATS.P1, pastEnd).placement?.startCountdownMs).toBe(0);
   });
 
-  // ADR-0093: no turn time during the dice animation; the turn timer (#30) sets it from `firstTurnStartsAt` on.
-  it('shows no turn time while the dice animation plays, nor after it until the turn timer lands', () => {
+  // ADR-0093, ADR-0099: no turn time during the dice animation, then the whole turn time counting down.
+  it('shows no turn time while the dice animation plays, then the time left at the moment of the projection', () => {
     const state = battleRoom();
-    for (const at of [state.firstTurnStartsAt - 1, state.firstTurnStartsAt, state.firstTurnStartsAt + 60_000]) {
-      for (const seat of Object.values(SEATS)) {
-        expect(projectSnapshot(state, seat, at).battle?.turnRemainingMs).toBeNull();
-      }
+    const startsAt = state.turnTimerStartsAt;
+    for (const seat of Object.values(SEATS)) {
+      expect(projectSnapshot(state, seat, startsAt - 1).battle?.turnRemainingMs).toBeNull();
+      expect(projectSnapshot(state, seat, startsAt).battle?.turnRemainingMs).toBe(30_000);
+      expect(projectSnapshot(state, seat, startsAt + 12_345).battle?.turnRemainingMs).toBe(30_000 - 12_345);
+      expect(projectSnapshot(state, seat, startsAt + 60_000).battle?.turnRemainingMs).toBe(0);
     }
+  });
+
+  it('shows the frozen turn time while the match is paused, whatever the time of the projection', () => {
+    const state = { ...battleRoom(), isPaused: true, turnTimeLeftMs: 12_000 };
+    for (const at of [state.turnTimerStartsAt, state.turnTimerStartsAt + 60_000]) {
+      expect(projectSnapshot(state, SEATS.P1, at).battle?.turnRemainingMs).toBe(12_000);
+    }
+    expect(projectSnapshot(state, SEATS.P1, state.turnTimerStartsAt - 1).battle?.turnRemainingMs).toBeNull();
+  });
+
+  it('shows each AFK count from the receiver’s side', () => {
+    const state = { ...battleRoom(), afkCount: { P1: 2, P2: 1 } };
+    expect(projectSnapshot(state, SEATS.P1, NOW).battle?.afkCount).toEqual({ me: 2, opponent: 1 });
+    expect(projectSnapshot(state, SEATS.P2, NOW).battle?.afkCount).toEqual({ me: 1, opponent: 2 });
   });
 
   it('shows the draft targets to the active player only', () => {

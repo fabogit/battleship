@@ -149,11 +149,11 @@ The number of targets a turn fires (`shotsAllowed`): 1 in standard mode; in salv
 _Avoid_: shot count
 
 **Auto shot**:
-A shot the server fires for a player when the turn times out under `AUTO_RANDOM_SHOT`, uniformly random among unshot cells.
+A shot the server fires for a player when the turn times out under `AUTO_RANDOM_SHOT`: the draft's valid targets, the rest uniformly random among unshot cells. It is resolved and sent like a fired shot.
 _Avoid_: AI shot
 
 **AFK**:
-A turn that ended on its timer instead of a `FIRE`. Every one increments the player's AFK counter; any `FIRE` resets it.
+A turn that ended on its timer instead of a `FIRE`. Every one increments the player's AFK counter; the player's own `FIRE` resets it, a draft does not.
 _Avoid_: idle, inactive
 
 **Pause**:

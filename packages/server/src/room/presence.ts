@@ -13,6 +13,8 @@ import {
 
 import {
   endMatch,
+  pauseTurnTimer,
+  resumeTurnTimer,
   type NegotiationRoom,
   type PlacementRoom,
   type RejectedTransition,
@@ -40,11 +42,11 @@ export interface LeftRoom {
 }
 
 /**
- * Records that a seat lost its last socket (ADR-0072): its forfeit clock starts, and a match in progress pauses
- * (ADR-0008). A seat already away, or an empty one, is left as it is.
+ * Records that a seat lost its last socket (ADR-0072): its forfeit clock starts, and a match in progress pauses, which
+ * freezes the turn timer (ADR-0008, ADR-0074). A seat already away, or an empty one, is left as it is.
  * @param state The room, in any phase.
  * @param seat The seat no socket is bound to any more.
- * @param now Current time in epoch ms; the forfeit clock counts from it.
+ * @param now Current time in epoch ms; the forfeit clock counts from it, and the turn timer freezes at it.
  * @returns The room after the drop; the same object when nothing changed.
  */
 export function disconnectSeat(state: RoomState, seat: Seat, now: number): RoomState {
@@ -53,25 +55,28 @@ export function disconnectSeat(state: RoomState, seat: Seat, now: number): RoomS
   }
   const disconnectedAt = { ...state.disconnectedAt, [seat]: now };
   return state.phase === ROOM_PHASES.IN_PROGRESS
-    ? { ...state, disconnectedAt, isPaused: true }
+    ? pauseTurnTimer({ ...state, disconnectedAt }, now)
     : { ...state, disconnectedAt };
 }
 
 /**
  * Records that a socket is bound to a seat again (ADR-0072): its forfeit clock stops, and a paused match resumes once
- * both seats are connected (ADR-0074). A connected seat is left as it is.
+ * both seats are connected, its turn timer running again with the time it had left (ADR-0074). A connected seat is
+ * left as it is.
  * @param state The room, in any phase.
  * @param seat The seat a socket came back to.
+ * @param now Current time in epoch ms; a resumed turn timer runs from it.
  * @returns The room after the return; the same object when nothing changed.
  */
-export function reconnectSeat(state: RoomState, seat: Seat): RoomState {
+export function reconnectSeat(state: RoomState, seat: Seat, now: number): RoomState {
   if (state.disconnectedAt[seat] === null) {
     return state;
   }
   const disconnectedAt = { ...state.disconnectedAt, [seat]: null };
   if (state.phase === ROOM_PHASES.IN_PROGRESS) {
     // The opponent may still be away: the match stays paused, and the returning player may resume it with SET_PAUSED.
-    return { ...state, disconnectedAt, isPaused: disconnectedAt[otherSeat(seat)] !== null };
+    const returned = { ...state, disconnectedAt };
+    return disconnectedAt[otherSeat(seat)] === null ? resumeTurnTimer(returned, now) : returned;
   }
   return { ...state, disconnectedAt };
 }

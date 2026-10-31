@@ -239,28 +239,61 @@ export function resolveTurn(battle: Battle, targets: readonly Coordinate[], rule
  * @param battle The battle before the turn; `currentTurn` is the shooter.
  * @param count How many targets to pick, normally `shotsAllowed(battle, rules)`.
  * @param rng Source of the draw; the same battle and seed give the same targets.
+ * @param excluded Cells to leave out besides those already shot, such as the draft targets an auto shot keeps
+ * (`autoShotTargets`); none by default.
  * @returns `count` new coordinates, in firing order.
- * @throws `RangeError` when `count` is not an integer from 0 to the number of unshot cells.
+ * @throws `RangeError` when `count` is not an integer from 0 to the number of cells left to pick from.
  * @example
  * resolveTurn(battle, randomTargets(battle, shotsAllowed(battle, rules), rng), rules);
  */
-export function randomTargets(battle: Battle, count: number, rng: Rng): Coordinate[] {
+export function randomTargets(
+  battle: Battle,
+  count: number,
+  rng: Rng,
+  excluded: readonly Coordinate[] = [],
+): Coordinate[] {
   const board = battle.boards[otherSeat(battle.currentTurn)];
-  const shotCells = new Set(board.shots.map((shot) => toCellIndex(shot.coordinate)));
-  const unshotCells: Coordinate[] = [];
+  const takenCells = new Set([...board.shots.map((shot) => shot.coordinate), ...excluded].map(toCellIndex));
+  const freeCells: Coordinate[] = [];
   for (let y = 0; y < BOARD_SIZE; y++) {
     for (let x = 0; x < BOARD_SIZE; x++) {
-      if (!shotCells.has(toCellIndex({ x, y }))) {
-        unshotCells.push({ x, y });
+      if (!takenCells.has(toCellIndex({ x, y }))) {
+        freeCells.push({ x, y });
       }
     }
   }
-  if (!Number.isInteger(count) || count < 0 || count > unshotCells.length) {
+  if (!Number.isInteger(count) || count < 0 || count > freeCells.length) {
     throw new RangeError(
-      `Invalid target count: ${String(count)} (expected an integer from 0 to ${String(unshotCells.length)})`,
+      `Invalid target count: ${String(count)} (expected an integer from 0 to ${String(freeCells.length)})`,
     );
   }
-  return rng.shuffle(unshotCells).slice(0, count);
+  return rng.shuffle(freeCells).slice(0, count);
+}
+
+/**
+ * Picks the targets of a turn that ran out of time with the `AUTO_RANDOM_SHOT` timeout action
+ * (docs/domain.md#shot-engine): the draft's targets that are still valid, in draft order, then random ones from
+ * `randomTargets` for the rest. A target is kept when it is on the board, never shot and not already kept, up to
+ * `count`; the others are dropped. The result passes `resolveTurn` when `count` is `shotsAllowed`.
+ * @param battle The battle before the turn; `currentTurn` is the shooter.
+ * @param draft The shooter's draft targets, as the room stored them; any list is safe.
+ * @param count How many targets the turn fires, normally `shotsAllowed(battle, rules)`.
+ * @param rng Source of the random targets; drawn from even when the draft fills the turn, so the draws after it do not
+ * depend on the draft.
+ * @returns `count` coordinates, the kept draft targets first.
+ * @throws `RangeError` when `count` is not an integer from 0 to the number of unshot cells.
+ * @example
+ * autoShotTargets(battle, [{ x: 3, y: 3 }], 1, rng); // [{ x: 3, y: 3 }] when C4 was never shot
+ */
+export function autoShotTargets(battle: Battle, draft: readonly Coordinate[], count: number, rng: Rng): Coordinate[] {
+  const shots = battle.boards[otherSeat(battle.currentTurn)].shots;
+  const kept: Coordinate[] = [];
+  for (const target of draft) {
+    if (kept.length < count && validateTargets([...kept, target], shots, kept.length + 1).ok) {
+      kept.push({ x: target.x, y: target.y });
+    }
+  }
+  return [...kept, ...randomTargets(battle, count - kept.length, rng, kept)];
 }
 
 /**

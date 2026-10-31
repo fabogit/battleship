@@ -7,7 +7,9 @@ import {
   ERROR_CODES,
   GAME_OVER_REASONS,
   completeFleet,
+  MAX_CONSECUTIVE_AFK_TURNS,
   ORIENTATIONS,
+  otherSeat,
   PLACEMENT_TIME_LIMIT_MS,
   PLACEMENT_VIOLATIONS,
   randomTargets,
@@ -26,6 +28,7 @@ import {
   type Coordinate,
   type GameRules,
   type RoomPhase,
+  type Seat,
   type ShotResult,
 } from '@battleship/core';
 import { describe, expect, it } from 'vitest';
@@ -34,7 +37,12 @@ import { disconnectSeat } from '../../src/room/presence.js';
 import {
   applyCommand,
   endPlacement,
+  nextTurnTimerAt,
+  pauseTurnTimer,
   placementEndsAt,
+  resumeTurnTimer,
+  timeOutTurn,
+  turnTimerEndsAt,
   type BattleRoom,
   type GameOverRoom,
   type NegotiationRoom,
@@ -565,11 +573,12 @@ describe('the dice roll (ADR-0002, ADR-0092, ADR-0093)', () => {
   });
 
   it('starts the first turn timer DICE_ANIMATION_MS after the roll, however late the timer ran', () => {
-    expect(started(0).state.firstTurnStartsAt).toBe(STARTS_AT + DICE_ANIMATION_MS);
-    expect(started(0, STARTS_AT + 500).state.firstTurnStartsAt).toBe(STARTS_AT + 500 + DICE_ANIMATION_MS);
+    expect(started(0).state.turnTimerStartsAt).toBe(STARTS_AT + DICE_ANIMATION_MS);
+    expect(started(0, STARTS_AT + 500).state.turnTimerStartsAt).toBe(STARTS_AT + 500 + DICE_ANIMATION_MS);
+    expect(started(0).state).toMatchObject({ turnTimeLeftMs: 30_000, afkCount: { P1: 0, P2: 0 } });
   });
 
-  it('lets the starter draft and fire while the dice animation plays, and keeps when the first turn starts', () => {
+  it('lets the starter draft and fire while the dice animation plays, which starts the next turn timer at once', () => {
     const { state } = started(5);
     const during = STARTS_AT + 1;
     const drafted = apply(
@@ -584,7 +593,8 @@ describe('the dice roll (ADR-0002, ADR-0092, ADR-0093)', () => {
     );
     expect(fired).toMatchObject({
       battle: { currentTurn: SEATS.P1 },
-      firstTurnStartsAt: STARTS_AT + DICE_ANIMATION_MS,
+      turnTimerStartsAt: during,
+      turnTimeLeftMs: 30_000,
     });
   });
 
@@ -595,7 +605,8 @@ describe('the dice roll (ADR-0002, ADR-0092, ADR-0093)', () => {
     expect(ended?.state).toMatchObject({
       isPaused: true,
       battle: { currentTurn: SEATS.P2 },
-      firstTurnStartsAt: STARTS_AT + DICE_ANIMATION_MS,
+      turnTimerStartsAt: STARTS_AT + DICE_ANIMATION_MS,
+      turnTimeLeftMs: 30_000,
     });
   });
 });
@@ -673,9 +684,213 @@ describe('battle', () => {
   });
 });
 
+describe('the turn timer (ADR-0009, ADR-0074, ADR-0093, ADR-0099)', () => {
+  /** A turn under `DEFAULT_RULES`, in ms. */
+  const TURN_LIMIT_MS = DEFAULT_RULES.turnTimeLimitSeconds * 1_000;
+
+  /** The first turn of `battleRoom()`: who fires, the other seat, when the timer starts and when it ends. */
+  function firstTurn(): { state: BattleRoom; seat: Seat; opponent: Seat; startsAt: number; endsAt: number } {
+    const state = battleRoom();
+    const seat = state.battle.currentTurn;
+    return {
+      state,
+      seat,
+      opponent: otherSeat(seat),
+      startsAt: state.turnTimerStartsAt,
+      endsAt: state.turnTimerStartsAt + TURN_LIMIT_MS,
+    };
+  }
+
+  it('runs at the end of the dice animation, then at the end of the turn while the match runs', () => {
+    const { state, startsAt, endsAt } = firstTurn();
+    expect(turnTimerEndsAt(state)).toBe(endsAt);
+    expect(nextTurnTimerAt(state, startsAt - 1)).toBe(startsAt);
+    expect(nextTurnTimerAt(state, startsAt)).toBe(endsAt);
+    const paused = pauseTurnTimer(state, startsAt - 1);
+    // The end of the animation is marked even while paused; after it, nothing runs until the resume.
+    expect(nextTurnTimerAt(paused, startsAt - 1)).toBe(startsAt);
+    expect(nextTurnTimerAt(paused, startsAt)).toBeNull();
+  });
+
+  it('freezes the time left at a pause and restarts it from the resume', () => {
+    const { state, startsAt } = firstTurn();
+    const paused = pauseTurnTimer(state, startsAt + 10_000);
+    expect(paused).toMatchObject({ isPaused: true, turnTimeLeftMs: TURN_LIMIT_MS - 10_000 });
+    expect(pauseTurnTimer(paused, startsAt + 20_000)).toBe(paused);
+    const resumed = resumeTurnTimer(paused, startsAt + 70_000);
+    expect(resumed).toMatchObject({ isPaused: false, turnTimerStartsAt: startsAt + 70_000 });
+    expect(turnTimerEndsAt(resumed)).toBe(startsAt + 70_000 + TURN_LIMIT_MS - 10_000);
+    expect(resumeTurnTimer(resumed, startsAt + 80_000)).toBe(resumed);
+  });
+
+  it('keeps the whole time and the end of the dice animation through a pause during it', () => {
+    const { state, startsAt } = firstTurn();
+    const paused = pauseTurnTimer(state, startsAt - 2_000);
+    expect(paused).toMatchObject({ turnTimeLeftMs: TURN_LIMIT_MS, turnTimerStartsAt: startsAt });
+    expect(resumeTurnTimer(paused, startsAt - 1_000)).toMatchObject({ turnTimerStartsAt: startsAt });
+    expect(resumeTurnTimer(paused, startsAt + 5_000)).toMatchObject({ turnTimerStartsAt: startsAt + 5_000 });
+  });
+
+  it('times nothing out before the end of the turn, nor while the match is paused', () => {
+    const { state, endsAt } = firstTurn();
+    expect(timeOutTurn(state, endsAt - 1, createSeededRng(1))).toBeNull();
+    expect(timeOutTurn(pauseTurnTimer(state, endsAt - 1), endsAt + 60_000, createSeededRng(1))).toBeNull();
+  });
+
+  it('fires the draft at the end of the turn, counts one AFK turn and starts the next turn at once', () => {
+    const { state, seat, opponent, endsAt } = firstTurn();
+    const drafted = apply(state, { type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload: { targets: [cell(3, 3)] } });
+    const timedOut = timeOutTurn(drafted as BattleRoom, endsAt, createSeededRng(1));
+    expect(timedOut).toMatchObject({
+      seat,
+      afkCount: 1,
+      action: TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT,
+      effects: [
+        { type: SERVER_EVENTS.SHOT_RESOLVED, payload: { shooter: seat, results: [{ coordinate: cell(3, 3) }] } },
+      ],
+      state: {
+        phase: ROOM_PHASES.IN_PROGRESS,
+        battle: { currentTurn: opponent },
+        draftTargets: [],
+        turnTimerStartsAt: endsAt,
+        turnTimeLeftMs: TURN_LIMIT_MS,
+        afkCount: { [seat]: 1, [opponent]: 0 },
+      },
+    });
+  });
+
+  it('fires a random unshot cell from the Rng for an empty draft', () => {
+    const { state, endsAt } = firstTurn();
+    const timedOut = timeOutTurn(state, endsAt, createSeededRng(4));
+    const [target] = randomTargets(state.battle, 1, createSeededRng(4));
+    expect(timedOut?.effects[0]?.payload.results).toEqual([expect.objectContaining({ coordinate: target })]);
+  });
+
+  it('passes the turn under PASS_TURN: no shot, the draft discarded', () => {
+    const { state, seat, opponent, endsAt } = firstTurn();
+    const passing = { ...state, rules: { ...DEFAULT_RULES, timeoutAction: TIMEOUT_ACTIONS.PASS_TURN } };
+    const drafted = apply(passing, { type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload: { targets: [cell(3, 3)] } });
+    expect(timeOutTurn(drafted as BattleRoom, endsAt, createSeededRng(1))).toEqual({
+      seat,
+      afkCount: 1,
+      action: TIMEOUT_ACTIONS.PASS_TURN,
+      effects: [],
+      state: {
+        ...passing,
+        battle: { ...state.battle, currentTurn: opponent },
+        turnTimerStartsAt: endsAt,
+        afkCount: { [seat]: 1, [opponent]: 0 },
+      },
+    });
+  });
+
+  it('keeps the turn after an auto shot that hits, with extra turn on hit', () => {
+    const { state, seat, endsAt } = firstTurn();
+    const extraTurn = { ...state, rules: { ...DEFAULT_RULES, isExtraTurnOnHitEnabled: true } };
+    const shipCell = state.battle.boards[otherSeat(seat)].ships[0]?.coordinates[0] ?? cell(0, 0);
+    const drafted = apply(extraTurn, { type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload: { targets: [shipCell] } });
+    expect(timeOutTurn(drafted as BattleRoom, endsAt, createSeededRng(1))?.state).toMatchObject({
+      battle: { currentTurn: seat },
+      turnTimerStartsAt: endsAt,
+      afkCount: { [seat]: 1 },
+    });
+  });
+
+  it('counts a FIRE handled after the deadline, before the timer ran, which then finds nothing to time out', () => {
+    const { state, seat, opponent, endsAt } = firstTurn();
+    const late = endsAt + 5;
+    const fired = apply(state, { type: CLIENT_EVENTS.FIRE, seat, payload: { targets: [cell(9, 9)] } }, late);
+    expect(fired).toMatchObject({ battle: { currentTurn: opponent }, turnTimerStartsAt: late });
+    expect(timeOutTurn(fired as BattleRoom, late, createSeededRng(1))).toBeNull();
+  });
+
+  it('sets the AFK count back to zero on the seat’s FIRE only, not on a draft', () => {
+    const { state, seat, opponent } = firstTurn();
+    const idle = { ...state, afkCount: { [seat]: 2, [opponent]: 1 } as Record<Seat, number> };
+    const drafted = apply(idle, { type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload: { targets: [cell(9, 9)] } });
+    expect(drafted).toMatchObject({ afkCount: { [seat]: 2, [opponent]: 1 } });
+    const fired = apply(drafted, { type: CLIENT_EVENTS.FIRE, seat, payload: { targets: [cell(9, 9)] } });
+    expect(fired).toMatchObject({ afkCount: { [seat]: 0, [opponent]: 1 } });
+  });
+
+  it.each([
+    [0, GAME_OVER_REASONS.AFK_FORFEIT],
+    [MAX_CONSECUTIVE_AFK_TURNS - 2, GAME_OVER_REASONS.AFK_FORFEIT],
+    [MAX_CONSECUTIVE_AFK_TURNS - 1, GAME_OVER_REASONS.ABANDONED],
+  ] as const)(
+    'ends the match at MAX_CONSECUTIVE_AFK_TURNS, the opponent at %i: %s, without the timeout action',
+    (opponentCount, reason) => {
+      const { state, seat, opponent, endsAt } = firstTurn();
+      const idle = {
+        ...state,
+        afkCount: { [seat]: MAX_CONSECUTIVE_AFK_TURNS - 1, [opponent]: opponentCount } as Record<Seat, number>,
+      };
+      const timedOut = timeOutTurn(idle, endsAt, createSeededRng(1));
+      expect(timedOut).toMatchObject({ seat, afkCount: MAX_CONSECUTIVE_AFK_TURNS, action: null, effects: [] });
+      expect(timedOut?.state).toMatchObject({
+        phase: ROOM_PHASES.GAME_OVER,
+        winner: reason === GAME_OVER_REASONS.ABANDONED ? null : opponent,
+        reason,
+      });
+      // No shot was fired: the boards are the ones the turn started with.
+      expect(timedOut?.state.battle).toBe(state.battle);
+    },
+  );
+
+  it('gives a turn started by a shot during a pause its whole time, frozen until the resume', () => {
+    const { state, seat, startsAt } = firstTurn();
+    const paused = pauseTurnTimer(state, startsAt + 10_000);
+    const fired = apply(
+      paused,
+      { type: CLIENT_EVENTS.FIRE, seat, payload: { targets: [cell(9, 9)] } },
+      startsAt + 12_000,
+    );
+    expect(fired).toMatchObject({
+      isPaused: true,
+      turnTimerStartsAt: startsAt + 12_000,
+      turnTimeLeftMs: TURN_LIMIT_MS,
+    });
+    expect(resumeTurnTimer(fired as BattleRoom, startsAt + 50_000)).toMatchObject({
+      turnTimerStartsAt: startsAt + 50_000,
+    });
+  });
+
+  it('pauses and resumes with SET_PAUSED at the time of the command', () => {
+    const { state, seat, opponent, startsAt } = firstTurn();
+    const away = disconnectSeat(state, opponent, startsAt + 10_000);
+    expect(away).toMatchObject({ isPaused: true, turnTimeLeftMs: TURN_LIMIT_MS - 10_000 });
+    const resumed = apply(
+      away,
+      { type: CLIENT_EVENTS.SET_PAUSED, seat, payload: { isPaused: false } },
+      startsAt + 40_000,
+    );
+    expect(resumed).toMatchObject({ isPaused: false, turnTimerStartsAt: startsAt + 40_000 });
+    const paused = apply(
+      resumed,
+      { type: CLIENT_EVENTS.SET_PAUSED, seat, payload: { isPaused: true } },
+      startsAt + 45_000,
+    );
+    expect(paused).toMatchObject({ isPaused: true, turnTimeLeftMs: TURN_LIMIT_MS - 15_000 });
+  });
+
+  it('never mutates the room', () => {
+    const { state, seat, endsAt } = firstTurn();
+    const drafted = deepFreeze(
+      apply(state, { type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload: { targets: [cell(3, 3)] } }) as BattleRoom,
+    );
+    const copy = structuredClone(drafted);
+    timeOutTurn(drafted, endsAt, createSeededRng(1));
+    pauseTurnTimer(drafted, endsAt - 1);
+    expect(drafted).toEqual(copy);
+  });
+});
+
 describe('a full match', () => {
   it('is played through the transition function to FLEET_DESTROYED', () => {
     const { state, turns } = playToGameOver(42);
+    if (state.winner === null) {
+      expect.fail('Expected a winner');
+    }
     const loser = state.winner === SEATS.P1 ? SEATS.P2 : SEATS.P1;
     const loserBoard = state.battle.boards[loser];
     expect(state.reason).toBe(GAME_OVER_REASONS.FLEET_DESTROYED);

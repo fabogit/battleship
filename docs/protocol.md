@@ -117,7 +117,7 @@ export interface BattleSnapshot {
   readonly currentTurn: Seat;
   readonly shotsAllowed: number;
   readonly myDraftTargets: readonly Coordinate[];
-  readonly turnRemainingMs: number | null; // null before the first turn starts: during the dice animation, and until the turn timer (#30)
+  readonly turnRemainingMs: number | null; // null before the first turn's timer starts, during the dice animation; frozen while paused
   readonly isPaused: boolean;
   readonly afkCount: PerPlayer<number>;
 }

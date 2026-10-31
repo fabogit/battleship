@@ -3,7 +3,7 @@
 
 import type { Clock, Timer } from '../clock.js';
 
-/** What a room timer is for. The turn timer (#30) joins this set when it lands. */
+/** What a room timer is for. */
 export const ROOM_TIMER_KINDS = {
   /**
    * Forfeits the seat away longest, `DISCONNECT_FORFEIT_MS` after it lost its last socket; one timer per room, at the
@@ -17,6 +17,12 @@ export const ROOM_TIMER_KINDS = {
    * deadline otherwise, where unconfirmed fleets are completed first (docs/server.md#placement, ADR-0090).
    */
   PLACEMENT: 'PLACEMENT',
+  /**
+   * Runs the turn timer of a match (docs/server.md#turns, ADR-0099): at the end of the dice animation, to send the
+   * `STATE` that starts the first turn's timer (ADR-0093), then at the end of every turn while the match runs, where the
+   * turn times out. A pause stops it, a resume starts it again with the time the turn had left.
+   */
+  TURN: 'TURN',
   /**
    * Removes a room nobody joins, `WAITING_TTL_MS` after it entered `WAITING_FOR_OPPONENT`: at creation, or when a seat
    * was freed before the match (docs/server.md#room-lifecycle, ADR-0096).

@@ -560,18 +560,26 @@ describe('handshake', () => {
         battle: { isPaused: true },
       });
 
+      // The dice animation ends during the pause: the first turn's timer starts frozen with its whole time (ADR-0093).
       clock.advance(60_000);
+      expect(await staying.inbox.state()).toMatchObject({ battle: { isPaused: true, turnRemainingMs: 30_000 } });
       const back = await player(sessions[seat]);
       expect(await back.inbox.state()).toMatchObject({
         roomId,
         phase: ROOM_PHASES.IN_PROGRESS,
         me: { seat, isConnected: true, forfeitRemainingMs: null },
         opponent: { isConnected: true },
-        battle: { currentTurn: SEATS.P1, incomingShots: [], outgoingShots: [], isPaused: false },
+        battle: {
+          currentTurn: SEATS.P1,
+          incomingShots: [],
+          outgoingShots: [],
+          isPaused: false,
+          turnRemainingMs: 30_000,
+        },
       });
       expect(await staying.inbox.state()).toMatchObject({
         opponent: { seat, isConnected: true, forfeitRemainingMs: null },
-        battle: { isPaused: false },
+        battle: { isPaused: false, turnRemainingMs: 30_000 },
       });
 
       // The rebound socket plays the seat, and gets the room's events again.
@@ -801,16 +809,24 @@ describe('disconnect forfeit', () => {
     'ends a match %s with DISCONNECT_FORFEIT DISCONNECT_FORFEIT_MS after the drop',
     async (_label, isResumed) => {
       await start();
-      const { p1, p2, roomId, sessions } = await startedMatch();
+      // The longest turns: the absent player's turns would otherwise time out three times before the forfeit.
+      const { p1, p2, roomId, sessions } = await startedMatch({ ...DEFAULT_RULES, turnTimeLimitSeconds: 120 });
       p2.socket.close();
       await p1.inbox.state();
+      clock.advance(10_000);
+      // The dice animation ended during the pause: the first turn's timer started frozen (ADR-0093).
+      expect((await p1.inbox.state()).battle?.turnRemainingMs).toBe(120_000);
       if (isResumed) {
-        clock.advance(10_000);
         await send(p1, CLIENT_EVENTS.SET_PAUSED, { isPaused: false });
         expect((await p1.inbox.state()).opponent?.forfeitRemainingMs).toBe(DISCONNECT_FORFEIT_MS - 10_000);
+        // P1 fires just before its turn times out, so P2's turn runs past the forfeit.
+        clock.advance(120_000 - 1);
+        expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 0, y: 0 }] })).toEqual({ ok: true });
+        await p1.inbox.shot();
+        await p1.inbox.state();
       }
 
-      clock.advance(DISCONNECT_FORFEIT_MS - (isResumed ? 10_000 : 0) - 1);
+      clock.advance(DISCONNECT_FORFEIT_MS - 10_000 - (isResumed ? 120_000 - 1 : 0) - 1);
       expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.IN_PROGRESS);
       clock.advance(1);
       expect(await p1.inbox.state()).toMatchObject({
@@ -836,9 +852,13 @@ describe('disconnect forfeit', () => {
     await p1.inbox.state();
     clock.advance(DISCONNECT_FORFEIT_MS - 1);
     await player(sessions.P2);
-    await p1.inbox.state();
-    clock.advance(10 * DISCONNECT_FORFEIT_MS);
-    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.IN_PROGRESS);
+    // The start of the first turn's timer, during the pause, then P2's return.
+    await p1.inbox.states(2);
+    expect(rooms.nextForfeit(roomId)).toBeUndefined();
+    // The deadline the forfeit had passes without ending the match; the resumed turn has its whole time left.
+    clock.advance(1);
+    expect(rooms.get(roomId)).toMatchObject({ phase: ROOM_PHASES.IN_PROGRESS, isPaused: false });
+    await expectNothingPending(p1);
   });
 
   it('sends the other player back to WAITING_FOR_OPPONENT when a seat is forfeited in placement', async () => {

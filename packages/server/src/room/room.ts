@@ -1,12 +1,14 @@
 // Room logic as a pure transition function (docs/server.md#room-state-machine, ADR-0037): no timers, sockets or I/O.
 
 import {
+  autoShotTargets,
   CLIENT_EVENTS,
   completeFleet,
   DEFAULT_RULES,
   DICE_ANIMATION_MS,
   ERROR_CODES,
   GAME_OVER_REASONS,
+  MAX_CONSECUTIVE_AFK_TURNS,
   otherSeat,
   PLACEMENT_TIME_LIMIT_MS,
   resolveTurn,
@@ -17,6 +19,7 @@ import {
   shotsAllowed,
   START_COUNTDOWN_MS,
   TARGET_VIOLATIONS,
+  TIMEOUT_ACTIONS,
   validateDraft,
   validateFleet,
   validateRules,
@@ -30,11 +33,13 @@ import {
   type JoinRoomPayload,
   type PlacedShip,
   type PlacementViolation,
+  type ResolvedTurn,
   type Rng,
   type RulesViolation,
   type Seat,
   type ShotResolvedPayload,
   type TargetViolation,
+  type TimeoutAction,
 } from '@battleship/core';
 
 /** A seated player as the server knows them; the secret never leaves the server except in the player's own ack. */
@@ -137,17 +142,29 @@ export interface BattleRoom extends RoomBase {
   readonly players: Readonly<Record<Seat, RoomPlayer>>;
   /** Boards and turn, as `resolveTurn` returns them (ADR-0033). */
   readonly battle: Battle;
-  /** The current turn's draft from `UPDATE_TARGETS`; cleared whenever the turn is fired. */
+  /** The current turn's draft from `UPDATE_TARGETS`; cleared whenever the turn ends. */
   readonly draftTargets: readonly Coordinate[];
   /**
-   * When the first turn's timer starts, in epoch ms: `DICE_ANIMATION_MS` after the dice roll, while the clients show it
-   * (ADR-0093). The starter may fire before then. Nothing reads it until the turn timer lands (#30).
+   * When the current turn's timer starts running, in epoch ms (ADR-0099): `DICE_ANIMATION_MS` after the dice roll for
+   * the first turn, while the clients show it (ADR-0093), and the end of the previous turn for every other one. A
+   * resume moves it to the time of the resume when that is later. `turnRemainingMs` is `null` before it.
    */
-  readonly firstTurnStartsAt: number;
+  readonly turnTimerStartsAt: number;
+  /**
+   * The time the current turn has from `turnTimerStartsAt` on, in ms: `turnTimeLimitSeconds` when the turn starts, and
+   * what was left when a pause froze it (ADR-0074). While the match runs, the turn times out at `turnTimerEndsAt`.
+   */
+  readonly turnTimeLeftMs: number;
+  /**
+   * How many turns each seat timed out in a row (ADR-0009): a timeout adds one to the seat that timed out, a `FIRE`
+   * from the seat sets it back to zero, and `MAX_CONSECUTIVE_AFK_TURNS` ends the match.
+   */
+  readonly afkCount: Readonly<Record<Seat, number>>;
   /**
    * Whether the turn timer is frozen (ADR-0008, ADR-0074): set when a seat loses its last socket, cleared when both
    * are connected again, and switched by `SET_PAUSED` from the connected player while the opponent is away. Nothing
-   * else stops while paused: the forfeit clock runs and the active player may still fire.
+   * else stops while paused: the forfeit clock runs and the active player may still fire. Changed only through
+   * `pauseTurnTimer` and `resumeTurnTimer`, which freeze and restart the turn timer with it.
    */
   readonly isPaused: boolean;
 }
@@ -160,14 +177,21 @@ export interface GameOverRoom extends RoomBase {
   readonly players: Readonly<Record<Seat, RoomPlayer>>;
   /** The final boards; both fleets are revealed from here on. */
   readonly battle: Battle;
-  /** The seat that sank the opponent's last ship. */
-  readonly winner: Seat;
-  /** How the match ended; surrender (#35) and AFK (#30) add their reasons when they land. */
+  /** The seat that won; `null` only when the reason is `ABANDONED`. */
+  readonly winner: Seat | null;
+  /** How the match ended; surrender (#35) adds its reason when it lands. */
   readonly reason: GameOverRoomReason;
 }
 
-/** The ways a match can end so far: the last ship sunk, or a seat away for `DISCONNECT_FORFEIT_MS` (ADR-0072). */
-export type GameOverRoomReason = typeof GAME_OVER_REASONS.FLEET_DESTROYED | typeof GAME_OVER_REASONS.DISCONNECT_FORFEIT;
+/**
+ * The ways a match can end so far: the last ship sunk, a seat away for `DISCONNECT_FORFEIT_MS` (ADR-0072), or turns
+ * timed out `MAX_CONSECUTIVE_AFK_TURNS` times in a row by one seat (`AFK_FORFEIT`) or by both (`ABANDONED`, ADR-0009).
+ */
+export type GameOverRoomReason =
+  | typeof GAME_OVER_REASONS.FLEET_DESTROYED
+  | typeof GAME_OVER_REASONS.DISCONNECT_FORFEIT
+  | typeof GAME_OVER_REASONS.AFK_FORFEIT
+  | typeof GAME_OVER_REASONS.ABANDONED;
 
 /** Everything the server keeps about one room, one variant per phase it can be in (ADR-0037). */
 export type RoomState = WaitingRoom | NegotiationRoom | PlacementRoom | BattleRoom | GameOverRoom;
@@ -277,6 +301,9 @@ const EMPTY_FLEET: PlacementFleet = { ships: [], hasConfirmed: false };
 /** Both seats connected, or empty: no forfeit clock running. */
 const ALL_CONNECTED: Readonly<Record<Seat, number | null>> = { P1: null, P2: null };
 
+/** No turn timed out yet. */
+const NO_AFK_TURNS: Readonly<Record<Seat, number>> = { P1: 0, P2: 0 };
+
 /**
  * Opens a room in `WAITING_FOR_OPPONENT` with `DEFAULT_RULES` and seats the creator as `P1` (`CREATE_ROOM`).
  * @param roomId A fresh id, unique among the open rooms; the caller generates it.
@@ -320,10 +347,10 @@ export function applyCommand(state: RoomState, command: RoomCommand, now: number
     case CLIENT_EVENTS.UPDATE_TARGETS:
     case CLIENT_EVENTS.FIRE:
       return state.phase === ROOM_PHASES.IN_PROGRESS
-        ? applyBattleCommand(state, command)
+        ? applyBattleCommand(state, command, now)
         : reject(ERROR_CODES.WRONG_PHASE);
     case CLIENT_EVENTS.SET_PAUSED:
-      return state.phase === ROOM_PHASES.IN_PROGRESS ? setPaused(state, command) : reject(ERROR_CODES.WRONG_PHASE);
+      return state.phase === ROOM_PHASES.IN_PROGRESS ? setPaused(state, command, now) : reject(ERROR_CODES.WRONG_PHASE);
   }
 }
 
@@ -373,14 +400,143 @@ export function endPlacement(state: PlacementRoom, now: number, rng: Rng): Ended
 }
 
 /**
+ * The time the current turn times out at while the match runs (ADR-0099).
+ * @param state The room in `IN_PROGRESS`.
+ * @returns `turnTimerStartsAt + turnTimeLeftMs`, in epoch ms; not a deadline while the match is paused.
+ */
+export function turnTimerEndsAt(state: BattleRoom): number {
+  return state.turnTimerStartsAt + state.turnTimeLeftMs;
+}
+
+/**
+ * When the `TURN` room timer must run next (ADR-0099): at `turnTimerStartsAt` while it is ahead, to send the `STATE`
+ * that starts the first turn's timer whether or not the match is paused (ADR-0093), then at `turnTimerEndsAt` while the
+ * match runs.
+ * @param state The room in `IN_PROGRESS`.
+ * @param now Current time in epoch ms.
+ * @returns The time in epoch ms, or `null` while the match is paused and its turn timer has started.
+ */
+export function nextTurnTimerAt(state: BattleRoom, now: number): number | null {
+  if (now < state.turnTimerStartsAt) {
+    return state.turnTimerStartsAt;
+  }
+  return state.isPaused ? null : turnTimerEndsAt(state);
+}
+
+/**
+ * Pauses the match and freezes the turn timer with the time it has left (ADR-0074): the time to `turnTimerEndsAt`, or
+ * the whole of `turnTimeLeftMs` when the timer has not started yet, during the dice animation (ADR-0093).
+ * @param state The room in `IN_PROGRESS`.
+ * @param now Current time in epoch ms.
+ * @returns The paused room; the same object when it was paused already.
+ */
+export function pauseTurnTimer(state: BattleRoom, now: number): BattleRoom {
+  if (state.isPaused) {
+    return state;
+  }
+  const timeLeftMs = Math.min(state.turnTimeLeftMs, Math.max(0, turnTimerEndsAt(state) - now));
+  return { ...state, isPaused: true, turnTimeLeftMs: timeLeftMs };
+}
+
+/**
+ * Resumes the match: the turn timer runs again from now with the time it had left (ADR-0074), or from
+ * `turnTimerStartsAt` when that is still ahead, since a pause does not move the end of the dice animation (ADR-0093).
+ * @param state The room in `IN_PROGRESS`.
+ * @param now Current time in epoch ms.
+ * @returns The running room; the same object when it was running already.
+ */
+export function resumeTurnTimer(state: BattleRoom, now: number): BattleRoom {
+  if (!state.isPaused) {
+    return state;
+  }
+  return { ...state, isPaused: false, turnTimerStartsAt: Math.max(state.turnTimerStartsAt, now) };
+}
+
+/** A turn that ran out of time: the room after it, who timed out, and what the caller sends besides `STATE`. */
+export interface TimedOutTurn {
+  /** The room after the timeout: the next turn, or `GAME_OVER` after a winning auto shot or the last AFK turn. */
+  readonly state: BattleRoom | GameOverRoom;
+  /** The seat whose turn ran out. */
+  readonly seat: Seat;
+  /** That seat's turns timed out in a row, this one included. */
+  readonly afkCount: number;
+  /** The timeout action applied, or `null` when this timeout reached `MAX_CONSECUTIVE_AFK_TURNS` and ended the match. */
+  readonly action: TimeoutAction | null;
+  /** `SHOT_RESOLVED` after an auto shot, as after a `FIRE`; none otherwise. */
+  readonly effects: readonly RoomEffect[];
+}
+
+/**
+ * Times out the current turn when the `TURN` room timer reaches `turnTimerEndsAt` (docs/server.md#turns, ADR-0009,
+ * ADR-0099). The seat's AFK count goes up by one. At `MAX_CONSECUTIVE_AFK_TURNS` the match ends without the timeout
+ * action: `ABANDONED` with no winner when the opponent's count is `MAX_CONSECUTIVE_AFK_TURNS − 1` or more, `AFK_FORFEIT`
+ * won by the opponent otherwise. Below it, the rules' action applies: `AUTO_RANDOM_SHOT` fires the draft's valid
+ * targets and random ones for the rest (`autoShotTargets`), resolved as a `FIRE` is, so it can sink the last ship;
+ * `PASS_TURN` discards the draft and hands the turn over. Either way the next turn's timer starts now with the whole
+ * limit. A `FIRE` the server handled before the timer ran has ended the turn already, so the timer finds nothing due.
+ * @param state The room in `IN_PROGRESS`.
+ * @param now Current time in epoch ms.
+ * @param rng The server's random source, for the auto shot's random targets.
+ * @returns The timed-out turn, or `null` while the match is paused or `turnTimerEndsAt` is still ahead.
+ */
+export function timeOutTurn(state: BattleRoom, now: number, rng: Rng): TimedOutTurn | null {
+  if (state.isPaused || now < turnTimerEndsAt(state)) {
+    return null;
+  }
+  const seat = state.battle.currentTurn;
+  const opponent = otherSeat(seat);
+  const afkCount = { ...state.afkCount, [seat]: state.afkCount[seat] + 1 };
+  if (afkCount[seat] >= MAX_CONSECUTIVE_AFK_TURNS) {
+    const isAbandoned = afkCount[opponent] >= MAX_CONSECUTIVE_AFK_TURNS - 1;
+    return {
+      state: isAbandoned
+        ? endMatch(state, state.battle, null, GAME_OVER_REASONS.ABANDONED)
+        : endMatch(state, state.battle, opponent, GAME_OVER_REASONS.AFK_FORFEIT),
+      seat,
+      afkCount: afkCount[seat],
+      action: null,
+      effects: [],
+    };
+  }
+  const action = state.rules.timeoutAction;
+  if (action === TIMEOUT_ACTIONS.PASS_TURN) {
+    return {
+      state: nextTurn({ ...state, afkCount }, { ...state.battle, currentTurn: opponent }, now),
+      seat,
+      afkCount: afkCount[seat],
+      action,
+      effects: [],
+    };
+  }
+  const { battle } = state;
+  const targets = autoShotTargets(battle, state.draftTargets, shotsAllowed(battle, state.rules), rng);
+  const resolution = resolveTurn(battle, targets, state.rules);
+  if (!resolution.ok) {
+    throw new Error(`The auto shot of room ${state.roomId} was refused: ${resolution.reason}`);
+  }
+  return {
+    state: afterShot({ ...state, afkCount }, seat, resolution, now),
+    seat,
+    afkCount: afkCount[seat],
+    action,
+    effects: [shotResolved(seat, resolution.results)],
+  };
+}
+
+/**
  * Builds the room at the end of a match: both fleets are revealed from here on (docs/server.md#game-over--rematch).
  * @param state The room in `IN_PROGRESS`.
  * @param battle The final boards.
- * @param winner The seat that won.
+ * @param winner The seat that won, or `null` for `ABANDONED`.
  * @param reason How the match ended.
  * @returns The room in `GAME_OVER`; seat presence carries over, but no forfeit clock runs in it.
  */
-export function endMatch(state: BattleRoom, battle: Battle, winner: Seat, reason: GameOverRoomReason): GameOverRoom {
+export function endMatch(
+  state: BattleRoom,
+  battle: Battle,
+  winner: Seat | null,
+  reason: GameOverRoomReason,
+): GameOverRoom {
   return {
     phase: ROOM_PHASES.GAME_OVER,
     roomId: state.roomId,
@@ -540,14 +696,18 @@ function applyPlacementCommand(
 }
 
 /**
- * Handles the turn commands (docs/server.md#turns): the active player's draft and the shot itself.
+ * Handles the turn commands (docs/server.md#turns): the active player's draft and the shot itself. A shot sets the
+ * shooter's AFK count back to zero and ends the turn, whatever the turn timer had left, the dice animation included
+ * (ADR-0093).
  * @param state The room in `IN_PROGRESS`.
  * @param command `UPDATE_TARGETS` or `FIRE`.
+ * @param now Current time in epoch ms; the next turn's timer starts at it.
  * @returns The updated room with `SHOT_RESOLVED` after a fired turn, or the error for the ack.
  */
 function applyBattleCommand(
   state: BattleRoom,
   command: Extract<SeatCommand, { type: BattleCommandEvent }>,
+  now: number,
 ): TransitionResult {
   const { battle } = state;
   if (command.seat !== battle.currentTurn) {
@@ -571,39 +731,90 @@ function applyBattleCommand(
   if (!resolution.ok) {
     return reject(ERROR_CODES.INVALID_TARGETS, resolution.reason);
   }
-  const effects: RoomEffect[] = [
-    { type: SERVER_EVENTS.SHOT_RESOLVED, payload: { shooter: command.seat, results: resolution.results } },
-  ];
-  if (resolution.winner !== null) {
-    return accept(endMatch(state, resolution.battle, resolution.winner, GAME_OVER_REASONS.FLEET_DESTROYED), effects);
-  }
-  return accept({ ...state, battle: resolution.battle, draftTargets: [] }, effects);
+  const afkCount = { ...state.afkCount, [command.seat]: 0 };
+  return accept(afterShot({ ...state, afkCount }, command.seat, resolution, now), [
+    shotResolved(command.seat, resolution.results),
+  ]);
+}
+
+/**
+ * The room after a resolved shot, fired or timed out: `GAME_OVER` won by the shooter when it sank the last ship, the
+ * next turn otherwise.
+ * @param state The room in `IN_PROGRESS`, with the AFK counts already updated.
+ * @param shooter The seat that fired.
+ * @param resolution The shot, as `resolveTurn` resolved it.
+ * @param now Current time in epoch ms; the next turn's timer starts at it.
+ * @returns The room after the shot.
+ */
+function afterShot(state: BattleRoom, shooter: Seat, resolution: ResolvedTurn, now: number): BattleRoom | GameOverRoom {
+  return resolution.winner === null
+    ? nextTurn(state, resolution.battle, now)
+    : endMatch(state, resolution.battle, shooter, GAME_OVER_REASONS.FLEET_DESTROYED);
+}
+
+/**
+ * Starts the next turn (ADR-0099): the battle's `currentTurn` plays, with an empty draft and the whole turn time from
+ * now; a paused match keeps that time frozen until the resume.
+ * @param state The room in `IN_PROGRESS`.
+ * @param battle The battle after the turn that ended.
+ * @param now Current time in epoch ms.
+ * @returns The room in its next turn.
+ */
+function nextTurn(state: BattleRoom, battle: Battle, now: number): BattleRoom {
+  return {
+    ...state,
+    battle,
+    draftTargets: [],
+    turnTimerStartsAt: now,
+    turnTimeLeftMs: turnTimeLimitMs(state.rules),
+  };
+}
+
+/**
+ * The `SHOT_RESOLVED` effect of a resolved shot.
+ * @param shooter The seat that fired, or whose turn timed out.
+ * @param results The shot's results, in firing order.
+ * @returns The effect for both players.
+ */
+function shotResolved(shooter: Seat, results: ShotResolvedPayload['results']): ShotResolvedEffect {
+  return { type: SERVER_EVENTS.SHOT_RESOLVED, payload: { shooter, results } };
+}
+
+/**
+ * How long a turn lasts under a room's rules.
+ * @param rules The agreed rules.
+ * @returns `turnTimeLimitSeconds` in ms.
+ */
+function turnTimeLimitMs(rules: GameRules): number {
+  return rules.turnTimeLimitSeconds * 1_000;
 }
 
 /**
  * Pauses or resumes the match (`SET_PAUSED`, docs/server.md#disconnection--pause-in_progress): only while the sender's
- * opponent is away, and the sender is connected since it sends. Asking for the state the match is already in is
- * accepted and changes nothing, like a repeated confirm.
+ * opponent is away, and the sender is connected since it sends. The turn timer freezes and restarts with it. Asking for
+ * the state the match is already in is accepted and changes nothing, like a repeated confirm.
  * @param state The room in `IN_PROGRESS`.
  * @param command `SET_PAUSED`, with the wanted state.
+ * @param now Current time in epoch ms; the turn timer freezes or restarts at it.
  * @returns The room with the new pause state, or `NOT_ALLOWED` while the opponent is connected.
  */
 function setPaused(
   state: BattleRoom,
   command: Extract<SeatCommand, { type: typeof CLIENT_EVENTS.SET_PAUSED }>,
+  now: number,
 ): TransitionResult {
   if (state.disconnectedAt[otherSeat(command.seat)] === null) {
     return reject(ERROR_CODES.NOT_ALLOWED);
   }
-  const { isPaused } = command.payload;
-  return accept(state.isPaused === isPaused ? state : { ...state, isPaused });
+  return accept(command.payload.isPaused ? pauseTurnTimer(state, now) : resumeTurnTimer(state, now));
 }
 
 /**
  * Moves a room whose fleets are both locked into battle, with empty shot lists and the dice roll's starter to fire
  * (ADR-0002, ADR-0092): the one hand-off from placement to the match, so every match rolls, a rematch's included. A
  * player who is away at that moment finds the match paused (docs/server.md#placement), with their forfeit clock still
- * counting from the drop; the dice are rolled all the same.
+ * counting from the drop; the dice are rolled all the same, and the first turn's timer holds its whole time until the
+ * resume (ADR-0093).
  * @param state The room in `PLACEMENT`, both fleets locked.
  * @param now Current time in epoch ms; the first turn's timer starts `DICE_ANIMATION_MS` later (ADR-0093).
  * @param rng The server's random source, for the dice.
@@ -626,7 +837,9 @@ function startBattle(state: PlacementRoom, now: number, rng: Rng): { state: Batt
       currentTurn: dice.starter,
     },
     draftTargets: [],
-    firstTurnStartsAt: now + DICE_ANIMATION_MS,
+    turnTimerStartsAt: now + DICE_ANIMATION_MS,
+    turnTimeLeftMs: turnTimeLimitMs(state.rules),
+    afkCount: NO_AFK_TURNS,
     isPaused: state.disconnectedAt.P1 !== null || state.disconnectedAt.P2 !== null,
   };
   return { state: battleRoom, dice };
