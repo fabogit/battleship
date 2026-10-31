@@ -1,4 +1,5 @@
-// The timers attached to open rooms (ADR-0065): at most one per room and kind, all stopped with the room.
+// The timers attached to open rooms (ADR-0065): at most one per room and kind, all stopped with the room. A task that
+// throws is contained to its room (ADR-0104).
 
 import type { Clock, Timer } from '../clock.js';
 
@@ -27,22 +28,35 @@ export const ROOM_TIMER_KINDS = {
 export type RoomTimerKind = (typeof ROOM_TIMER_KINDS)[keyof typeof ROOM_TIMER_KINDS];
 
 /**
+ * Handles a timer task that threw, in place of the process (ADR-0104).
+ * @param roomId The room whose timer ran.
+ * @param kind What the timer was for, for the log.
+ * @param error What the task threw.
+ */
+export type RoomTimerFailureHandler = (roomId: string, kind: RoomTimerKind, error: unknown) => void;
+
+/**
  * The pending timers of every room, keyed by room id and kind, over an injected `Clock`. Starting a kind that is
  * already running replaces it, so a room never has two timers of one kind; a timer is forgotten before its task runs,
- * so the task may start the same kind again (a repeating timer).
+ * so the task may start the same kind again (a repeating timer). Every task runs through here, so whatever a task
+ * throws goes to the failure handler with its room and kind, never to the process (ADR-0104).
  */
 export class RoomTimers {
   /** Where deadlines are scheduled. */
   readonly #clock: Clock;
+  /** Where a task that throws goes. */
+  readonly #onFailure: RoomTimerFailureHandler;
   /** The pending timers, by room id, then by kind. */
   readonly #timers = new Map<string, Map<RoomTimerKind, Timer>>();
 
   /**
    * Starts with no timers.
    * @param clock The server's clock; tests pass a fake one.
+   * @param onFailure Called with the room, the kind and the error when a task throws; the socket layer closes the room.
    */
-  constructor(clock: Clock) {
+  constructor(clock: Clock, onFailure: RoomTimerFailureHandler) {
     this.#clock = clock;
+    this.#onFailure = onFailure;
   }
 
   /**
@@ -50,7 +64,8 @@ export class RoomTimers {
    * @param roomId The room the timer belongs to.
    * @param kind What the timer is for.
    * @param at The deadline in epoch ms.
-   * @param task Runs once at the deadline unless the timer is stopped or replaced first.
+   * @param task Runs once at the deadline unless the timer is stopped or replaced first; what it throws goes to the
+   * failure handler.
    */
   start(roomId: string, kind: RoomTimerKind, at: number, task: () => void): void {
     this.stop(roomId, kind);
@@ -63,7 +78,11 @@ export class RoomTimers {
       kind,
       this.#clock.scheduleAt(at, () => {
         this.#forget(roomId, kind);
-        task();
+        try {
+          task();
+        } catch (error) {
+          this.#onFailure(roomId, kind, error);
+        }
       }),
     );
   }

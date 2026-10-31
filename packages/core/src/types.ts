@@ -176,6 +176,8 @@ export const ROOM_CLOSED_REASONS = {
   WAITING_TTL: 'WAITING_TTL',
   /** The match ended `GAME_OVER_TTL_MS` ago without a rematch. */
   GAME_OVER_TTL: 'GAME_OVER_TTL',
+  /** The server failed while running the room, after a change was stored, so the room could not go on (ADR-0105). */
+  SERVER_ERROR: 'SERVER_ERROR',
 } as const;
 
 /** One of the `ROOM_CLOSED_REASONS`. */

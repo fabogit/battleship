@@ -52,14 +52,24 @@ export type HandshakeVerdict =
  * the client as a `connect_error` whose message is the code, and Socket.io does not retry it. A socket with a valid
  * session is bound to its seat and joins the room's Socket.io room, then any socket that held the seat gets
  * `SESSION_REPLACED` and is disconnected (ADR-0063). Registered before `room-handlers`, whose `connection` listener
- * runs after this one: it records the seat as connected again and sends the `STATE` (ADR-0072).
+ * runs after this one: it records the seat as connected again and sends the `STATE` (ADR-0072). A check that throws
+ * refuses the connection with `SERVER_ERROR` (ADR-0104).
  */
 export default fp<HandshakeOptions>(
   (app, options, done) => {
     const { rooms } = options;
 
     app.io.use((socket, next) => {
-      const verdict = checkHandshake(socket.handshake, rooms);
+      let verdict: HandshakeVerdict;
+      try {
+        verdict = checkHandshake(socket.handshake, rooms);
+      } catch (error) {
+        // Socket.io runs middlewares inside a promise nobody awaits, so a throw would end the process (ADR-0104). The
+        // check has changed nothing yet: only this connection is refused.
+        app.log.error({ socketId: socket.id, err: error }, 'Handshake failed');
+        next(new Error(ERROR_CODES.SERVER_ERROR));
+        return;
+      }
       if (!verdict.ok) {
         app.log.info({ socketId: socket.id, error: verdict.error }, 'Handshake refused');
         next(new Error(verdict.error));

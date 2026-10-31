@@ -1,4 +1,5 @@
 // Socket.io commands wired to room logic (docs/server.md#socket-handlers): guard → room logic → ack → effects → `STATE`.
+// A failure in room logic is contained to its room (ADR-0104).
 
 import {
   CLIENT_EVENTS,
@@ -45,6 +46,20 @@ type Reply<E extends CommandEvent> = (response: CommandAck<E> | AckFailure) => v
 
 /** The commands that take a seat, and with it move the socket out of the room it sat in before. */
 type SeatTakingEvent = typeof CLIENT_EVENTS.CREATE_ROOM | typeof CLIENT_EVENTS.JOIN_ROOM;
+
+/**
+ * What a contained failure was running, for its log line (ADR-0104): a command, a socket's `connection` or `disconnect`,
+ * or a room timer.
+ */
+type FailureSource =
+  | {
+      /** The client event being handled. */
+      readonly event: CommandEvent | 'connection' | 'disconnect';
+    }
+  | {
+      /** The room timer whose task ran. */
+      readonly timer: RoomTimerKind;
+    };
 
 /**
  * Handles one command whose payload passed its guard: replies exactly once, then sends what the change requires.
@@ -103,6 +118,15 @@ interface CommandContext {
    * `JOIN_ROOM` that moved its only player on (ADR-0095).
    */
   readonly closeRoom: (roomId: string, reason: string) => void;
+  /**
+   * Runs work that follows a change already stored in a room, containing a throw to that room (ADR-0104): the error is
+   * logged as "Room failed" and the room closes with the `ROOM_CLOSED` reason `SERVER_ERROR`.
+   * @param roomId The room the work is for.
+   * @param source What the work belongs to, for the log.
+   * @param task The work.
+   * @param onFailure Runs after a throw, before the room closes: a command's `SERVER_ERROR` ack.
+   */
+  readonly contain: (roomId: string, source: FailureSource, task: () => void, onFailure?: () => void) => void;
 }
 
 /**
@@ -115,12 +139,16 @@ interface CommandContext {
  * timer, and every socket of the room gets `STATE` when a seat drops or comes back. A room nobody joins expires after
  * `WAITING_TTL_MS` (ADR-0096), a room in `GAME_OVER` after `GAME_OVER_TTL_MS`, and one nobody is left in closes
  * (docs/server.md#room-lifecycle); the sockets still in an expired room lose their seat and get `ROOM_CLOSED`
- * (ADR-0097).
+ * (ADR-0097). A throw in room logic stays in its room (ADR-0104): before anything is stored it refuses the command with
+ * `SERVER_ERROR`; after a change is stored, in a timer task, or in a socket's `connection` or `disconnect`, it closes
+ * the room with the `ROOM_CLOSED` reason `SERVER_ERROR`.
  */
 export default fp<RoomHandlersOptions>(
   (app, { rooms, clock }, done) => {
     const { io } = app;
-    const timers = new RoomTimers(clock);
+    const timers = new RoomTimers(clock, (roomId, kind, error) => {
+      failRoom(roomId, { timer: kind }, error);
+    });
 
     /**
      * Removes a room and unbinds the sockets still in it, so that a later room drawing the same id never reaches them.
@@ -156,6 +184,27 @@ export default fp<RoomHandlersOptions>(
     const closeRoom = (roomId: string, reason: string): void => {
       removeRoom(roomId);
       app.log.info({ roomId, reason, roomCount: rooms.size }, 'Room closed');
+    };
+
+    /**
+     * Closes a room whose handling threw after a change was stored (ADR-0104). Logged first, so the error is on record
+     * whatever the removal does.
+     * @param roomId The room that failed.
+     * @param source What was running, for the log.
+     * @param error What it threw; Pino logs it with its stack.
+     */
+    const failRoom = (roomId: string, source: FailureSource, error: unknown): void => {
+      app.log.error({ roomId, ...source, err: error }, 'Room failed');
+      removeRoom(roomId, ROOM_CLOSED_REASONS.SERVER_ERROR);
+    };
+
+    const contain = (roomId: string, source: FailureSource, task: () => void, onFailure?: () => void): void => {
+      try {
+        task();
+      } catch (error) {
+        onFailure?.();
+        failRoom(roomId, source, error);
+      }
     };
 
     /**
@@ -266,7 +315,7 @@ export default fp<RoomHandlersOptions>(
       return true;
     };
 
-    const context: CommandContext = { rooms, now: () => clock.now(), reviewTimers, syncPresence, closeRoom };
+    const context: CommandContext = { rooms, now: () => clock.now(), reviewTimers, syncPresence, closeRoom, contain };
     io.on('connection', (socket) => {
       listenToCommands(io, socket, app.log.child({ socketId: socket.id }), context);
     });
@@ -285,13 +334,13 @@ export default fp<RoomHandlersOptions>(
  * @param io The server, to reach the other socket of a room.
  * @param socket The new connection.
  * @param log The socket's logger, carrying its `socketId`.
- * @param context The registry, the clock, the timer review, seat presence and room closing.
+ * @param context The registry, the clock, the timer review, seat presence, room closing and failure containment.
  */
 function listenToCommands(
   io: GameServer,
   socket: GameSocket,
   log: FastifyBaseLogger,
-  { rooms, now, reviewTimers, syncPresence, closeRoom }: CommandContext,
+  { rooms, now, reviewTimers, syncPresence, closeRoom, contain }: CommandContext,
 ): void {
   /**
    * Logs a refused command and sends the error back. The violation of `INVALID_PLACEMENT` and `INVALID_TARGETS` is
@@ -307,6 +356,49 @@ function listenToCommands(
   ): void => {
     log.info({ event, error: rejection.error, violation: rejection.violation }, 'Command refused');
     reply({ ok: false, error: rejection.error });
+  };
+
+  /**
+   * Runs a command's room logic through `RoomManager`, which stores the new state only once the pure transition has
+   * returned (ADR-0104): a throw has stored nothing, so it is logged as "Command failed" and the command is refused
+   * with `SERVER_ERROR`, the room keeping its state.
+   * @template T What the call returns.
+   * @param event The command, for the log.
+   * @param roomId The room it runs against, for the log; none for `CREATE_ROOM`, whose room does not exist yet.
+   * @param transition The `RoomManager` call.
+   * @returns What the call returned, or the refusal.
+   */
+  const tryTransition = <T>(
+    event: CommandEvent,
+    roomId: string | undefined,
+    transition: () => T,
+  ): T | RejectedTransition => {
+    try {
+      return transition();
+    } catch (error) {
+      log.error({ roomId, event, err: error }, 'Command failed');
+      return { ok: false, error: ERROR_CODES.SERVER_ERROR };
+    }
+  };
+
+  /**
+   * Runs what an accepted command does once its room has stored the new state, the ack included: a throw closes the
+   * room (ADR-0104), and the sender gets `SERVER_ERROR` if it has no ack yet. Socket.io sends only the first reply to
+   * an ack, so the failure's reply is dropped when the ack already went out.
+   * @param event The command, for the log.
+   * @param roomId The room that stored the change.
+   * @param reply The command's ack.
+   * @param task The ack, the effects, the timer review and `STATE`.
+   */
+  const settle = (
+    event: CommandEvent,
+    roomId: string,
+    reply: (response: AckFailure) => void,
+    task: () => void,
+  ): void => {
+    contain(roomId, { event }, task, () => {
+      reply({ ok: false, error: ERROR_CODES.SERVER_ERROR });
+    });
   };
 
   /**
@@ -362,15 +454,18 @@ function listenToCommands(
     const previous = socket.data.binding;
     if (previous !== undefined) {
       void socket.leave(previous.roomId);
-      const before = rooms.get(previous.roomId);
-      const freed =
-        before?.phase === ROOM_PHASES.WAITING_FOR_OPPONENT ? rooms.leave(previous.roomId, previous.seat) : undefined;
-      if (freed?.ok === true) {
-        unbindSeat(previous.roomId, previous.seat);
-        settleFreedSeat(previous.roomId, before, freed.state, event);
-      } else {
-        syncPresence(previous.roomId);
-      }
+      // A failure there closes the room left behind, not the one the socket moves to.
+      contain(previous.roomId, { event }, () => {
+        const before = rooms.get(previous.roomId);
+        const freed =
+          before?.phase === ROOM_PHASES.WAITING_FOR_OPPONENT ? rooms.leave(previous.roomId, previous.seat) : undefined;
+        if (freed?.ok === true) {
+          unbindSeat(previous.roomId, previous.seat);
+          settleFreedSeat(previous.roomId, before, freed.state, event);
+        } else {
+          syncPresence(previous.roomId);
+        }
+      });
     }
     socket.data.binding = { roomId, seat };
     void socket.join(roomId);
@@ -397,21 +492,23 @@ function listenToCommands(
     }
     const at = now();
     const before = rooms.get(binding.roomId);
-    const result = rooms.dispatch(binding.roomId, build(binding.seat), at);
+    const result = tryTransition(event, binding.roomId, () => rooms.dispatch(binding.roomId, build(binding.seat), at));
     if (!result.ok) {
       refuse(event, reply, result);
       return;
     }
-    reply({ ok: true, ...ackData(result.state) });
-    for (const effect of result.effects) {
-      io.to(binding.roomId).emit(effect.type, effect.payload);
-    }
-    if (result.state.phase !== before?.phase) {
-      log.info({ roomId: binding.roomId, phase: result.state.phase }, 'Room phase changed');
-    }
-    // A confirmation or an unlock moves the end of placement without changing the phase.
-    reviewTimers(binding.roomId);
-    sendState(io, result.state, at);
+    settle(event, binding.roomId, reply, () => {
+      reply({ ok: true, ...ackData(result.state) });
+      for (const effect of result.effects) {
+        io.to(binding.roomId).emit(effect.type, effect.payload);
+      }
+      if (result.state.phase !== before?.phase) {
+        log.info({ roomId: binding.roomId, phase: result.state.phase }, 'Room phase changed');
+      }
+      // A confirmation or an unlock moves the end of placement without changing the phase.
+      reviewTimers(binding.roomId);
+      sendState(io, result.state, at);
+    });
   };
 
   /**
@@ -428,14 +525,16 @@ function listenToCommands(
     }
     const { roomId, seat } = binding;
     const before = rooms.get(roomId);
-    const result = rooms.leave(roomId, seat);
+    const result = tryTransition(CLIENT_EVENTS.LEAVE_ROOM, roomId, () => rooms.leave(roomId, seat));
     if (!result.ok) {
       refuse(CLIENT_EVENTS.LEAVE_ROOM, reply, result);
       return;
     }
-    unbindSeat(roomId, seat);
-    reply({ ok: true });
-    settleFreedSeat(roomId, before, result.state, CLIENT_EVENTS.LEAVE_ROOM);
+    settle(CLIENT_EVENTS.LEAVE_ROOM, roomId, reply, () => {
+      unbindSeat(roomId, seat);
+      reply({ ok: true });
+      settleFreedSeat(roomId, before, result.state, CLIENT_EVENTS.LEAVE_ROOM);
+    });
   };
 
   /**
@@ -453,16 +552,18 @@ function listenToCommands(
   const handlers: { readonly [E in CommandEvent]: CommandHandler<E> } = {
     CREATE_ROOM: (payload, reply) => {
       const at = now();
-      const result = rooms.createRoom(payload);
+      const result = tryTransition(CLIENT_EVENTS.CREATE_ROOM, undefined, () => rooms.createRoom(payload));
       if (!result.ok) {
         refuse(CLIENT_EVENTS.CREATE_ROOM, reply, result);
         return;
       }
-      bind(result.roomId, SEATS.P1, CLIENT_EVENTS.CREATE_ROOM);
-      log.info({ roomId: result.roomId, seat: SEATS.P1, roomCount: rooms.size }, 'Room created');
-      reply({ ok: true, roomId: result.roomId, playerSecret: result.playerSecret });
-      reviewTimers(result.roomId);
-      sendState(io, result.state, at);
+      settle(CLIENT_EVENTS.CREATE_ROOM, result.roomId, reply, () => {
+        bind(result.roomId, SEATS.P1, CLIENT_EVENTS.CREATE_ROOM);
+        log.info({ roomId: result.roomId, seat: SEATS.P1, roomCount: rooms.size }, 'Room created');
+        reply({ ok: true, roomId: result.roomId, playerSecret: result.playerSecret });
+        reviewTimers(result.roomId);
+        sendState(io, result.state, at);
+      });
     },
     JOIN_ROOM: (payload, reply) => {
       // Taking the other seat of one's own room would leave the first seat without a socket.
@@ -471,17 +572,19 @@ function listenToCommands(
         return;
       }
       const at = now();
-      const result = rooms.joinRoom(payload, at);
+      const result = tryTransition(CLIENT_EVENTS.JOIN_ROOM, payload.roomId, () => rooms.joinRoom(payload, at));
       if (!result.ok) {
         refuse(CLIENT_EVENTS.JOIN_ROOM, reply, result);
         return;
       }
-      bind(payload.roomId, result.seat, CLIENT_EVENTS.JOIN_ROOM);
-      log.info({ roomId: payload.roomId, seat: result.seat, phase: result.state.phase }, 'Room joined');
-      reply({ ok: true, playerSecret: result.playerSecret });
-      // The join ends the room's wait, which stops its waiting TTL.
-      reviewTimers(payload.roomId);
-      sendState(io, result.state, at);
+      settle(CLIENT_EVENTS.JOIN_ROOM, payload.roomId, reply, () => {
+        bind(payload.roomId, result.seat, CLIENT_EVENTS.JOIN_ROOM);
+        log.info({ roomId: payload.roomId, seat: result.seat, phase: result.state.phase }, 'Room joined');
+        reply({ ok: true, playerSecret: result.playerSecret });
+        // The join ends the room's wait, which stops its waiting TTL.
+        reviewTimers(payload.roomId);
+        sendState(io, result.state, at);
+      });
     },
     UPDATE_RULES: (payload, reply) => {
       // An edit that changes nothing keeps the version, so the ack always names the version now in place (ADR-0082).
@@ -569,18 +672,24 @@ function listenToCommands(
   // replaced the sockets it took the seat from (ADR-0063). A seat coming back sends `STATE` to the whole room; a seat
   // that never dropped (a zombie replaced) only needs one for the new socket.
   const resumed = socket.data.binding;
-  if (resumed !== undefined && !syncPresence(resumed.roomId)) {
-    const state = rooms.get(resumed.roomId);
-    if (state !== undefined) {
-      socket.emit(SERVER_EVENTS.STATE, projectSnapshot(state, resumed.seat, now()));
-    }
+  if (resumed !== undefined) {
+    contain(resumed.roomId, { event: 'connection' }, () => {
+      if (!syncPresence(resumed.roomId)) {
+        const state = rooms.get(resumed.roomId);
+        if (state !== undefined) {
+          socket.emit(SERVER_EVENTS.STATE, projectSnapshot(state, resumed.seat, now()));
+        }
+      }
+    });
   }
 
   // Socket.io has already taken the socket out of its rooms here, so a seat it was the last socket of is away.
   socket.on('disconnect', () => {
     const binding = socket.data.binding;
     if (binding !== undefined) {
-      syncPresence(binding.roomId);
+      contain(binding.roomId, { event: 'disconnect' }, () => {
+        syncPresence(binding.roomId);
+      });
     }
   });
 

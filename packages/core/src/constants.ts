@@ -3,9 +3,10 @@
 /**
  * Bumped on any breaking protocol change; checked in the Socket.io handshake (ADR-0017). 2: the game-over snapshot
  * carries both final boards (ADR-0064). 3: `JOIN_ROOM` opens rules negotiation instead of placement (ADR-0084). 4: a room
- * the server closes tells the sockets still in it with `ROOM_CLOSED` (ADR-0097).
+ * the server closes tells the sockets still in it with `ROOM_CLOSED` (ADR-0097). 5: a server failure refuses a command
+ * with `SERVER_ERROR`, or closes its room with the `ROOM_CLOSED` reason `SERVER_ERROR` (ADR-0105).
  */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** Side length of the square board, in cells. */
 export const BOARD_SIZE = 10;

@@ -7,9 +7,10 @@ import { NOW } from './fixtures.js';
 const ROOM = 'room-a';
 const OTHER_ROOM = 'room-b';
 
-function setup(): { clock: FakeClock; timers: RoomTimers } {
+function setup(): { clock: FakeClock; timers: RoomTimers; onFailure: ReturnType<typeof vi.fn> } {
   const clock = new FakeClock(NOW);
-  return { clock, timers: new RoomTimers(clock) };
+  const onFailure = vi.fn();
+  return { clock, timers: new RoomTimers(clock, onFailure), onFailure };
 }
 
 describe('RoomTimers', () => {
@@ -98,5 +99,21 @@ describe('RoomTimers', () => {
       timers.stop(ROOM, ROOM_TIMER_KINDS.GAME_OVER);
       timers.stopRoom(OTHER_ROOM);
     }).not.toThrow();
+  });
+
+  it('hands a task that throws to the failure handler, and runs the others', () => {
+    const { clock, timers, onFailure } = setup();
+    const fault = new Error('injected fault');
+    const other = vi.fn();
+    timers.start(ROOM, ROOM_TIMER_KINDS.PLACEMENT, NOW + 100, () => {
+      throw fault;
+    });
+    timers.start(OTHER_ROOM, ROOM_TIMER_KINDS.PLACEMENT, NOW + 200, other);
+    expect(() => {
+      clock.advance(1_000);
+    }).not.toThrow();
+    expect(onFailure).toHaveBeenCalledExactlyOnceWith(ROOM, ROOM_TIMER_KINDS.PLACEMENT, fault);
+    expect(other).toHaveBeenCalledOnce();
+    expect(timers.isRunning(ROOM, ROOM_TIMER_KINDS.PLACEMENT)).toBe(false);
   });
 });
