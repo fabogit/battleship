@@ -75,6 +75,7 @@ export const PRESENCE_TEXT: PresenceText = {
     [ERROR_CODES.NOT_ALLOWED]: 'Your opponent is back, so the match goes on.',
     [ERROR_CODES.WRONG_PHASE]: 'The match is over.',
     [ERROR_CODES.RATE_LIMITED]: 'Too many taps at once. Wait a moment and try again.',
+    [ERROR_CODES.SERVER_ERROR]: 'The server ran into an error, so the match did not change. Try again.',
     [TRANSPORT_ERRORS.NOT_CONNECTED]: 'Not connected to the server. Try again once you are connected.',
     [TRANSPORT_ERRORS.NO_ACK]: 'The server did not answer. Try again.',
   },

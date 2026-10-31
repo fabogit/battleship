@@ -324,6 +324,7 @@ describe('rulesNoticeMessage', () => {
 describe('rulesErrorMessage', () => {
   it('explains the rules errors and falls back for the others', () => {
     expect(rulesErrorMessage(ERROR_CODES.STALE_RULES)).toBe(RULES_TEXT.errors.STALE_RULES);
+    expect(rulesErrorMessage(ERROR_CODES.SERVER_ERROR)).toBe(RULES_TEXT.errors.SERVER_ERROR);
     expect(rulesErrorMessage(ERROR_CODES.ROOM_FULL)).toBe(RULES_TEXT.unexpected);
   });
 });

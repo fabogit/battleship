@@ -191,6 +191,7 @@ export const PLACEMENT_TEXT: PlacementText = {
     [ERROR_CODES.INVALID_PLACEMENT]: 'The server refused this layout. Check your ships and try again.',
     [ERROR_CODES.WRONG_PHASE]: 'Placement is over.',
     [ERROR_CODES.RATE_LIMITED]: 'Too many changes at once. Wait a moment and try again.',
+    [ERROR_CODES.SERVER_ERROR]: 'The server ran into an error. Your last change was not saved.',
     [TRANSPORT_ERRORS.NOT_CONNECTED]: 'Not connected to the server. Your last change was not saved.',
     [TRANSPORT_ERRORS.NO_ACK]: 'The server did not answer. Your last change may not be saved.',
   },

@@ -146,6 +146,7 @@ export const RULES_TEXT: RulesText = {
     [ERROR_CODES.INVALID_RULES]: "The server refused these rules. The screen shows the room's rules again.",
     [ERROR_CODES.WRONG_PHASE]: 'The rules are settled and can no longer change.',
     [ERROR_CODES.RATE_LIMITED]: 'Too many changes at once. Wait a moment and try again.',
+    [ERROR_CODES.SERVER_ERROR]: 'The server ran into an error, so the rules did not change. Try again.',
     [TRANSPORT_ERRORS.NOT_CONNECTED]: 'Not connected to the server. Try again once it is connected.',
     [TRANSPORT_ERRORS.NO_ACK]: 'The server did not answer. Try again.',
   },

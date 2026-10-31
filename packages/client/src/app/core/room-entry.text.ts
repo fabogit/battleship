@@ -19,6 +19,7 @@ export const ROOM_ENTRY_TEXT: RoomEntryText = {
   errors: {
     [ERROR_CODES.SERVER_FULL]: 'The server is full right now. Try again in a few minutes.',
     [ERROR_CODES.RATE_LIMITED]: 'Too many requests. Wait a moment and try again.',
+    [ERROR_CODES.SERVER_ERROR]: 'The server ran into an error, so you are not in the room. Try again.',
     [TRANSPORT_ERRORS.NOT_CONNECTED]: 'Not connected to the server yet. Try again once it is connected.',
     [TRANSPORT_ERRORS.NO_ACK]: 'The server did not answer. Try again.',
   },

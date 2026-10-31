@@ -124,6 +124,7 @@ describe('RoomEntryService', () => {
 describe('roomEntryErrorMessage', () => {
   it('explains the failures the entry screens expect', () => {
     expect(roomEntryErrorMessage(ERROR_CODES.SERVER_FULL)).toMatch(/server is full/);
+    expect(roomEntryErrorMessage(ERROR_CODES.SERVER_ERROR)).toMatch(/ran into an error/);
     expect(roomEntryErrorMessage(TRANSPORT_ERRORS.NO_ACK)).toMatch(/did not answer/);
   });
 
