@@ -1,5 +1,11 @@
 import { Service, signal } from '@angular/core';
-import { SESSION_STORE_TTL_MS, isRoomId, parseSessionCredentials, type SessionCredentials } from '@battleship/core';
+import {
+  SESSION_STORE_TTL_MS,
+  isRoomId,
+  parseSessionCredentials,
+  type RoomClosedReason,
+  type SessionCredentials,
+} from '@battleship/core';
 
 /** Prefix of the `localStorage` key of one room's credentials, followed by the room id (ADR-0069). */
 export const SESSION_KEY_PREFIX = 'battleship:session:';
@@ -38,6 +44,8 @@ export class SessionStore {
   private readonly currentRoomId = signal<string | null>(readCurrentRoomId());
   /** Rooms whose credentials the server refused (`SESSION_INVALID`) since the app started, with what is known. */
   private readonly refusedSeats = signal<ReadonlyMap<string, RefusedSeat>>(new Map());
+  /** Rooms the server closed with this tab's seat in them (`ROOM_CLOSED`) since the app started, with the reason. */
+  private readonly closedRooms = signal<ReadonlyMap<string, RoomClosedReason>>(new Map());
 
   /**
    * Stores the credentials returned by `CREATE_ROOM` or `JOIN_ROOM` for `SESSION_STORE_TTL_MS`, replacing any earlier
@@ -124,6 +132,27 @@ export class SessionStore {
     if (this.currentRoomId() === roomId) {
       this.setCurrentRoomId(null);
     }
+  }
+
+  /**
+   * Drops the credentials of a room the server closed (`ROOM_CLOSED`, ADR-0097): its seat went with it. The tab is then
+   * in no room, if it was in this one, and `closure` remembers why the room closed.
+   * @param roomId The room that closed.
+   * @param reason Why, as the server said.
+   */
+  close(roomId: string, reason: RoomClosedReason): void {
+    this.forget(roomId);
+    this.closedRooms.update((rooms) => new Map(rooms).set(roomId, reason));
+  }
+
+  /**
+   * Looks up why the server closed a room this tab had a seat in, since the app started. Tracked when read inside a
+   * `computed` or a template.
+   * @param roomId Any id, such as the one in the address.
+   * @returns The reason `close` remembered, or `null` when the room was not closed under this tab.
+   */
+  closure(roomId: string): RoomClosedReason | null {
+    return this.closedRooms().get(roomId) ?? null;
   }
 
   /**

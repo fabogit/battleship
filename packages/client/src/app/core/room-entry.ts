@@ -1,5 +1,5 @@
-import { Service, inject } from '@angular/core';
-import { CLIENT_EVENTS, type ErrorCode } from '@battleship/core';
+import { DestroyRef, Service, inject } from '@angular/core';
+import { CLIENT_EVENTS, SERVER_EVENTS, type ErrorCode } from '@battleship/core';
 
 import { GameSocketService, TRANSPORT_ERRORS, type TransportError } from './game-socket';
 import { GameStateService } from './game-state';
@@ -40,6 +40,7 @@ export type RoomEntryResult =
  * Takes a seat: `CREATE_ROOM` from the home screen, `JOIN_ROOM` from a room link (docs/protocol.md#client--server), or
  * the stored seat of a room link opened in a new tab; and gives it up before the match with `LEAVE_ROOM`. The
  * credentials of an accepted command go to `SessionStore`; the room itself arrives as `STATE` in `GameStateService`.
+ * A room the server closes (`ROOM_CLOSED`) loses its seat the same way.
  */
 @Service()
 export class RoomEntryService {
@@ -49,6 +50,20 @@ export class RoomEntryService {
   private readonly sessions = inject(SessionStore);
   /** Forgets the room's snapshot once the seat is given up: the server sends the leaver nothing more. */
   private readonly gameState = inject(GameStateService);
+
+  /**
+   * Drops the seat and the snapshot of a room the server closes (`ROOM_CLOSED`, ADR-0097): the server sends nothing
+   * more for it, and the room page explains why it closed. Stops listening with the injector.
+   */
+  constructor() {
+    const stopListening = this.socket.on(SERVER_EVENTS.ROOM_CLOSED, ({ roomId, reason }) => {
+      this.sessions.close(roomId, reason);
+      if (this.gameState.snapshot()?.roomId === roomId) {
+        this.gameState.clear();
+      }
+    });
+    inject(DestroyRef).onDestroy(stopListening);
+  }
 
   /**
    * Opens a new room with the sender as `P1`.

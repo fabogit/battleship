@@ -8,8 +8,12 @@ export interface LobbyText {
    * @returns The sentence.
    */
   readonly playingAs: (nickname: string) => string;
-  /** What to do with the link. */
-  readonly instructions: string;
+  /**
+   * What to do with the link, and how long the room waits for it to be used (ADR-0096).
+   * @param minutes `WAITING_TTL_MS` in minutes.
+   * @returns The instructions.
+   */
+  readonly instructions: (minutes: number) => string;
   /** The label of the field holding the link. */
   readonly linkLabel: string;
   /** The button opening the system share sheet on phones and tablets, the share dialog elsewhere. */
@@ -49,7 +53,8 @@ export interface LobbyText {
 export const LOBBY_TEXT: LobbyText = {
   heading: 'Waiting for your opponent',
   playingAs: (nickname) => `You are playing as ${nickname}.`,
-  instructions: 'Send this link to a friend. The match starts when they join.',
+  instructions: (minutes) =>
+    `Send this link to a friend. The match starts when they join; if nobody joins within ${String(minutes)} minutes, the room closes.`,
   linkLabel: 'Room link',
   share: 'Share link',
   copy: 'Copy link',

@@ -1,7 +1,16 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, effect, inject, input, linkedSignal, resource, signal, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { DISCONNECT_FORFEIT_MS, ERROR_CODES, GAME_OVER_TTL_MS, ROOM_PHASES, isRoomId } from '@battleship/core';
+import {
+  DISCONNECT_FORFEIT_MS,
+  ERROR_CODES,
+  GAME_OVER_TTL_MS,
+  ROOM_CLOSED_REASONS,
+  ROOM_PHASES,
+  WAITING_TTL_MS,
+  isRoomId,
+  type RoomClosedReason,
+} from '@battleship/core';
 
 import { CONNECTION_STATUSES, GameSocketService } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
@@ -39,6 +48,8 @@ export const ROOM_VIEWS = {
   NOT_FOUND: 'not-found',
   /** Stored credentials the server refused (`SESSION_INVALID`), explained by `SeatLoss` (ADR-0076). */
   SEAT_LOST: 'seat-lost',
+  /** The server closed the room with this tab's seat in it (`ROOM_CLOSED`), explained by its reason (ADR-0098). */
+  CLOSED: 'closed',
   /** `ROOM_FULL`: both seats were taken when the player tried to join. */
   FULL: 'full',
 } as const;
@@ -53,6 +64,12 @@ const SEATED_VIEWS: ReadonlySet<RoomView> = new Set([
   ROOM_VIEWS.PLACEMENT,
   ROOM_VIEWS.BATTLE,
 ]);
+
+/** The time after which each `ROOM_CLOSED_REASONS` value closes a room, which the closed view quotes in minutes. */
+const CLOSING_TTLS: Readonly<Record<RoomClosedReason, number>> = {
+  [ROOM_CLOSED_REASONS.WAITING_TTL]: WAITING_TTL_MS,
+  [ROOM_CLOSED_REASONS.GAME_OVER_TTL]: GAME_OVER_TTL_MS,
+};
 
 /** The seat losses after which the room may still wait for a player, so the page offers to join it again. */
 const REJOINABLE_LOSSES: ReadonlySet<SeatLoss> = new Set([SEAT_LOSSES.GIVEN_UP, SEAT_LOSSES.UNKNOWN]);
@@ -106,14 +123,18 @@ export class Room {
   });
 
   /**
-   * What the page shows: a room whose stored seat the server refused explains why, until a join attempt says more, and
-   * a room the tab has left stays left; otherwise the snapshot decides once it arrives, then the stored session, then
-   * the join attempt.
+   * What the page shows: a room the server closed under this tab says why, a room whose stored seat the server refused
+   * explains why, until a join attempt says more, and a room the tab has left stays left; otherwise the snapshot
+   * decides once it arrives, then the stored session, then the join attempt.
    */
   protected readonly view = computed<RoomView>(() => {
     const roomId = this.roomId();
     if (!isRoomId(roomId)) {
       return ROOM_VIEWS.NOT_FOUND;
+    }
+    // A closed room holds no credentials either, unless a later room drew the same id and this tab sits in it.
+    if (this.sessions.closure(roomId) !== null && this.sessions.get(roomId) === null) {
+      return ROOM_VIEWS.CLOSED;
     }
     const joinError = this.joinError();
     // A refused seat holds no credentials: they come back with a new seat, which `JOIN_ROOM` takes here.
@@ -185,6 +206,12 @@ export class Room {
       heading: text.heading,
       reason: text.reason(wholeMinutes(DISCONNECT_FORFEIT_MS), wholeMinutes(GAME_OVER_TTL_MS)),
     };
+  });
+
+  /** Why the server closed the room, in words; empty unless it did (ADR-0098). */
+  protected readonly closedReason = computed(() => {
+    const reason = this.sessions.closure(this.roomId());
+    return reason === null ? '' : this.text.closedReasons[reason](wholeMinutes(CLOSING_TTLS[reason]));
   });
 
   /** Whether the refused room may still wait for a player, so the page offers the join form again. */
