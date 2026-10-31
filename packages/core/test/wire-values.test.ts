@@ -105,6 +105,7 @@ describe('wire values', () => {
       'INVALID_PLACEMENT',
       'PLACEMENT_LOCKED',
       'INVALID_TARGETS',
+      'SERVER_ERROR',
     ]);
   });
 
@@ -139,6 +140,6 @@ describe('wire values', () => {
   });
 
   it('ROOM_CLOSED_REASONS', () => {
-    expect(Object.values(ROOM_CLOSED_REASONS)).toEqual(['WAITING_TTL', 'GAME_OVER_TTL']);
+    expect(Object.values(ROOM_CLOSED_REASONS)).toEqual(['WAITING_TTL', 'GAME_OVER_TTL', 'SERVER_ERROR']);
   });
 });

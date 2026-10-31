@@ -102,5 +102,7 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0096](0096-waiting-ttl.md)                         | Waiting TTL                                | Accepted, 2026-10-31   |
 | [ADR-0097](0097-room-closed-notice.md)                  | Room-closed notice                         | Accepted, 2026-10-31   |
 | [ADR-0098](0098-closed-room-view.md)                    | The closed-room view                       | Accepted, 2026-10-31   |
+| [ADR-0104](0104-room-failure-containment.md)            | Room failure containment                   | Accepted, 2026-10-31   |
+| [ADR-0105](0105-server-error-on-the-wire.md)            | `SERVER_ERROR` on the wire                 | Accepted, 2026-10-31   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

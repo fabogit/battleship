@@ -210,6 +210,7 @@ describe('Battle', () => {
 
     it.each([
       [ERROR_CODES.NOT_YOUR_TURN, BATTLE_TEXT.errors.NOT_YOUR_TURN],
+      [ERROR_CODES.SERVER_ERROR, BATTLE_TEXT.errors.SERVER_ERROR],
       [TRANSPORT_ERRORS.NO_ACK, BATTLE_TEXT.errors.NO_ACK],
       // The view has no message of its own for this one.
       [ERROR_CODES.INVALID_PAYLOAD, BATTLE_TEXT.unexpected],

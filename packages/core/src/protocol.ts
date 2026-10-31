@@ -75,6 +75,11 @@ export const ERROR_CODES = {
   PLACEMENT_LOCKED: 'PLACEMENT_LOCKED',
   /** Targets that break `validateTargets` for this turn: count, bounds, repeats or cells already shot. */
   INVALID_TARGETS: 'INVALID_TARGETS',
+  /**
+   * The server failed while running a command's room logic, before storing anything: the room keeps its state, and the
+   * command may be sent again (ADR-0105). The same failure in a handshake check refuses the connection.
+   */
+  SERVER_ERROR: 'SERVER_ERROR',
 } as const;
 
 /** Why the server refused a command or a handshake (docs/protocol.md#error-codes): one of the `ERROR_CODES`. */

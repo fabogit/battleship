@@ -395,7 +395,7 @@ describe('Room', () => {
       await close(ROOM_ID, ROOM_CLOSED_REASONS.WAITING_TTL);
 
       expect(heading()).toBe(ROOM_TEXT.closedHeading);
-      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.WAITING_TTL(10));
+      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.WAITING_TTL(10, 2));
       expect(page().querySelector('input#room-link')).toBeNull();
       expect(page().querySelector('app-presence')).toBeNull();
       expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
@@ -408,8 +408,21 @@ describe('Room', () => {
       await close(ROOM_ID, ROOM_CLOSED_REASONS.GAME_OVER_TTL);
 
       expect(heading()).toBe(ROOM_TEXT.closedHeading);
-      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.GAME_OVER_TTL(2));
+      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.GAME_OVER_TTL(10, 2));
       expect(page().querySelector('[role="grid"]')).toBeNull();
+    });
+
+    it('says the match was lost when a server error closes the room mid-match (#123)', async () => {
+      await receive(battleSnapshot(ROOM_ID));
+
+      await close(ROOM_ID, ROOM_CLOSED_REASONS.SERVER_ERROR);
+
+      expect(heading()).toBe(ROOM_TEXT.closedHeading);
+      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.SERVER_ERROR(10, 2));
+      expect(page().textContent).toContain('the match was lost');
+      expect(page().querySelector('[role="grid"]')).toBeNull();
+      expect(page().querySelector('app-presence')).toBeNull();
+      expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
     });
 
     it('creates a new room from there', async () => {

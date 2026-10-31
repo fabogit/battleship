@@ -150,6 +150,7 @@ describe('Presence', () => {
 
     it.each([
       [ERROR_CODES.NOT_ALLOWED, PRESENCE_TEXT.errors.NOT_ALLOWED],
+      [ERROR_CODES.SERVER_ERROR, PRESENCE_TEXT.errors.SERVER_ERROR],
       [TRANSPORT_ERRORS.NO_ACK, PRESENCE_TEXT.errors.NO_ACK],
       [ERROR_CODES.INVALID_PAYLOAD, PRESENCE_TEXT.unexpected],
     ])('explains a refused SET_PAUSED (%s) in an alert', async (error, message) => {

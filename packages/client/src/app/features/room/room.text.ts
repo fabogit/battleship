@@ -50,10 +50,13 @@ export interface RoomText {
   readonly closedHeading: string;
   /**
    * Why the server closed the room, by `ROOM_CLOSED_REASONS` value, and what the player can do.
-   * @param minutes The time after which that reason closes a room: `WAITING_TTL_MS` or `GAME_OVER_TTL_MS`, in minutes.
+   * @param waitingMinutes `WAITING_TTL_MS` in minutes.
+   * @param gameOverMinutes `GAME_OVER_TTL_MS` in minutes.
    * @returns The explanation.
    */
-  readonly closedReasons: Readonly<Record<RoomClosedReason, (minutes: number) => string>>;
+  readonly closedReasons: Readonly<
+    Record<RoomClosedReason, (waitingMinutes: number, gameOverMinutes: number) => string>
+  >;
   /** For a seat the server refused, by what the page could tell of the cause (ADR-0076). */
   readonly seatLosses: Readonly<Record<SeatLoss, SeatLossText>>;
   /** The button giving up the seat before the match. */
@@ -86,10 +89,12 @@ export const ROOM_TEXT: RoomText = {
   createOwn: 'Create a new room',
   closedHeading: 'This room has closed',
   closedReasons: {
-    [ROOM_CLOSED_REASONS.WAITING_TTL]: (minutes) =>
-      `Nobody joined within ${String(minutes)} minutes, so the room closed to free its place on the server. Create a new room and send the new link to your opponent.`,
-    [ROOM_CLOSED_REASONS.GAME_OVER_TTL]: (minutes) =>
-      `The match was over, and a room closes ${String(minutes)} minutes after its match ends.`,
+    [ROOM_CLOSED_REASONS.WAITING_TTL]: (waitingMinutes) =>
+      `Nobody joined within ${String(waitingMinutes)} minutes, so the room closed to free its place on the server. Create a new room and send the new link to your opponent.`,
+    [ROOM_CLOSED_REASONS.GAME_OVER_TTL]: (_waitingMinutes, gameOverMinutes) =>
+      `The match was over, and a room closes ${String(gameOverMinutes)} minutes after its match ends.`,
+    [ROOM_CLOSED_REASONS.SERVER_ERROR]: () =>
+      'The server ran into an error in this room and could not go on with it, so the match was lost. Other rooms were not affected. Create a new room and send the new link to your opponent.',
   },
   seatLosses: {
     [SEAT_LOSSES.RESTARTED]: {

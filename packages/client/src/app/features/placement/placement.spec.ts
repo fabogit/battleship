@@ -232,15 +232,18 @@ describe('Placement', () => {
     expect(view().textContent).toContain(PLACEMENT_TEXT.startsIn(5));
   });
 
-  it('explains a refused command', async () => {
+  it.each([
+    [ERROR_CODES.WRONG_PHASE, PLACEMENT_TEXT.errors.WRONG_PHASE],
+    [ERROR_CODES.SERVER_ERROR, PLACEMENT_TEXT.errors.SERVER_ERROR],
+  ])('explains a command refused with %s', async (error, message) => {
     await receive({ myShips: FULL_FLEET });
-    socket.emitWithAck.mockResolvedValueOnce({ ok: false, error: ERROR_CODES.WRONG_PHASE });
+    socket.emitWithAck.mockResolvedValueOnce({ ok: false, error });
 
     await tap(button(PLACEMENT_TEXT.confirm));
 
     await vi.waitFor(async () => {
       await fixture.whenStable();
-      expect(view().querySelector('[role="alert"]')?.textContent).toBe(PLACEMENT_TEXT.errors.WRONG_PHASE);
+      expect(view().querySelector('[role="alert"]')?.textContent).toBe(message);
     });
   });
 });

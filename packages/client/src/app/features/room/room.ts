@@ -5,11 +5,9 @@ import {
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
-  ROOM_CLOSED_REASONS,
   ROOM_PHASES,
   WAITING_TTL_MS,
   isRoomId,
-  type RoomClosedReason,
 } from '@battleship/core';
 
 import { CONNECTION_STATUSES, GameSocketService } from '../../core/game-socket';
@@ -64,12 +62,6 @@ const SEATED_VIEWS: ReadonlySet<RoomView> = new Set([
   ROOM_VIEWS.PLACEMENT,
   ROOM_VIEWS.BATTLE,
 ]);
-
-/** The time after which each `ROOM_CLOSED_REASONS` value closes a room, which the closed view quotes in minutes. */
-const CLOSING_TTLS: Readonly<Record<RoomClosedReason, number>> = {
-  [ROOM_CLOSED_REASONS.WAITING_TTL]: WAITING_TTL_MS,
-  [ROOM_CLOSED_REASONS.GAME_OVER_TTL]: GAME_OVER_TTL_MS,
-};
 
 /** The seat losses after which the room may still wait for a player, so the page offers to join it again. */
 const REJOINABLE_LOSSES: ReadonlySet<SeatLoss> = new Set([SEAT_LOSSES.GIVEN_UP, SEAT_LOSSES.UNKNOWN]);
@@ -211,7 +203,9 @@ export class Room {
   /** Why the server closed the room, in words; empty unless it did (ADR-0098). */
   protected readonly closedReason = computed(() => {
     const reason = this.sessions.closure(this.roomId());
-    return reason === null ? '' : this.text.closedReasons[reason](wholeMinutes(CLOSING_TTLS[reason]));
+    return reason === null
+      ? ''
+      : this.text.closedReasons[reason](wholeMinutes(WAITING_TTL_MS), wholeMinutes(GAME_OVER_TTL_MS));
   });
 
   /** Whether the refused room may still wait for a player, so the page offers the join form again. */
