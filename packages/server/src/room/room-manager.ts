@@ -30,18 +30,24 @@ import {
   applyCommand,
   createRoom,
   endPlacement,
+  nextTurnTimerAt,
   placementEndsAt,
+  timeOutTurn,
   type EndedPlacement,
   type RejectedTransition,
   type RoomPlayer,
   type RoomState,
   type SeatCommand,
+  type TimedOutTurn,
   type TransitionResult,
 } from './room.js';
 
 /** What a `RoomManager` draws its randomness from; production uses the defaults, tests inject both. */
 export interface RoomManagerOptions {
-  /** Source of room ids and of the fleets completed at the placement deadline; `createCryptoRng()` by default (ADR-0030). */
+  /**
+   * Source of room ids, of the fleets completed at the placement deadline, of the dice and of the auto shots;
+   * `createCryptoRng()` by default (ADR-0030).
+   */
   readonly rng?: Rng;
   /** Source of player secrets; `createPlayerSecret` by default. */
   readonly createSecret?: () => string;
@@ -88,7 +94,7 @@ export interface ForfeitedSeat {
 export class RoomManager {
   /** The open rooms, by id. */
   readonly #rooms = new Map<string, RoomState>();
-  /** Source of room ids and of completed fleets (ADR-0091). */
+  /** Source of room ids, completed fleets (ADR-0091), dice (ADR-0092) and auto shots (ADR-0099). */
   readonly #rng: Rng;
   /** Source of player secrets. */
   readonly #createSecret: () => string;
@@ -216,7 +222,7 @@ export class RoomManager {
     if (room === undefined) {
       return undefined;
     }
-    const next = isConnected ? reconnectSeat(room, seat) : disconnectSeat(room, seat, now);
+    const next = isConnected ? reconnectSeat(room, seat, now) : disconnectSeat(room, seat, now);
     if (next === room) {
       return undefined;
     }
@@ -261,6 +267,36 @@ export class RoomManager {
     }
     this.#rooms.set(roomId, ended.state);
     return ended;
+  }
+
+  /**
+   * When a room's `TURN` room timer must run next (ADR-0099): the start of the first turn's timer while it is ahead,
+   * then the end of the current turn while the match runs.
+   * @param roomId The room to look at; an unknown id has none.
+   * @param now Current time in epoch ms.
+   * @returns The time in epoch ms, or `undefined` when the room is gone, out of `IN_PROGRESS`, or paused with its turn
+   * timer started.
+   */
+  nextTurnTimerAt(roomId: string, now: number): number | undefined {
+    const room = this.#rooms.get(roomId);
+    return (room?.phase === ROOM_PHASES.IN_PROGRESS ? nextTurnTimerAt(room, now) : null) ?? undefined;
+  }
+
+  /**
+   * Times out a room's current turn if it is due, firing an auto shot with the registry's `Rng` when the rules say so,
+   * and stores the room after it.
+   * @param roomId The room whose `TURN` timer ran out.
+   * @param now Current time in epoch ms.
+   * @returns The timed-out turn, or `undefined` when the room is gone, out of `IN_PROGRESS`, paused, or not due yet.
+   */
+  timeOutTurnDue(roomId: string, now: number): TimedOutTurn | undefined {
+    const room = this.#rooms.get(roomId);
+    const timedOut = room?.phase === ROOM_PHASES.IN_PROGRESS ? timeOutTurn(room, now, this.#rng) : null;
+    if (timedOut === null) {
+      return undefined;
+    }
+    this.#rooms.set(roomId, timedOut.state);
+    return timedOut;
   }
 
   /**

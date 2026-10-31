@@ -1,5 +1,7 @@
 import {
   CLIENT_EVENTS,
+  DEFAULT_RULES,
+  DICE_ANIMATION_MS,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   ORIENTATIONS,
@@ -10,6 +12,7 @@ import {
   SEATS,
   SERVER_EVENTS,
   SHIP_TYPES,
+  TIMEOUT_ACTIONS,
   WAITING_TTL_MS,
 } from '@battleship/core';
 import { io as connect } from 'socket.io-client';
@@ -290,6 +293,28 @@ describe('room logs', () => {
       expect.arrayContaining([
         expect.objectContaining({ msg: 'Dice rolled', roomId, rolls: dice.rolls, starter: dice.starter }),
         expect.objectContaining({ msg: 'Room phase changed', roomId, phase: ROOM_PHASES.IN_PROGRESS }),
+      ]),
+    );
+  });
+
+  it('record each timed-out turn, with its action and AFK count, and the end of the match at info', async () => {
+    const { lines } = await start('info');
+    const { roomId } = await startedMatch();
+    // Nobody fires: P1, P2, P1, P2 time out with an auto shot, then P1's third timeout abandons the match.
+    clock.advance(DICE_ANIMATION_MS + 5 * DEFAULT_RULES.turnTimeLimitSeconds * 1_000);
+
+    const timedOut = lines.filter((line) => line.msg === 'Turn timed out');
+    expect(timedOut).toEqual([
+      expect.objectContaining({ roomId, seat: SEATS.P1, action: TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT, afkCount: 1 }),
+      expect.objectContaining({ roomId, seat: SEATS.P2, action: TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT, afkCount: 1 }),
+      expect.objectContaining({ roomId, seat: SEATS.P1, action: TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT, afkCount: 2 }),
+      expect.objectContaining({ roomId, seat: SEATS.P2, action: TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT, afkCount: 2 }),
+      expect.objectContaining({ roomId, seat: SEATS.P1, action: null, afkCount: 3 }),
+    ]);
+    expect(timedOut.every((line) => line.level === 30)).toBe(true);
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ msg: 'Room phase changed', roomId, phase: ROOM_PHASES.GAME_OVER }),
       ]),
     );
   });

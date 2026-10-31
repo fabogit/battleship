@@ -87,7 +87,7 @@ export interface RoomHandlersOptions {
   readonly rooms: RoomManager;
   /**
    * The time of each command, passed to room logic and the snapshot projection, and the room timers: the end of
-   * placement, the disconnect forfeit, the waiting TTL and the game-over TTL (ADR-0065).
+   * placement, the turn timer, the disconnect forfeit, the waiting TTL and the game-over TTL (ADR-0065).
    */
   readonly clock: Clock;
 }
@@ -99,8 +99,9 @@ interface CommandContext {
   /** Current time in epoch ms. */
   readonly now: () => number;
   /**
-   * Brings a room's timers in line with its stored state: the end of placement, the forfeit of the seat away longest,
-   * the waiting TTL and the game-over TTL; called after every accepted command and every change to its seats' presence.
+   * Brings a room's timers in line with its stored state: the end of placement, the turn timer, the forfeit of the seat
+   * away longest, the waiting TTL and the game-over TTL; called after every accepted command and every change to its
+   * seats' presence.
    * @param roomId The room that changed; an id no room has stops whatever timers it had left.
    */
   readonly reviewTimers: (roomId: string) => void;
@@ -134,9 +135,10 @@ interface CommandContext {
  * refused with `INVALID_PAYLOAD` before room logic sees it; a command sent without an ack callback is ignored. An
  * accepted command is acked first, then its effects (`SHOT_RESOLVED`) go to the room and each seated socket gets its
  * own `STATE` projection (ADR-0047). Placement ends on a room timer, at the end of the start countdown or at the
- * deadline, and the match starts with `DICE_ROLLED` (ADR-0090, ADR-0092). Seat presence is tracked here too
- * (docs/server.md#seat-presence, ADR-0072): a seat with no socket bound to it is away, its forfeit clock runs as a room
- * timer, and every socket of the room gets `STATE` when a seat drops or comes back. A room nobody joins expires after
+ * deadline, and the match starts with `DICE_ROLLED` (ADR-0090, ADR-0092). Each turn runs on a room timer too, which
+ * starts with `STATE` after the dice animation and times the turn out at its end (ADR-0099). Seat presence is tracked
+ * here too (docs/server.md#seat-presence, ADR-0072): a seat with no socket bound to it is away, its forfeit clock runs
+ * as a room timer, and every socket of the room gets `STATE` when a seat drops or comes back. A room nobody joins expires after
  * `WAITING_TTL_MS` (ADR-0096), a room in `GAME_OVER` after `GAME_OVER_TTL_MS`, and one nobody is left in closes
  * (docs/server.md#room-lifecycle); the sockets still in an expired room lose their seat and get `ROOM_CLOSED`
  * (ADR-0097). A throw in room logic stays in its room (ADR-0104): before anything is stored it refuses the command with
@@ -232,6 +234,38 @@ export default fp<RoomHandlersOptions>(
     };
 
     /**
+     * Runs a room's turn timer (ADR-0099). At the end of the dice animation, the first turn's timer starts: every
+     * seated socket gets `STATE`, whose `turnRemainingMs` goes from `null` to the whole turn time (ADR-0093). At the end
+     * of a turn, the turn times out: an auto shot goes to the room as `SHOT_RESOLVED`, as a fired one does, then each
+     * seated socket gets `STATE`, with the next turn or the end of the match (ADR-0047).
+     * @param roomId The room whose `TURN` timer ran out.
+     */
+    const runTurnTimer = (roomId: string): void => {
+      const at = clock.now();
+      const timedOut = rooms.timeOutTurnDue(roomId, at);
+      if (timedOut === undefined) {
+        const room = rooms.get(roomId);
+        if (room?.phase === ROOM_PHASES.IN_PROGRESS) {
+          sendState(io, room, at);
+        }
+        reviewTimers(roomId);
+        return;
+      }
+      app.log.info(
+        { roomId, seat: timedOut.seat, action: timedOut.action, afkCount: timedOut.afkCount },
+        'Turn timed out',
+      );
+      for (const effect of timedOut.effects) {
+        io.to(roomId).emit(effect.type, effect.payload);
+      }
+      if (timedOut.state.phase === ROOM_PHASES.GAME_OVER) {
+        app.log.info({ roomId, phase: timedOut.state.phase }, 'Room phase changed');
+      }
+      sendState(io, timedOut.state, at);
+      reviewTimers(roomId);
+    };
+
+    /**
      * Ends a room's placement when its timer fires: unconfirmed fleets are completed and locked, and the match starts
      * with the dice roll (ADR-0090, ADR-0091, ADR-0092). `DICE_ROLLED` goes to every socket of the room, then each
      * seated socket gets `STATE`, as an effect precedes the snapshot after a command (ADR-0047).
@@ -267,6 +301,15 @@ export default fp<RoomHandlersOptions>(
       } else {
         timers.start(roomId, ROOM_TIMER_KINDS.PLACEMENT, placementEnd, () => {
           endPlacement(roomId);
+        });
+      }
+      // The turn timer stops while the match is paused, and starts again at the deadline a resume worked out.
+      const turnTimerAt = rooms.nextTurnTimerAt(roomId, clock.now());
+      if (turnTimerAt === undefined) {
+        timers.stop(roomId, ROOM_TIMER_KINDS.TURN);
+      } else {
+        timers.start(roomId, ROOM_TIMER_KINDS.TURN, turnTimerAt, () => {
+          runTurnTimer(roomId);
         });
       }
       const pending = rooms.nextForfeit(roomId);

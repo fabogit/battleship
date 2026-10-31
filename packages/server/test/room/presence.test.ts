@@ -87,12 +87,18 @@ describe('disconnectSeat', () => {
 describe('reconnectSeat', () => {
   it('stops the forfeit clock and resumes the match once both seats are back', () => {
     const away = disconnectSeat(battleRoom(), SEATS.P1, NOW);
-    expect(reconnectSeat(away, SEATS.P1)).toMatchObject({ disconnectedAt: { P1: null, P2: null }, isPaused: false });
+    expect(reconnectSeat(away, SEATS.P1, NOW)).toMatchObject({
+      disconnectedAt: { P1: null, P2: null },
+      isPaused: false,
+    });
   });
 
   it('keeps the match paused while the opponent is still away', () => {
     const bothAway = disconnectSeat(disconnectSeat(battleRoom(), SEATS.P1, NOW), SEATS.P2, NOW + 1_000);
-    expect(reconnectSeat(bothAway, SEATS.P2)).toMatchObject({ disconnectedAt: { P1: NOW, P2: null }, isPaused: true });
+    expect(reconnectSeat(bothAway, SEATS.P2, NOW)).toMatchObject({
+      disconnectedAt: { P1: NOW, P2: null },
+      isPaused: true,
+    });
   });
 
   it('resumes a match the connected player had resumed by hand, then paused again', () => {
@@ -100,12 +106,12 @@ describe('reconnectSeat', () => {
     const resumed = expectAccepted(setPaused(away, SEATS.P1, false)).state;
     expect(resumed).toMatchObject({ isPaused: false });
     const paused = expectAccepted(setPaused(resumed, SEATS.P1, true)).state;
-    expect(reconnectSeat(paused, SEATS.P2)).toMatchObject({ isPaused: false });
+    expect(reconnectSeat(paused, SEATS.P2, NOW)).toMatchObject({ isPaused: false });
   });
 
   it('leaves a connected seat as it is', () => {
     const state = placementRoom();
-    expect(reconnectSeat(state, SEATS.P1)).toBe(state);
+    expect(reconnectSeat(state, SEATS.P1, NOW)).toBe(state);
   });
 });
 

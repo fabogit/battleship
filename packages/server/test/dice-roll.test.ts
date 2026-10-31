@@ -97,19 +97,22 @@ describe('the dice roll', () => {
     await expectNothingPending(outsider);
   });
 
-  it('sends nothing more when the dice animation ends: the turn timer (#30) will start then', async () => {
+  it('starts the first turn timer when the dice animation ends, with STATE to both players (ADR-0093)', async () => {
     await start();
     const { p1, p2, roomId } = await startedMatch();
-    const room = rooms.get(roomId);
-    expect(room).toMatchObject({ phase: ROOM_PHASES.IN_PROGRESS, firstTurnStartsAt: clock.now() + DICE_ANIMATION_MS });
-    clock.advance(DICE_ANIMATION_MS);
-    expect(rooms.get(roomId)).toBe(room);
-    expect(clock.pendingCount).toBe(0);
-    // The next event either player gets is the shot's: nothing went out when the animation ended.
+    expect(rooms.get(roomId)).toMatchObject({
+      phase: ROOM_PHASES.IN_PROGRESS,
+      turnTimerStartsAt: clock.now() + DICE_ANIMATION_MS,
+    });
+    clock.advance(DICE_ANIMATION_MS - 1);
+    clock.advance(1);
+    for (const { inbox } of [p1, p2]) {
+      expect((await inbox.state()).battle).toMatchObject({ currentTurn: SEATS.P1, turnRemainingMs: 30_000 });
+    }
     expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [{ x: 9, y: 9 }] })).toEqual({ ok: true });
     for (const { inbox } of [p1, p2]) {
       expect((await inbox.shot()).shooter).toBe(SEATS.P1);
-      expect((await inbox.state()).battle?.turnRemainingMs).toBeNull();
+      expect((await inbox.state()).battle).toMatchObject({ currentTurn: SEATS.P2, turnRemainingMs: 30_000 });
     }
   });
 });

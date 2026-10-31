@@ -14,7 +14,14 @@ import {
 } from '@battleship/core';
 
 import { forfeitDeadline } from './presence.js';
-import { type BattleRoom, type GameOverRoom, type PlacementRoom, type RoomPlayer, type RoomState } from './room.js';
+import {
+  turnTimerEndsAt,
+  type BattleRoom,
+  type GameOverRoom,
+  type PlacementRoom,
+  type RoomPlayer,
+  type RoomState,
+} from './room.js';
 
 /**
  * Builds what one seated player may see of a room. Fog-of-war: the opponent's fleet appears only as the receiver's own
@@ -42,7 +49,7 @@ export function projectSnapshot(state: RoomState, seat: Seat, now: number): Play
     rulesVersion: state.rulesVersion,
     hasConfirmedRules: toRulesConfirmations(state, seat),
     placement: state.phase === ROOM_PHASES.PLACEMENT ? toPlacementSnapshot(state, seat, now) : null,
-    battle: state.phase === ROOM_PHASES.IN_PROGRESS ? toBattleSnapshot(state, seat) : null,
+    battle: state.phase === ROOM_PHASES.IN_PROGRESS ? toBattleSnapshot(state, seat, now) : null,
     gameOver: state.phase === ROOM_PHASES.GAME_OVER ? toGameOverSnapshot(state, seat) : null,
   };
 }
@@ -108,23 +115,37 @@ function toPlacementSnapshot(state: PlacementRoom, seat: Seat, now: number): Pla
  * opponent's board (ADR-0034), never the opponent's ships.
  * @param state The room in `IN_PROGRESS`.
  * @param seat The receiver.
- * @returns The battle part. `turnRemainingMs` stays `null` and `afkCount` zero until the turn timer lands (#30); from
- * then on `turnRemainingMs` is still `null` before `firstTurnStartsAt`, while the dice animation plays (ADR-0093).
- * `isPaused` is the room's, though no timer is frozen yet.
+ * @param now Current time in epoch ms; a reconnecting player gets the turn time left at that moment.
+ * @returns The battle part, with both AFK counts and the turn time left (`turnRemaining`).
  */
-function toBattleSnapshot(state: BattleRoom, seat: Seat): BattleSnapshot {
+function toBattleSnapshot(state: BattleRoom, seat: Seat, now: number): BattleSnapshot {
   const { boards, currentTurn } = state.battle;
+  const opponentSeat = otherSeat(seat);
   return {
     myShips: boards[seat].ships,
     incomingShots: boards[seat].shots,
-    outgoingShots: boards[otherSeat(seat)].shots,
+    outgoingShots: boards[opponentSeat].shots,
     currentTurn,
     shotsAllowed: shotsAllowed(state.battle, state.rules),
     myDraftTargets: seat === currentTurn ? state.draftTargets : [],
-    turnRemainingMs: null,
+    turnRemainingMs: turnRemaining(state, now),
     isPaused: state.isPaused,
-    afkCount: { me: 0, opponent: 0 },
+    afkCount: { me: state.afkCount[seat], opponent: state.afkCount[opponentSeat] },
   };
+}
+
+/**
+ * The time left in the current turn (ADR-0099): `null` before its timer starts, while the dice animation plays
+ * (ADR-0093); the frozen time while the match is paused; the time to `turnTimerEndsAt` otherwise.
+ * @param state The room in `IN_PROGRESS`.
+ * @param now Current time in epoch ms.
+ * @returns Remaining ms, never below zero, or `null`.
+ */
+function turnRemaining(state: BattleRoom, now: number): number | null {
+  if (now < state.turnTimerStartsAt) {
+    return null;
+  }
+  return state.isPaused ? state.turnTimeLeftMs : Math.max(0, turnTimerEndsAt(state) - now);
 }
 
 /**

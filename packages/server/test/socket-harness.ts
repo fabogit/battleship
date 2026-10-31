@@ -16,6 +16,7 @@ import {
   type CommandPayload,
   type Coordinate,
   type DiceRolledPayload,
+  type GameRules,
   type HandshakeAuth,
   type PlacedShip,
   type PlayerStateSnapshot,
@@ -368,11 +369,21 @@ export async function placeFleets(p1: Player, p2: Player): Promise<void> {
   clock.advance(START_COUNTDOWN_MS);
 }
 
-/** Two seated players who agreed on `DEFAULT_RULES`, now placing their fleets; the snapshots this sends are read. */
-export async function placingPlayers(): Promise<SeatedPlayers> {
+/**
+ * Two seated players who agreed on the rules, now placing their fleets; the snapshots this sends are read.
+ * @param rules The rules `P1` proposes before both confirm; `DEFAULT_RULES` are kept as they are.
+ */
+export async function placingPlayers(rules: GameRules = DEFAULT_RULES): Promise<SeatedPlayers> {
   const seated = await seatedPlayers();
   const { p1, p2 } = seated;
-  await agreeOnRules(p1, p2);
+  let rulesVersion = 0;
+  if (rules !== DEFAULT_RULES) {
+    expect(await send(p1, CLIENT_EVENTS.UPDATE_RULES, { rules })).toEqual({ ok: true, rulesVersion: 1 });
+    rulesVersion = 1;
+    await p1.inbox.state();
+    await p2.inbox.state();
+  }
+  await agreeOnRules(p1, p2, rulesVersion);
   await p1.inbox.states(2);
   await p2.inbox.states(2);
   return seated;
@@ -385,11 +396,12 @@ export interface StartedMatch extends SeatedPlayers {
 }
 
 /**
- * Two seated players who agreed on `DEFAULT_RULES` and whose match has started; the events this sends are read. With
+ * Two seated players who agreed on the rules and whose match has started; the events this sends are read. With
  * `ROOM_SEED`, `P1` fires first when the room is the server's first.
+ * @param rules The rules of the match; `DEFAULT_RULES` by default.
  */
-export async function startedMatch(): Promise<StartedMatch> {
-  const seated = await placingPlayers();
+export async function startedMatch(rules: GameRules = DEFAULT_RULES): Promise<StartedMatch> {
+  const seated = await placingPlayers(rules);
   const { p1, p2 } = seated;
   await placeFleets(p1, p2);
   const rolls: DiceRolledPayload[] = [];
