@@ -24,6 +24,7 @@ What #30 builds on it:
 ## Links
 
 - Added on 2026-10-31 for the dice roll ([#29](https://github.com/fabogit/battleship/issues/29)).
+- Amended on 2026-10-31 ([#30](https://github.com/fabogit/battleship/issues/30)): `firstTurnStartsAt` is the first value of `BattleRoom.turnTimerStartsAt`, which every turn sets; the four points above are implemented as written ([ADR-0099](0099-turn-timer.md)).
 - Spec: [Server: Placement](../server.md#placement) · [Server: Disconnection & pause](../server.md#disconnection--pause-in_progress) · [Protocol: Snapshot](../protocol.md#snapshot) · [Client: Game state](../client.md#game-state)
 - Related: [ADR-0092](0092-dice-roll-at-match-start.md) (dice roll) · [ADR-0094](0094-dice-roll-on-reconnect.md) (reconnect) · [ADR-0074](0074-pause.md) (pause) · [ADR-0065](0065-clock-and-room-timers.md) (room timers)
 - Issues: [#29](https://github.com/fabogit/battleship/issues/29) · [#30](https://github.com/fabogit/battleship/issues/30) (turn timer) · [#31](https://github.com/fabogit/battleship/issues/31) (timers UI)

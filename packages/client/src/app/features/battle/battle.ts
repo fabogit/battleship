@@ -86,7 +86,7 @@ export class Battle {
     return this.gameState.isMyTurn() ? this.text.myTurnHint : this.text.opponentTurnHint(this.opponentNickname());
   });
 
-  /** The turn's deadline as `m:ss`; `null` while the snapshot carries none (until the turn timer, #30). */
+  /** The turn's deadline as `m:ss`; `null` while the snapshot carries none, during the dice animation. */
   protected readonly timeLeft = computed(() => {
     const remainingMs = this.gameState.turnRemainingMs();
     return remainingMs === null ? null : formatCountdown(remainingMs);
