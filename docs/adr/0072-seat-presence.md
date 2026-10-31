@@ -29,6 +29,7 @@ A socket replaced by a newer one (`SESSION_REPLACED`, then a server disconnect) 
 ## Links
 
 - Added on 2026-10-15 for disconnection rules ([#23](https://github.com/fabogit/battleship/issues/23)).
+- Amended on 2026-10-31 ([#113](https://github.com/fabogit/battleship/issues/113)): a socket that moves on from a room in `WAITING_FOR_OPPONENT` frees its seat there, as `LEAVE_ROOM` does, and the room closes; in later phases the seat it leaves is still away ([ADR-0095](0095-moving-on-frees-a-lone-waiting-seat.md)).
 - Spec: [Server: Seat presence](../server.md#seat-presence) · [Server: Disconnection & pause](../server.md#disconnection--pause-in_progress) · [Server: Disconnection in other phases](../server.md#disconnection-in-other-phases)
 - Implements: [ADR-0008](0008-disconnection-in-battle.md) (disconnection in battle)
 - Amends: [ADR-0063](0063-session-rebinding.md) (the opponent learns of the return; the rebound socket's `STATE` comes from `room-handlers`) · [ADR-0065](0065-clock-and-room-timers.md) (the forfeit is a room timer)

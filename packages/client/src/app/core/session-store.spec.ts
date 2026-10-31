@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { computed } from '@angular/core';
-import { SESSION_STORE_TTL_MS } from '@battleship/core';
+import { ROOM_CLOSED_REASONS, SESSION_STORE_TTL_MS } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CURRENT_ROOM_KEY, SESSION_KEY_PREFIX, SessionStore } from './session-store';
@@ -263,6 +263,36 @@ describe('SessionStore', () => {
       expect(store.current()?.roomId).toBe(ROOM_ID);
     });
   });
+  describe('close (#113, ADR-0098)', () => {
+    it('drops the credentials of a room the server closed, leaves the room and remembers why', () => {
+      store.save({ roomId: NEXT_ROOM_ID, playerSecret: SECOND_SECRET });
+      store.save({ roomId: ROOM_ID, playerSecret: FIRST_SECRET });
+      const closure = computed(() => store.closure(ROOM_ID));
+      expect(closure()).toBeNull();
+
+      store.close(ROOM_ID, ROOM_CLOSED_REASONS.WAITING_TTL);
+
+      expect(closure()).toBe(ROOM_CLOSED_REASONS.WAITING_TTL);
+      expect(store.get(ROOM_ID)).toBeNull();
+      expect(storedEntry(ROOM_ID)).toBeNull();
+      expect(store.current()).toBeNull();
+      expect(sessionStorage.getItem(CURRENT_ROOM_KEY)).toBeNull();
+      expect(store.wasRefused(ROOM_ID)).toBe(false);
+      expect(store.closure(NEXT_ROOM_ID)).toBeNull();
+      expect(store.get(NEXT_ROOM_ID)).not.toBeNull();
+    });
+
+    it('keeps the current room when another room closes', () => {
+      store.save({ roomId: NEXT_ROOM_ID, playerSecret: SECOND_SECRET });
+      store.save({ roomId: ROOM_ID, playerSecret: FIRST_SECRET });
+
+      store.close(NEXT_ROOM_ID, ROOM_CLOSED_REASONS.GAME_OVER_TTL);
+
+      expect(store.current()).toEqual({ roomId: ROOM_ID, playerSecret: FIRST_SECRET });
+      expect(store.closure(NEXT_ROOM_ID)).toBe(ROOM_CLOSED_REASONS.GAME_OVER_TTL);
+    });
+  });
+
   describe('refusal and forget (#25, ADR-0076)', () => {
     it('remembers when the refused seat was taken', () => {
       vi.useFakeTimers();

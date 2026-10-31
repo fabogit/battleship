@@ -1,7 +1,9 @@
 import { DOCUMENT, Location } from '@angular/common';
 import { Component, computed, inject, input, signal, viewChild, type ElementRef } from '@angular/core';
 import { Router } from '@angular/router';
+import { WAITING_TTL_MS } from '@battleship/core';
 
+import { wholeMinutes } from '../../shared/countdown';
 import { QrCode } from '../../shared/qr-code/qr-code';
 import { LOBBY_TEXT } from './lobby.text';
 
@@ -54,6 +56,8 @@ export class Lobby {
 
   /** The words of the screen. */
   protected readonly text = LOBBY_TEXT;
+  /** How long the room waits for the opponent before it closes, in minutes (ADR-0096). */
+  protected readonly waitingMinutes = wholeMinutes(WAITING_TTL_MS);
   /** The outcomes, for the template. */
   protected readonly shareOutcomes = SHARE_OUTCOMES;
   /** Whether the browser offers the Web Share API (most phones; some desktop browsers, not all of them working). */

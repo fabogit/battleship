@@ -461,13 +461,16 @@ describe('seat binding', () => {
     await start();
     const [p1, p2] = await Promise.all([player(), player()]);
     const first = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
+    await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId: first.roomId, nickname: 'Bob' });
     const second = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
+    expect((await p1.inbox.state()).roomId).toBe(first.roomId);
     expect((await p1.inbox.state()).roomId).toBe(first.roomId);
     expect((await p1.inbox.state()).roomId).toBe(second.roomId);
 
-    await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId: first.roomId, nickname: 'Bob' });
+    // P1's seat in the first room stays taken, away (ADR-0072); its commands now go to the second room, still waiting
+    // for an opponent, and the first room's STATE no longer reaches it.
     expect((await p2.inbox.state()).phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
-    // P1's commands now go to the second room, still waiting for an opponent; the first room's STATE never reached P1.
+    expect((await p2.inbox.state()).opponent?.isConnected).toBe(false);
     expect(await send(p1, CLIENT_EVENTS.CONFIRM_PLACEMENT, {})).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
     const third = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
     expect((await p1.inbox.state()).roomId).toBe(third.roomId);

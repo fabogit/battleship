@@ -8,11 +8,13 @@ import {
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
+  ROOM_CLOSED_REASONS,
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
   SHOT_OUTCOMES,
   type PlayerStateSnapshot,
+  type RoomClosedReason,
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -176,6 +178,7 @@ describe('ROOM_VIEWS', () => {
       'battle',
       'not-found',
       'seat-lost',
+      'closed',
       'full',
     ]);
   });
@@ -365,6 +368,81 @@ describe('Room', () => {
       await goThroughHistory('forward');
 
       expect(TestBed.inject(Router).url).toBe(`/r/${NEXT_ROOM_ID}`);
+      expect(heading()).toBe(LOBBY_TEXT.heading);
+    });
+  });
+
+  describe('after the server closed the room (#113, ADR-0098)', () => {
+    beforeEach(async () => {
+      TestBed.inject(Router).initialNavigation();
+      await harness.navigateByUrl('/');
+      await createRoom(ROOM_ID);
+    });
+
+    /**
+     * Delivers `ROOM_CLOSED` and lets the page render it.
+     * @param roomId The room the server closed.
+     * @param reason Why.
+     */
+    async function close(roomId: string, reason: RoomClosedReason): Promise<void> {
+      socket.fire(SERVER_EVENTS.ROOM_CLOSED, { roomId, reason });
+      await harness.fixture.whenStable();
+    }
+
+    it('says on the waiting screen that nobody joined in time, with a way to create a new room', async () => {
+      await receive(waitingSnapshot(ROOM_ID));
+
+      await close(ROOM_ID, ROOM_CLOSED_REASONS.WAITING_TTL);
+
+      expect(heading()).toBe(ROOM_TEXT.closedHeading);
+      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.WAITING_TTL(10));
+      expect(page().querySelector('input#room-link')).toBeNull();
+      expect(page().querySelector('app-presence')).toBeNull();
+      expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
+      expect(page().querySelector('a')?.textContent.trim()).toBe(ROOM_TEXT.createOwn);
+    });
+
+    it('says the match was over when the game-over TTL closes the room', async () => {
+      await receive(gameOverSnapshot(ROOM_ID));
+
+      await close(ROOM_ID, ROOM_CLOSED_REASONS.GAME_OVER_TTL);
+
+      expect(heading()).toBe(ROOM_TEXT.closedHeading);
+      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.GAME_OVER_TTL(2));
+      expect(page().querySelector('[role="grid"]')).toBeNull();
+    });
+
+    it('creates a new room from there', async () => {
+      await receive(waitingSnapshot(ROOM_ID));
+      await close(ROOM_ID, ROOM_CLOSED_REASONS.WAITING_TTL);
+
+      page().querySelector('a')?.click();
+      await vi.waitFor(() => {
+        expect(TestBed.inject(Router).url).toBe('/');
+      });
+      await harness.fixture.whenStable();
+      await createRoom(NEXT_ROOM_ID);
+      await receive(waitingSnapshot(NEXT_ROOM_ID));
+
+      expect(heading()).toBe(LOBBY_TEXT.heading);
+    });
+
+    it('shows a later room that drew the same id, once this tab sits in it', async () => {
+      await receive(waitingSnapshot(ROOM_ID));
+      await close(ROOM_ID, ROOM_CLOSED_REASONS.WAITING_TTL);
+      await harness.navigateByUrl('/');
+
+      await createRoom(ROOM_ID);
+      await receive(waitingSnapshot(ROOM_ID));
+
+      expect(heading()).toBe(LOBBY_TEXT.heading);
+    });
+
+    it('keeps the waiting screen when another room closes', async () => {
+      await receive(waitingSnapshot(ROOM_ID));
+
+      await close(NEXT_ROOM_ID, ROOM_CLOSED_REASONS.WAITING_TTL);
+
       expect(heading()).toBe(LOBBY_TEXT.heading);
     });
   });

@@ -5,14 +5,17 @@ import {
   ERROR_CODES,
   GAME_OVER_TTL_MS,
   PAYLOAD_PARSERS,
+  ROOM_CLOSED_REASONS,
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
+  WAITING_TTL_MS,
   type AckFailure,
   type AckResponse,
   type ClientToServerEvents,
   type CommandEvent,
   type CommandPayload,
+  type RoomClosedReason,
   type Seat,
   type UpdateRulesAckData,
 } from '@battleship/core';
@@ -23,7 +26,7 @@ import type { Socket } from 'socket.io';
 
 import type { Clock } from '../clock.js';
 import type { RoomManager } from '../room/room-manager.js';
-import { ROOM_TIMER_KINDS, RoomTimers } from '../room/room-timers.js';
+import { ROOM_TIMER_KINDS, RoomTimers, type RoomTimerKind } from '../room/room-timers.js';
 import type { RejectedTransition, RoomState, SeatCommand, SeatCommandEvent } from '../room/room.js';
 import { projectSnapshot } from '../room/snapshot.js';
 import type { GameServer, GameSocket } from './socket-io.js';
@@ -39,6 +42,9 @@ type CommandAck<E extends CommandEvent> = Parameters<Parameters<ClientToServerEv
  * @template E The command's event name.
  */
 type Reply<E extends CommandEvent> = (response: CommandAck<E> | AckFailure) => void;
+
+/** The commands that take a seat, and with it move the socket out of the room it sat in before. */
+type SeatTakingEvent = typeof CLIENT_EVENTS.CREATE_ROOM | typeof CLIENT_EVENTS.JOIN_ROOM;
 
 /**
  * Handles one command whose payload passed its guard: replies exactly once, then sends what the change requires.
@@ -66,7 +72,7 @@ export interface RoomHandlersOptions {
   readonly rooms: RoomManager;
   /**
    * The time of each command, passed to room logic and the snapshot projection, and the room timers: the end of
-   * placement, the disconnect forfeit and the game-over TTL (ADR-0065).
+   * placement, the disconnect forfeit, the waiting TTL and the game-over TTL (ADR-0065).
    */
   readonly clock: Clock;
 }
@@ -79,7 +85,7 @@ interface CommandContext {
   readonly now: () => number;
   /**
    * Brings a room's timers in line with its stored state: the end of placement, the forfeit of the seat away longest,
-   * and the game-over TTL; called after every accepted command and every change to its seats' presence.
+   * the waiting TTL and the game-over TTL; called after every accepted command and every change to its seats' presence.
    * @param roomId The room that changed; an id no room has stops whatever timers it had left.
    */
   readonly reviewTimers: (roomId: string) => void;
@@ -93,7 +99,8 @@ interface CommandContext {
   /**
    * Removes a room nobody is left in (ADR-0073) and logs it as "Room closed".
    * @param roomId The room to remove.
-   * @param reason What freed its last seat, for the log: `LEAVE_ROOM` or `DISCONNECT_FORFEIT`.
+   * @param reason What freed its last seat, for the log: `LEAVE_ROOM`, `DISCONNECT_FORFEIT`, or the `CREATE_ROOM` or
+   * `JOIN_ROOM` that moved its only player on (ADR-0095).
    */
   readonly closeRoom: (roomId: string, reason: string) => void;
 }
@@ -105,9 +112,10 @@ interface CommandContext {
  * own `STATE` projection (ADR-0047). Placement ends on a room timer, at the end of the start countdown or at the
  * deadline, and the match starts with `DICE_ROLLED` (ADR-0090, ADR-0092). Seat presence is tracked here too
  * (docs/server.md#seat-presence, ADR-0072): a seat with no socket bound to it is away, its forfeit clock runs as a room
- * timer, and every socket of the room gets `STATE` when a seat drops or comes back. A room in `GAME_OVER` expires after
- * `GAME_OVER_TTL_MS`, and one nobody is left in closes (docs/server.md#room-lifecycle); the sockets still in it lose
- * their seat.
+ * timer, and every socket of the room gets `STATE` when a seat drops or comes back. A room nobody joins expires after
+ * `WAITING_TTL_MS` (ADR-0096), a room in `GAME_OVER` after `GAME_OVER_TTL_MS`, and one nobody is left in closes
+ * (docs/server.md#room-lifecycle); the sockets still in an expired room lose their seat and get `ROOM_CLOSED`
+ * (ADR-0097).
  */
 export default fp<RoomHandlersOptions>(
   (app, { rooms, clock }, done) => {
@@ -117,26 +125,32 @@ export default fp<RoomHandlersOptions>(
     /**
      * Removes a room and unbinds the sockets still in it, so that a later room drawing the same id never reaches them.
      * @param roomId The room to remove.
+     * @param reason Why, for `ROOM_CLOSED` to every socket still bound to it (ADR-0097); left out when nobody is left
+     * in the room, whose sockets have all lost their seat already.
      */
-    const removeRoom = (roomId: string): void => {
+    const removeRoom = (roomId: string, reason?: RoomClosedReason): void => {
       rooms.remove(roomId);
       timers.stopRoom(roomId);
       for (const peer of socketsIn(io, roomId)) {
         if (peer.data.binding?.roomId === roomId) {
           delete peer.data.binding;
+          if (reason !== undefined) {
+            peer.emit(SERVER_EVENTS.ROOM_CLOSED, { roomId, reason });
+          }
         }
       }
       io.in(roomId).socketsLeave(roomId);
     };
 
     /**
-     * Removes a room whose TTL ran out.
+     * Removes a room whose TTL ran out, telling the sockets still in it.
      * @param roomId The room to remove.
-     * @param reason The timer that ran out, for the log.
+     * @param kind The timer that ran out, for the log.
+     * @param reason The same cause, as `ROOM_CLOSED` names it.
      */
-    const expire = (roomId: string, reason: string): void => {
-      removeRoom(roomId);
-      app.log.info({ roomId, reason, roomCount: rooms.size }, 'Room expired');
+    const expire = (roomId: string, kind: RoomTimerKind, reason: RoomClosedReason): void => {
+      removeRoom(roomId, reason);
+      app.log.info({ roomId, reason: kind, roomCount: rooms.size }, 'Room expired');
     };
 
     const closeRoom = (roomId: string, reason: string): void => {
@@ -214,12 +228,21 @@ export default fp<RoomHandlersOptions>(
           forfeit(roomId);
         });
       }
+      // The waiting TTL counts from the room's entry into `WAITING_FOR_OPPONENT`: at creation, or when a seat was freed
+      // before the match. A join stops it, so the next freed seat starts a new one (ADR-0096).
+      if (room.phase !== ROOM_PHASES.WAITING_FOR_OPPONENT) {
+        timers.stop(roomId, ROOM_TIMER_KINDS.WAITING_FOR_OPPONENT);
+      } else if (!timers.isRunning(roomId, ROOM_TIMER_KINDS.WAITING_FOR_OPPONENT)) {
+        timers.start(roomId, ROOM_TIMER_KINDS.WAITING_FOR_OPPONENT, clock.now() + WAITING_TTL_MS, () => {
+          expire(roomId, ROOM_TIMER_KINDS.WAITING_FOR_OPPONENT, ROOM_CLOSED_REASONS.WAITING_TTL);
+        });
+      }
       // The game-over TTL counts from the end of the match; leaving `GAME_OVER` (a rematch, #36) stops it.
       if (room.phase !== ROOM_PHASES.GAME_OVER) {
         timers.stop(roomId, ROOM_TIMER_KINDS.GAME_OVER);
       } else if (!timers.isRunning(roomId, ROOM_TIMER_KINDS.GAME_OVER)) {
         timers.start(roomId, ROOM_TIMER_KINDS.GAME_OVER, clock.now() + GAME_OVER_TTL_MS, () => {
-          expire(roomId, ROOM_TIMER_KINDS.GAME_OVER);
+          expire(roomId, ROOM_TIMER_KINDS.GAME_OVER, ROOM_CLOSED_REASONS.GAME_OVER_TTL);
         });
       }
     };
@@ -287,17 +310,67 @@ function listenToCommands(
   };
 
   /**
+   * Takes every socket bound to a freed seat out of the room: the secret that could bring it back is gone.
+   * @param roomId Where the seat was.
+   * @param seat The seat room logic just freed.
+   */
+  const unbindSeat = (roomId: string, seat: Seat): void => {
+    for (const peer of socketsIn(io, roomId)) {
+      if (peer.data.binding?.roomId === roomId && peer.data.binding.seat === seat) {
+        delete peer.data.binding;
+        void peer.leave(roomId);
+      }
+    }
+    log.info({ roomId, seat }, 'Seat left');
+  };
+
+  /**
+   * Tells a room that a seat was freed before the match: the other player, if any, gets `STATE`, and a room nobody is
+   * left in closes.
+   * @param roomId Where the seat was freed.
+   * @param before The room before the seat was freed, to log a change of phase.
+   * @param state The room after it, or `null` once room logic left nobody in it.
+   * @param reason What freed the seat, for the log of a room that closes.
+   */
+  const settleFreedSeat = (
+    roomId: string,
+    before: RoomState | undefined,
+    state: RoomState | null,
+    reason: string,
+  ): void => {
+    if (state === null) {
+      closeRoom(roomId, reason);
+      return;
+    }
+    if (state.phase !== before?.phase) {
+      log.info({ roomId, phase: state.phase }, 'Room phase changed');
+    }
+    sendState(io, state, now());
+    reviewTimers(roomId);
+  };
+
+  /**
    * Binds the socket to a seat and moves it into the room's Socket.io room, leaving the room it sat in before, if any
-   * (ADR-0045). The seat it leaves stays taken, and is away once no other socket is bound to it, as after a
-   * disconnection (ADR-0072): its stored session can still bring it back.
+   * (ADR-0045). A seat it leaves in `WAITING_FOR_OPPONENT`, where it was the only player, is freed as by `LEAVE_ROOM`,
+   * so the room closes (ADR-0095). A seat it leaves in a later phase stays taken, and is away once no other socket is
+   * bound to it, as after a disconnection (ADR-0072): its stored session can still bring it back.
    * @param roomId The room the socket now plays in.
    * @param seat Its seat there.
+   * @param event The command that took the seat, for the log of a room it closes.
    */
-  const bind = (roomId: string, seat: Seat): void => {
+  const bind = (roomId: string, seat: Seat, event: SeatTakingEvent): void => {
     const previous = socket.data.binding;
     if (previous !== undefined) {
       void socket.leave(previous.roomId);
-      syncPresence(previous.roomId);
+      const before = rooms.get(previous.roomId);
+      const freed =
+        before?.phase === ROOM_PHASES.WAITING_FOR_OPPONENT ? rooms.leave(previous.roomId, previous.seat) : undefined;
+      if (freed?.ok === true) {
+        unbindSeat(previous.roomId, previous.seat);
+        settleFreedSeat(previous.roomId, before, freed.state, event);
+      } else {
+        syncPresence(previous.roomId);
+      }
     }
     socket.data.binding = { roomId, seat };
     void socket.join(roomId);
@@ -360,23 +433,9 @@ function listenToCommands(
       refuse(CLIENT_EVENTS.LEAVE_ROOM, reply, result);
       return;
     }
-    for (const peer of socketsIn(io, roomId)) {
-      if (peer.data.binding?.roomId === roomId && peer.data.binding.seat === seat) {
-        delete peer.data.binding;
-        void peer.leave(roomId);
-      }
-    }
-    log.info({ roomId, seat }, 'Seat left');
+    unbindSeat(roomId, seat);
     reply({ ok: true });
-    if (result.state === null) {
-      closeRoom(roomId, CLIENT_EVENTS.LEAVE_ROOM);
-      return;
-    }
-    if (result.state.phase !== before?.phase) {
-      log.info({ roomId, phase: result.state.phase }, 'Room phase changed');
-    }
-    sendState(io, result.state, now());
-    reviewTimers(roomId);
+    settleFreedSeat(roomId, before, result.state, CLIENT_EVENTS.LEAVE_ROOM);
   };
 
   /**
@@ -399,9 +458,10 @@ function listenToCommands(
         refuse(CLIENT_EVENTS.CREATE_ROOM, reply, result);
         return;
       }
-      bind(result.roomId, SEATS.P1);
+      bind(result.roomId, SEATS.P1, CLIENT_EVENTS.CREATE_ROOM);
       log.info({ roomId: result.roomId, seat: SEATS.P1, roomCount: rooms.size }, 'Room created');
       reply({ ok: true, roomId: result.roomId, playerSecret: result.playerSecret });
+      reviewTimers(result.roomId);
       sendState(io, result.state, at);
     },
     JOIN_ROOM: (payload, reply) => {
@@ -416,9 +476,11 @@ function listenToCommands(
         refuse(CLIENT_EVENTS.JOIN_ROOM, reply, result);
         return;
       }
-      bind(payload.roomId, result.seat);
+      bind(payload.roomId, result.seat, CLIENT_EVENTS.JOIN_ROOM);
       log.info({ roomId: payload.roomId, seat: result.seat, phase: result.state.phase }, 'Room joined');
       reply({ ok: true, playerSecret: result.playerSecret });
+      // The join ends the room's wait, which stops its waiting TTL.
+      reviewTimers(payload.roomId);
       sendState(io, result.state, at);
     },
     UPDATE_RULES: (payload, reply) => {

@@ -167,6 +167,14 @@ describe('Lobby', () => {
     expect(page.textContent).toContain(LOBBY_TEXT.playingAs('Ada'));
   });
 
+  it('says how long the room waits for the opponent (ADR-0096)', async () => {
+    browserOffers({ hasShare: false, hasClipboard: true });
+
+    const page = await render();
+
+    expect(page.textContent).toContain(LOBBY_TEXT.instructions(10));
+  });
+
   it('offers sharing and copying in every browser', async () => {
     browserOffers({ hasShare: false, hasClipboard: false });
 

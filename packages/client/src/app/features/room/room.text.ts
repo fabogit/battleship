@@ -1,4 +1,4 @@
-import { ERROR_CODES } from '@battleship/core';
+import { ERROR_CODES, ROOM_CLOSED_REASONS, type RoomClosedReason } from '@battleship/core';
 
 import type { RoomEntryError } from '../../core/room-entry';
 import { SEAT_LOSSES, type SeatLoss } from './seat-loss';
@@ -46,6 +46,14 @@ export interface RoomText {
   readonly fullReason: string;
   /** The link back to the home screen. */
   readonly createOwn: string;
+  /** The heading of the view for a room the server closed with the player's seat in it (ADR-0098). */
+  readonly closedHeading: string;
+  /**
+   * Why the server closed the room, by `ROOM_CLOSED_REASONS` value, and what the player can do.
+   * @param minutes The time after which that reason closes a room: `WAITING_TTL_MS` or `GAME_OVER_TTL_MS`, in minutes.
+   * @returns The explanation.
+   */
+  readonly closedReasons: Readonly<Record<RoomClosedReason, (minutes: number) => string>>;
   /** For a seat the server refused, by what the page could tell of the cause (ADR-0076). */
   readonly seatLosses: Readonly<Record<SeatLoss, SeatLossText>>;
   /** The button giving up the seat before the match. */
@@ -72,10 +80,17 @@ export const ROOM_TEXT: RoomText = {
   leftReason: 'You have entered another room since, so this page no longer follows this one.',
   notFoundHeading: 'Room not found',
   notFoundReason:
-    'The link may be mistyped, or the room has closed: rooms do not survive a server restart and close a few minutes after their players have left.',
+    'The link may be mistyped, or the room has closed: rooms do not survive a server restart, and close when nobody joins them in time or a few minutes after their players have left.',
   fullHeading: 'This room is full',
   fullReason: 'Two players are already in this room.',
   createOwn: 'Create a new room',
+  closedHeading: 'This room has closed',
+  closedReasons: {
+    [ROOM_CLOSED_REASONS.WAITING_TTL]: (minutes) =>
+      `Nobody joined within ${String(minutes)} minutes, so the room closed to free its place on the server. Create a new room and send the new link to your opponent.`,
+    [ROOM_CLOSED_REASONS.GAME_OVER_TTL]: (minutes) =>
+      `The match was over, and a room closes ${String(minutes)} minutes after its match ends.`,
+  },
   seatLosses: {
     [SEAT_LOSSES.RESTARTED]: {
       heading: 'The server restarted',

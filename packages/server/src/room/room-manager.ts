@@ -82,8 +82,8 @@ export interface ForfeitedSeat {
 /**
  * Keeps every open room in memory, by id (docs/server.md#room-lifecycle), and runs commands against them through
  * `applyCommand`, storing the state an accepted command returns. A room stays until a forfeit or `LEAVE_ROOM` leaves
- * nobody in it (`forfeitDue`, `leave`; ADR-0073), or until `remove`, which the socket handlers call when its game-over
- * TTL runs out (ADR-0065).
+ * nobody in it (`forfeitDue`, `leave`; ADR-0073), or until `remove`, which the socket handlers call when its waiting or
+ * game-over TTL runs out (ADR-0065, ADR-0096).
  */
 export class RoomManager {
   /** The open rooms, by id. */

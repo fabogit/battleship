@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { CLIENT_EVENTS, ERROR_CODES, SERVER_EVENTS } from '@battleship/core';
+import { CLIENT_EVENTS, ERROR_CODES, ROOM_CLOSED_REASONS, SERVER_EVENTS } from '@battleship/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { FakeGameSocket, placementSnapshot, provideFakeGameSocket } from '../../testing/fake-game-socket';
@@ -184,6 +184,32 @@ describe('roomEntryErrorMessage', () => {
     await service.join(ROOM_ID, 'Grace');
 
     expect(socket.emitWithAck).toHaveBeenCalledOnce();
+  });
+
+  describe('a room the server closes (#113, ADR-0097)', () => {
+    beforeEach(() => {
+      sessions.save({ roomId: NEXT_ROOM_ID, playerSecret: createPlayerSecret() });
+      sessions.save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      socket.fire(SERVER_EVENTS.STATE, placementSnapshot(ROOM_ID));
+    });
+
+    it('forgets the seat and the snapshot, and remembers why it closed', () => {
+      socket.fire(SERVER_EVENTS.ROOM_CLOSED, { roomId: ROOM_ID, reason: ROOM_CLOSED_REASONS.WAITING_TTL });
+
+      expect(sessions.get(ROOM_ID)).toBeNull();
+      expect(sessions.current()).toBeNull();
+      expect(sessions.closure(ROOM_ID)).toBe(ROOM_CLOSED_REASONS.WAITING_TTL);
+      expect(sessions.get(NEXT_ROOM_ID)).not.toBeNull();
+      expect(TestBed.inject(GameStateService).snapshot()).toBeNull();
+    });
+
+    it("keeps the current room's seat and snapshot when another room closes", () => {
+      socket.fire(SERVER_EVENTS.ROOM_CLOSED, { roomId: NEXT_ROOM_ID, reason: ROOM_CLOSED_REASONS.GAME_OVER_TTL });
+
+      expect(sessions.current()).toEqual({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
+      expect(sessions.closure(NEXT_ROOM_ID)).toBe(ROOM_CLOSED_REASONS.GAME_OVER_TTL);
+      expect(TestBed.inject(GameStateService).snapshot()?.roomId).toBe(ROOM_ID);
+    });
   });
 
   it("keeps another room's snapshot when joining", async () => {

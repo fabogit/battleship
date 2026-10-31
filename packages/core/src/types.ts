@@ -170,6 +170,17 @@ export const GAME_OVER_REASONS = {
 /** One of the `GAME_OVER_REASONS`. */
 export type GameOverReason = (typeof GAME_OVER_REASONS)[keyof typeof GAME_OVER_REASONS];
 
+/** Why the server closed a room that a socket was still in, as `ROOM_CLOSED` says (ADR-0097). */
+export const ROOM_CLOSED_REASONS = {
+  /** Nobody joined the room within `WAITING_TTL_MS` of its entry into `WAITING_FOR_OPPONENT` (ADR-0096). */
+  WAITING_TTL: 'WAITING_TTL',
+  /** The match ended `GAME_OVER_TTL_MS` ago without a rematch. */
+  GAME_OVER_TTL: 'GAME_OVER_TTL',
+} as const;
+
+/** One of the `ROOM_CLOSED_REASONS`. */
+export type RoomClosedReason = (typeof ROOM_CLOSED_REASONS)[keyof typeof ROOM_CLOSED_REASONS];
+
 /** What a player can pick at game over (ADR-0012). */
 export const REMATCH_CHOICES = {
   /** Play again with the same rules; loses to `CHANGE_RULES`. */

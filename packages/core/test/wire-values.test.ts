@@ -7,6 +7,7 @@ import {
   ORIENTATIONS,
   PLACEMENT_VIOLATIONS,
   REMATCH_CHOICES,
+  ROOM_CLOSED_REASONS,
   ROOM_PHASES,
   RULES_VIOLATIONS,
   SEATS,
@@ -133,6 +134,11 @@ describe('wire values', () => {
       'DICE_ROLLED',
       'SESSION_REPLACED',
       'SERVER_SHUTDOWN',
+      'ROOM_CLOSED',
     ]);
+  });
+
+  it('ROOM_CLOSED_REASONS', () => {
+    expect(Object.values(ROOM_CLOSED_REASONS)).toEqual(['WAITING_TTL', 'GAME_OVER_TTL']);
   });
 });

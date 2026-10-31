@@ -7,6 +7,7 @@ import type {
   GameRules,
   PlacedShip,
   RematchChoice,
+  RoomClosedReason,
   RoomPhase,
   Seat,
   ShipPlacement,
@@ -392,6 +393,14 @@ export interface DiceRolledPayload {
   readonly starter: Seat;
 }
 
+/** `ROOM_CLOSED`: the server closed the receiver's room, which no longer knows its seat (ADR-0097). */
+export interface RoomClosedPayload {
+  /** The room that closed, so a client that has moved on can tell it from its current one. */
+  readonly roomId: string;
+  /** Why it closed. */
+  readonly reason: RoomClosedReason;
+}
+
 /** Events the server sends (docs/protocol.md#server--client). */
 export interface ServerToClientEvents {
   /** The receiver's snapshot, after every change and on (re)connect. */
@@ -404,6 +413,8 @@ export interface ServerToClientEvents {
   SESSION_REPLACED: (payload: EmptyPayload) => void;
   /** The server is restarting; any match in progress is lost (docs/deployment.md#backend-render). */
   SERVER_SHUTDOWN: (payload: EmptyPayload) => void;
+  /** The server closed the receiver's room and freed its seat; the socket stays connected, in no room (ADR-0097). */
+  ROOM_CLOSED: (payload: RoomClosedPayload) => void;
 }
 
 /**
@@ -416,4 +427,5 @@ export const SERVER_EVENTS = {
   DICE_ROLLED: 'DICE_ROLLED',
   SESSION_REPLACED: 'SESSION_REPLACED',
   SERVER_SHUTDOWN: 'SERVER_SHUTDOWN',
+  ROOM_CLOSED: 'ROOM_CLOSED',
 } as const satisfies { readonly [E in keyof ServerToClientEvents]: E };

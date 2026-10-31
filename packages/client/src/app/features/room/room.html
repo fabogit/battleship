@@ -67,6 +67,13 @@
       <a routerLink="/">{{ text.createOwn }}</a>
     </p>
   }
+  @case (views.CLOSED) {
+    <h1>{{ text.closedHeading }}</h1>
+    <p>{{ closedReason() }}</p>
+    <p>
+      <a routerLink="/">{{ text.createOwn }}</a>
+    </p>
+  }
   @case (views.FULL) {
     <h1>{{ text.fullHeading }}</h1>
     <p>{{ text.fullReason }}</p>
