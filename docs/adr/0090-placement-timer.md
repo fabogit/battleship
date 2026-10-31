@@ -33,6 +33,7 @@ Details in [Server: Placement](../server.md#placement) (#28).
 - When both players are away, placement still ends at the deadline. The match starts paused, the first to have dropped forfeits it, and the room expires `GAME_OVER_TTL_MS` later: within `DISCONNECT_FORFEIT_MS + GAME_OVER_TTL_MS` of the first drop, the bound [ADR-0073](0073-room-lifecycle-with-forfeits.md) keeps.
 - A client sees the match start from `STATE` alone, as before. The protocol does not change: `startCountdownMs` and `remainingMs` already had these meanings.
 - Integration tests run the countdown on the `FakeClock`: the socket harness advances `START_COUNTDOWN_MS` after both fleets are confirmed, and the Postman replay waits as long ([ADR-0068](0068-postman-replay-test.md)).
+- The browser journeys skip it on the e2e server's clock (`endStartCountdown`), so none waits `START_COUNTDOWN_MS` in real time; `placement-deadline` and `start-countdown` play the deadline and an unlock ([ADR-0089](0089-e2e-time-control.md), [Development: End-to-end journeys](../development.md#end-to-end-journeys)).
 
 ## Links
 

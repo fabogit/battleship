@@ -6,7 +6,15 @@ import { PLACEMENT_TEXT } from '../../client/src/app/features/placement/placemen
 import { ROOM_TEXT } from '../../client/src/app/features/room/room.text';
 import { RULES_TEXT } from '../../client/src/app/features/rules/rules.text';
 import { test, expect } from '../src/fixtures.ts';
-import { agreeOnRules, confirmRandomFleet, createRoom, joinRoom, mainHeading, turnHeadings } from '../src/flows.ts';
+import {
+  agreeOnRules,
+  confirmRandomFleet,
+  createRoom,
+  endStartCountdown,
+  joinRoom,
+  mainHeading,
+  turnHeadings,
+} from '../src/flows.ts';
 
 /**
  * The smallest phone the layout supports, held as a phone, and a laptop screen (#53 F1, F4). "Leave room" sits beside
@@ -59,7 +67,7 @@ async function expectInView(control: Locator, what: string, scroll: 'top' | 'to'
 for (const screen of SCREENS) {
   for (const colorScheme of COLOR_SCHEMES) {
     const { width, height } = screen.viewport;
-    test(`layout at ${String(width)}×${String(height)}, ${colorScheme}`, async ({ openPlayer }) => {
+    test(`layout at ${String(width)}×${String(height)}, ${colorScheme}`, async ({ openPlayer, skipServerClock }) => {
       const options: BrowserContextOptions = {
         viewport: screen.viewport,
         isMobile: screen.isMobile,
@@ -124,6 +132,7 @@ for (const screen of SCREENS) {
 
       await confirmRandomFleet(ada);
       await confirmRandomFleet(grace);
+      await endStartCountdown([ada, grace], skipServerClock);
       await expect(mainHeading(ada.page)).toHaveText(turnHeadings(grace));
       await expectNoHorizontalScroll(ada.page, 'battle');
       if (screen.isMobile) {

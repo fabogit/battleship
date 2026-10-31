@@ -8,7 +8,7 @@ import { escape, mainHeading, startBattle } from '../src/flows.ts';
 test('a player away past DISCONNECT_FORFEIT_MS loses by forfeit', async ({ openPlayer, skipServerClock }) => {
   const ada = await openPlayer('Ada');
   const grace = await openPlayer('Grace');
-  const roomUrl = await startBattle(ada, grace);
+  const roomUrl = await startBattle(ada, grace, skipServerClock);
 
   await grace.page.close();
 

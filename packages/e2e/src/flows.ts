@@ -1,7 +1,7 @@
 // Steps the journeys share: entering a room, agreeing on the rules, placing a fleet, firing. Selectors go by ARIA role and the client's own
 // text constants, imported from its sources, so a reworded label changes the journeys with it.
 
-import { BOARD_SIZE } from '@battleship/core';
+import { BOARD_SIZE, START_COUNTDOWN_MS } from '@battleship/core';
 import type { Locator, Page } from '@playwright/test';
 
 import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
@@ -13,12 +13,15 @@ import { RULES_TEXT } from '../../client/src/app/features/rules/rules.text';
 import { BOARD_GRID_TEXT } from '../../client/src/app/shared/board-grid/board-grid.text';
 import { formatCoordinate } from '../../client/src/app/shared/board-grid/coordinates';
 import { NICKNAME_FORM_TEXT } from '../../client/src/app/shared/nickname-form/nickname-form.text';
-import { expect, type Player } from './fixtures.ts';
+import { expect, type JourneyFixtures, type Player } from './fixtures.ts';
 
 /** Every cell name of the board, row by row: `A1` … `J10`. */
 export const ALL_CELLS: readonly string[] = Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) =>
   formatCoordinate({ x: index % BOARD_SIZE, y: Math.floor(index / BOARD_SIZE) }),
 );
+
+/** The placement status while the start countdown runs, whatever the seconds left: "Both fleets are ready. …". */
+export const STARTS_IN: RegExp = new RegExp(escape(PLACEMENT_TEXT.startsIn(0)).replace('0', '\\d+'));
 
 /**
  * The page's main heading: the screen's title, or whose turn it is during the battle.
@@ -131,7 +134,7 @@ export async function enterPlacement(creator: Player, joiner: Player): Promise<s
 }
 
 /**
- * Places a random fleet and confirms it; once both fleets are confirmed, the battle starts.
+ * Places a random fleet and confirms it; once both fleets are confirmed, the start countdown runs (`endStartCountdown`).
  * @param player A player in placement.
  */
 export async function confirmRandomFleet(player: Player): Promise<void> {
@@ -143,16 +146,38 @@ export async function confirmRandomFleet(player: Player): Promise<void> {
 }
 
 /**
- * Creates a room, joins it, agrees on the default rules and confirms two random fleets: the shortest way into the
- * battle.
+ * Waits until both players see the start countdown, then skips the server clock past it, so the battle starts without
+ * waiting `START_COUNTDOWN_MS` in real time (ADR-0090).
+ * @param players The two players, both fleets confirmed.
+ * @param skipServerClock The journey's `skipServerClock` fixture.
+ */
+export async function endStartCountdown(
+  players: readonly [Player, Player],
+  skipServerClock: JourneyFixtures['skipServerClock'],
+): Promise<void> {
+  for (const { page } of players) {
+    await expect(page.getByText(STARTS_IN)).toBeVisible();
+  }
+  await skipServerClock(START_COUNTDOWN_MS);
+}
+
+/**
+ * Creates a room, joins it, agrees on the default rules, confirms two random fleets and skips the start countdown: the
+ * shortest way into the battle.
  * @param creator The player who creates the room and sits in `P1`.
  * @param joiner The player who joins it.
+ * @param skipServerClock The journey's `skipServerClock` fixture.
  * @returns The room's link.
  */
-export async function startBattle(creator: Player, joiner: Player): Promise<string> {
+export async function startBattle(
+  creator: Player,
+  joiner: Player,
+  skipServerClock: JourneyFixtures['skipServerClock'],
+): Promise<string> {
   const roomUrl = await enterPlacement(creator, joiner);
   await confirmRandomFleet(creator);
   await confirmRandomFleet(joiner);
+  await endStartCountdown([creator, joiner], skipServerClock);
   for (const player of [creator, joiner]) {
     await expect(mainHeading(player.page)).toHaveText(turnHeadings(player === creator ? joiner : creator));
   }
