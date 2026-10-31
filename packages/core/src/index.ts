@@ -18,6 +18,7 @@ export {
 export { CELL_COUNT, toCellIndex, toCoordinate } from './grid.js';
 export { createPlayerSecret, generateRoomId } from './identifiers.js';
 export {
+  autoShotTargets,
   otherSeat,
   randomTargets,
   resolveTurn,

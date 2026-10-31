@@ -5,6 +5,7 @@ import {
   createSeededRng,
   DEFAULT_RULES,
   ORIENTATIONS,
+  autoShotTargets,
   randomTargets,
   resolveTurn,
   rollDice,
@@ -386,6 +387,75 @@ describe('randomTargets', () => {
     const before = deepFreeze(battle([miss(2, 2)]));
     randomTargets(before, 4, createSeededRng(3));
     expect(before).toEqual(battle([miss(2, 2)]));
+  });
+  it('leaves out the excluded cells as well as the shot ones', () => {
+    const earlier = Array.from({ length: BOARD_SIZE * BOARD_SIZE - 3 }, (_, index) =>
+      miss(index % BOARD_SIZE, Math.floor(index / BOARD_SIZE)),
+    );
+    for (let seed = 0; seed < SEED_COUNT; seed++) {
+      expect(randomTargets(battle(earlier), 1, createSeededRng(seed), [cell(7, 9), cell(8, 9)])).toEqual([cell(9, 9)]);
+    }
+    expect(() => randomTargets(battle(earlier), 2, createSeededRng(1), [cell(7, 9), cell(8, 9)])).toThrow(RangeError);
+  });
+});
+
+describe('autoShotTargets', () => {
+  it('fires a full draft as it is', () => {
+    expect(autoShotTargets(battle(), [cell(3, 3)], 1, createSeededRng(1))).toEqual([cell(3, 3)]);
+  });
+
+  it('fills an empty draft with random unshot cells, as randomTargets picks them', () => {
+    const before = battle([miss(4, 4)]);
+    for (let seed = 0; seed < SEED_COUNT; seed++) {
+      const targets = autoShotTargets(before, [], 1, createSeededRng(seed));
+      expect(targets).toEqual(randomTargets(before, 1, createSeededRng(seed)));
+      expect(validateTargets(targets, before.boards.P2.shots, 1)).toEqual({ ok: true });
+    }
+  });
+
+  it('keeps a partial draft first and fills the rest with other unshot cells', () => {
+    const before = battle([miss(4, 4)]);
+    for (let seed = 0; seed < SEED_COUNT; seed++) {
+      const targets = autoShotTargets(before, [cell(3, 3), cell(6, 1)], 5, createSeededRng(seed));
+      expect(targets.slice(0, 2)).toEqual([cell(3, 3), cell(6, 1)]);
+      expect(validateTargets(targets, before.boards.P2.shots, 5)).toEqual({ ok: true });
+    }
+  });
+
+  it('drops the targets that broke a rule, and keeps the valid ones in draft order', () => {
+    const before = battle([miss(4, 4)]);
+    const draft = [cell(4, 4), cell(2, 2), cell(10, 0), cell(2, 2), cell(5, 5)];
+    for (let seed = 0; seed < SEED_COUNT; seed++) {
+      const targets = autoShotTargets(before, draft, 3, createSeededRng(seed));
+      expect(targets.slice(0, 2)).toEqual([cell(2, 2), cell(5, 5)]);
+      expect(validateTargets(targets, before.boards.P2.shots, 3)).toEqual({ ok: true });
+    }
+  });
+
+  it('keeps no more draft targets than the turn fires', () => {
+    expect(autoShotTargets(battle(), [cell(1, 1), cell(2, 2)], 1, createSeededRng(1))).toEqual([cell(1, 1)]);
+  });
+
+  it('fires the last unshot cell when the draft holds none', () => {
+    const earlier = Array.from({ length: BOARD_SIZE * BOARD_SIZE }, (_, index) =>
+      miss(index % BOARD_SIZE, Math.floor(index / BOARD_SIZE)),
+    ).filter(({ coordinate }) => !(coordinate.x === 4 && coordinate.y === 7));
+    expect(autoShotTargets(battle(earlier), [cell(0, 0)], 1, createSeededRng(1))).toEqual([cell(4, 7)]);
+  });
+
+  it('gives targets resolveTurn accepts', () => {
+    for (let seed = 0; seed < SEED_COUNT; seed++) {
+      const targets = autoShotTargets(battle(ALL_BUT_ONE_HIT), [cell(0, 0)], 1, createSeededRng(seed));
+      expect(resolveTurn(battle(ALL_BUT_ONE_HIT), targets, STANDARD).ok).toBe(true);
+    }
+  });
+
+  it('never mutates the battle or the draft', () => {
+    const before = deepFreeze(battle([miss(2, 2)]));
+    const draft = deepFreeze([cell(3, 3)]);
+    autoShotTargets(before, draft, 1, createSeededRng(3));
+    expect(before).toEqual(battle([miss(2, 2)]));
+    expect(draft).toEqual([cell(3, 3)]);
   });
 });
 

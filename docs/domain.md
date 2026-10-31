@@ -249,7 +249,8 @@ export type TurnResolution =
 export function shotsAllowed(battle: Battle, rules: GameRules): number;
 export function validateTargets(targets: readonly Coordinate[], shots: readonly ShotResult[], count: number): TargetValidation;
 export function resolveTurn(battle: Battle, targets: readonly Coordinate[], rules: GameRules): TurnResolution;
-export function randomTargets(battle: Battle, count: number, rng: Rng): Coordinate[];
+export function randomTargets(battle: Battle, count: number, rng: Rng, excluded?: readonly Coordinate[]): Coordinate[];
+export function autoShotTargets(battle: Battle, draft: readonly Coordinate[], count: number, rng: Rng): Coordinate[];
 export function rollDice(rng: Rng): DiceRolledPayload; // the protocol's DICE_ROLLED payload
 ```
 
@@ -271,4 +272,5 @@ export function rollDice(rng: Rng): DiceRolledPayload; // the protocol's DICE_RO
   - Otherwise the turn passes to the opponent.
   - When the turn has a winner there is no next turn, and `currentTurn` stays the shooter's.
 - **Purity:** every function returns new values and never mutates its input; the new `Battle` shares the board the turn did not touch. A rejected turn leaves the battle as it was.
-- **Auto shots** (`randomTargets`): `count` distinct cells of the opponent's board that were never shot, uniformly random (every set of cells, in every order, equally likely; no hunting AI). The unshot cells are listed row by row and shuffled with the injected `Rng` ([Randomness](#randomness)), so the same battle and seed give the same targets. `count` is normally `shotsAllowed`; anything but an integer from 0 to the number of unshot cells throws a `RangeError`.
+- **Auto shots** (`randomTargets`): `count` distinct cells of the opponent's board that were never shot, uniformly random (every set of cells, in every order, equally likely; no hunting AI). The unshot cells are listed row by row and shuffled with the injected `Rng` ([Randomness](#randomness)), so the same battle and seed give the same targets. `excluded` leaves more cells out besides the shot ones. `count` is normally `shotsAllowed`; anything but an integer from 0 to the number of cells left throws a `RangeError`.
+- **Timed-out turns** (`autoShotTargets`, the `AUTO_RANDOM_SHOT` timeout action, [ADR-0100](adr/0100-timeout-actions.md)): the draft's targets that are still valid (on the board, never shot, not repeated), in draft order and up to `count`, then `randomTargets` for the rest, with the kept cells excluded. The result passes `resolveTurn` when `count` is `shotsAllowed`.
