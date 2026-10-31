@@ -185,6 +185,21 @@ describe('a command whose transition throws', () => {
     expectLoggedFailure('Command failed', { roomId, event: CLIENT_EVENTS.JOIN_ROOM });
     expect(await send(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' })).toMatchObject({ ok: true });
   });
+
+  it('is refused for LEAVE_ROOM too, keeping the seat', async () => {
+    await startLogged();
+    const { p1, p2, roomId } = await seatedPlayers();
+    const before = rooms.get(roomId);
+    vi.spyOn(rooms, 'leave').mockImplementationOnce(fault);
+
+    expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: false, error: ERROR_CODES.SERVER_ERROR });
+
+    expect(rooms.get(roomId)).toBe(before);
+    expectLoggedFailure('Command failed', { roomId, event: CLIENT_EVENTS.LEAVE_ROOM });
+    // The socket still holds its seat: a seated command goes through, and both players see it.
+    expect(await send(p2, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 })).toEqual({ ok: true });
+    expect((await p1.inbox.state()).hasConfirmedRules.opponent).toBe(true);
+  });
 });
 
 describe('a socket moving on from a room that fails', () => {
@@ -238,6 +253,50 @@ describe('a failure after a command stored its change', () => {
 
     await expectClosed(failing.roomId, [failing.p1, failing.p2]);
     expectLoggedFailure('Room failed', { roomId: failing.roomId, event: CLIENT_EVENTS.UPDATE_PLACEMENT });
+    await expectToPlay(other);
+  });
+
+  it('closes the room CREATE_ROOM stored when its timer review throws', async () => {
+    await startLogged();
+    const other = await placingPlayers();
+    const alice = await player();
+    vi.spyOn(rooms, 'placementEndsAt').mockImplementationOnce(fault);
+
+    const created = (await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
+
+    expect(created).toMatchObject({ ok: true });
+    await expectClosed(created.roomId, [alice]);
+    expectLoggedFailure('Room failed', { roomId: created.roomId, event: CLIENT_EVENTS.CREATE_ROOM });
+    await expectToPlay(other);
+  });
+
+  it('closes the room JOIN_ROOM stored when its timer review throws', async () => {
+    await startLogged();
+    const other = await placingPlayers();
+    const [alice, bob] = await Promise.all([player(), player()]);
+    const { roomId } = (await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
+    await alice.inbox.state();
+    vi.spyOn(rooms, 'placementEndsAt').mockImplementationOnce(fault);
+
+    expect(await send(bob, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' })).toMatchObject({ ok: true });
+
+    await expectClosed(roomId, [alice, bob]);
+    expectLoggedFailure('Room failed', { roomId, event: CLIENT_EVENTS.JOIN_ROOM });
+    await expectToPlay(other);
+  });
+
+  it('closes the room LEAVE_ROOM freed a seat in when its timer review throws', async () => {
+    await startLogged();
+    const failing = await seatedPlayers();
+    const other = await placingPlayers();
+    vi.spyOn(rooms, 'placementEndsAt').mockImplementationOnce(fault);
+
+    expect(await send(failing.p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: true });
+
+    // The player left behind gets the room back in `WAITING_FOR_OPPONENT`, then the notice.
+    expect((await failing.p1.inbox.state()).phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
+    await expectClosed(failing.roomId, [failing.p1]);
+    expectLoggedFailure('Room failed', { roomId: failing.roomId, event: CLIENT_EVENTS.LEAVE_ROOM });
     await expectToPlay(other);
   });
 
