@@ -21,7 +21,7 @@ Verified against Render documentation, then measured on the deployed service (#8
 
   The disconnect forfeit counts from when the server noticed, so it fires up to about 45 s later than `DISCONNECT_FORFEIT_MS` after the real drop. Tuning (a client `socket.disconnect()` on `pagehide`, a shorter heartbeat) waits for the device playtest (#38): today a reload rebinds in under a second, before the old socket's close arrives, so the opponent sees nothing of it.
 
-- If no client is connected, the service spins down after 15 minutes and loses every room. A room nobody sits in closes sooner anyway: its forfeits and the game-over TTL remove it within `DISCONNECT_FORFEIT_MS + GAME_OVER_TTL_MS` (5 minutes, [Server: Room lifecycle](server.md#room-lifecycle)).
+- If no client is connected, the service spins down after 15 minutes and loses every room. A room nobody sits in closes sooner anyway: its forfeits and the game-over TTL remove it within `DISCONNECT_FORFEIT_MS + GAME_OVER_TTL_MS` (5 minutes, [Server: Room lifecycle](server.md#room-lifecycle)). A waiting room closes after `WAITING_TTL_MS` (10 minutes) even with its creator connected, whose open socket keeps the service awake meanwhile.
 
 ## Environment variables
 

@@ -84,6 +84,9 @@ Code names these events through `SERVER_EVENTS` (`SERVER_EVENTS.STATE`), which `
 | `DICE_ROLLED`      | `{ rolls: { P1: number, P2: number }[], starter: Seat }` | The roll that starts the match: every round, ties first, and who fires first; sent once, right before that `STATE`, to the sockets in the room ([ADR-0092](adr/0092-dice-roll-at-match-start.md), [ADR-0094](adr/0094-dice-roll-on-reconnect.md)) |
 | `SESSION_REPLACED` | `{}`                                                     | A newer socket took this seat; a server disconnect follows                                                                                                                                                                                        |
 | `SERVER_SHUTDOWN`  | `{}`                                                     | Server restarting; the match is lost                                                                                                                                                                                                              |
+| `ROOM_CLOSED`      | `{ roomId: string, reason: RoomClosedReason }`           | The server closed the receiver's room and freed its seat; the socket stays connected, in no room                                                                                                                                                  |
+
+`ROOM_CLOSED` goes to every socket still bound to a room the server removes, before the binding goes. `reason` is one of `ROOM_CLOSED_REASONS`: `WAITING_TTL` (nobody joined within `WAITING_TTL_MS`) or `GAME_OVER_TTL` (`GAME_OVER_TTL_MS` after the match). A room closed because nobody is left in it has nobody to tell. Added in protocol version 4 ([ADR-0097](adr/0097-room-closed-notice.md), [Server: Room lifecycle](server.md#room-lifecycle)).
 
 ## Snapshot
 

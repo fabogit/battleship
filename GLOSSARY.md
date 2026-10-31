@@ -15,7 +15,7 @@ One of the two public positions in a room: `P1` for the creator, `P2` for the jo
 _Avoid_: host, slot
 
 **Away**:
-A seat no connection is bound to: its player closed the tab, lost the network or moved to another room. An away seat is kept for `DISCONNECT_FORFEIT_MS`, then forfeited; a connection replaced by a newer one leaves its seat connected.
+A seat no connection is bound to: its player closed the tab, lost the network or moved to another room once the room was past the wait (moving on from a waiting room frees the seat instead). An away seat is kept for `DISCONNECT_FORFEIT_MS`, then forfeited; a connection replaced by a newer one leaves its seat connected.
 _Avoid_: offline, absent
 
 **Leave**:
@@ -23,11 +23,11 @@ A player freeing their own seat before the match with `LEAVE_ROOM` ("Leave room"
 _Avoid_: quit, exit, kick
 
 **Closed room**:
-A room removed because nobody is left in it: its last seat was freed by `LEAVE_ROOM` or a forfeit ("Room closed" in the logs).
+A room removed because nobody is left in it: its last seat was freed by `LEAVE_ROOM`, a forfeit, or its only player moving on to another room while it waited ("Room closed" in the logs).
 _Avoid_: expired room (for this case)
 
 **Expired room**:
-A room removed because its game-over TTL ran out, `GAME_OVER_TTL_MS` after the match ("Room expired" in the logs). The UI calls both a closed room ("This room has closed").
+A room removed because a TTL ran out: the waiting TTL, `WAITING_TTL_MS` after it started waiting with nobody joining, or the game-over TTL, `GAME_OVER_TTL_MS` after the match ("Room expired" in the logs). A player still in it gets `ROOM_CLOSED` with the reason. The UI calls both a closed room ("This room has closed").
 _Avoid_: closed room (in server code and logs)
 
 **Nickname**:
