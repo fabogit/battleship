@@ -77,13 +77,13 @@ Lengths are checked before elements, so an oversized array is refused without be
 
 Code names these events through `SERVER_EVENTS` (`SERVER_EVENTS.STATE`), which `satisfies` the `ServerToClientEvents` map.
 
-| Event              | Payload                                                  | Purpose                                                           |
-| ------------------ | -------------------------------------------------------- | ----------------------------------------------------------------- |
-| `STATE`            | `PlayerStateSnapshot`                                    | Source of truth; sent after every state change and on (re)connect |
-| `SHOT_RESOLVED`    | `{ shooter: Seat, results: ShotResult[] }`               | Animation/sound only; the `STATE` right after it reflects it      |
-| `DICE_ROLLED`      | `{ rolls: { P1: number, P2: number }[], starter: Seat }` | Dice animation, including re-rolls                                |
-| `SESSION_REPLACED` | `{}`                                                     | A newer socket took this seat; a server disconnect follows        |
-| `SERVER_SHUTDOWN`  | `{}`                                                     | Server restarting; the match is lost                              |
+| Event              | Payload                                                  | Purpose                                                                                                                                                                                                                                           |
+| ------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `STATE`            | `PlayerStateSnapshot`                                    | Source of truth; sent after every state change and on (re)connect                                                                                                                                                                                 |
+| `SHOT_RESOLVED`    | `{ shooter: Seat, results: ShotResult[] }`               | Animation/sound only; the `STATE` right after it reflects it                                                                                                                                                                                      |
+| `DICE_ROLLED`      | `{ rolls: { P1: number, P2: number }[], starter: Seat }` | The roll that starts the match: every round, ties first, and who fires first; sent once, right before that `STATE`, to the sockets in the room ([ADR-0092](adr/0092-dice-roll-at-match-start.md), [ADR-0094](adr/0094-dice-roll-on-reconnect.md)) |
+| `SESSION_REPLACED` | `{}`                                                     | A newer socket took this seat; a server disconnect follows                                                                                                                                                                                        |
+| `SERVER_SHUTDOWN`  | `{}`                                                     | Server restarting; the match is lost                                                                                                                                                                                                              |
 
 ## Snapshot
 
@@ -114,7 +114,7 @@ export interface BattleSnapshot {
   readonly currentTurn: Seat;
   readonly shotsAllowed: number;
   readonly myDraftTargets: readonly Coordinate[];
-  readonly turnRemainingMs: number | null; // null before the first turn starts
+  readonly turnRemainingMs: number | null; // null before the first turn starts: during the dice animation, and until the turn timer (#30)
   readonly isPaused: boolean;
   readonly afkCount: PerPlayer<number>;
 }
