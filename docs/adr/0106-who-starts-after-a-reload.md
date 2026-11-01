@@ -9,7 +9,7 @@ A client that comes back during the dice animation, after a reload or a dropped 
 
 ## Considered options
 
-- **The roll in `BattleSnapshot`** (the rounds and the animation time left): a client back within the 3 seconds could finish the animation where it was. It is a protocol change (version 6 on [ADR-0017](0017-protocol-versioning.md)'s terms, which #128 may also take) for a few seconds of presentation whose outcome `currentTurn` already carries, and the room would have to keep the roll for the whole match, or clear it at a time of its own.
+- **The roll in `BattleSnapshot`** (the rounds and the animation time left): a client back within the 3 seconds could finish the animation where it was. It is a protocol change (version 7 on [ADR-0017](0017-protocol-versioning.md)'s terms, since #128 took 6) for a few seconds of presentation whose outcome `currentTurn` already carries, and the room would have to keep the roll for the whole match, or clear it at a time of its own.
 - **Replaying a whole animation on return, from a stored roll:** the replay would end after the first turn's timer has started, the drift [ADR-0094](0094-dice-roll-on-reconnect.md) warns about, and it would hold the starter's aim for nothing.
 
 ## Consequences
