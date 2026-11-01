@@ -21,6 +21,17 @@ app-presence:not(:has(p:not(:empty))) {
   margin-bottom: -1rem;
 }
 
+/* Short screens, under 40rem (640px) tall: half the gap, so that the views' main actions stay in view at 320 × 568. */
+@media (height < 40rem) {
+  :host {
+    gap: 0.5rem;
+  }
+
+  app-presence:not(:has(p:not(:empty))) {
+    margin-bottom: -0.5rem;
+  }
+}
+
 /* Compact beside the view's heading, and still 2.75rem (44px) high (ADR-0080). */
 .leave {
   padding: 0 0.75rem;

@@ -13,9 +13,49 @@ h2 {
   font-size: 1.125rem;
 }
 
-.status {
+/* The heading, and on its right the turn's time left or, while they roll, the dice (ADR-0107). */
+.heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+/* Bold and in the warning colour over the last seconds (ADR-0108); the hint under the heading says it in words. */
+.is-low {
+  color: var(--color-pending);
+  font-weight: 700;
+}
+
+.dice {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.die {
+  display: grid;
+  justify-items: center;
+  max-width: 4.5rem;
+  font-size: 0.75rem;
+}
+
+.owner {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status,
+.afk {
   display: grid;
   gap: 0.25rem;
+}
+
+.afk {
+  color: var(--color-pending);
+  font-size: 0.875rem;
 }
 
 .toggle {
@@ -24,6 +64,7 @@ h2 {
 }
 
 .toggle button {
+  padding: 0 0.5rem;
   border: 0.125rem solid var(--color-border);
   background: none;
   color: inherit;
@@ -85,6 +126,18 @@ h2 {
 
 .error {
   color: var(--color-error);
+}
+
+/* Short screens, under 40rem (640px) tall: tighter spacing, so that "Fire" is in view without a scroll at 320 × 568. */
+@media (height < 40rem) {
+  :host,
+  .boards {
+    gap: 0.5rem;
+  }
+
+  h1 {
+    font-size: 1.25rem;
+  }
 }
 
 /*

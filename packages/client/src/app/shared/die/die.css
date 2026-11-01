@@ -1,0 +1,35 @@
+/* A die 2rem (32px) wide: a 3 × 3 grid of pip places inside a rounded square. */
+:host {
+  display: inline-grid;
+  grid-template: repeat(3, 1fr) / repeat(3, 1fr);
+  gap: 0.125rem;
+  box-sizing: border-box;
+  width: 2rem;
+  height: 2rem;
+  padding: 0.25rem;
+  border: 0.125rem solid currentcolor;
+  border-radius: 0.375rem;
+  background: Canvas;
+}
+
+.pip {
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+/* Tumbling: a wobble, left out when the player asks for reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  :host(.is-rolling) {
+    animation: tumble 0.3s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes tumble {
+  from {
+    transform: rotate(-18deg) translateY(0.125rem);
+  }
+
+  to {
+    transform: rotate(18deg) translateY(-0.125rem);
+  }
+}

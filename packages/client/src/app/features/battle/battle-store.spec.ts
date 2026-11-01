@@ -22,6 +22,7 @@ import {
 import { TRANSPORT_ERRORS, type CommandResult } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { BATTLE_FEEDBACK, BattleStore } from './battle-store';
+import { DiceAnimation } from './dice-animation';
 import { createRoomId } from '../../../testing/session-fixtures';
 
 const ROOM_ID = createRoomId(0);
@@ -84,7 +85,7 @@ function createStore(battle: Partial<BattleSnapshot> = {}): void {
 beforeEach(() => {
   socket = new FakeGameSocket();
   socket.emitWithAck.mockResolvedValue({ ok: true });
-  TestBed.configureTestingModule({ providers: [provideFakeGameSocket(socket), BattleStore] });
+  TestBed.configureTestingModule({ providers: [provideFakeGameSocket(socket), BattleStore, DiceAnimation] });
 });
 
 afterEach(() => {
@@ -265,10 +266,11 @@ describe('BattleStore', () => {
       socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: seat })));
 
       socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results });
-      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.FIRED, isMine: true, results });
+      const fired = { kind: BATTLE_FEEDBACK.FIRED, results, afkCountBefore: 0, isAutomatic: false };
+      expect(store.feedback()).toEqual({ ...fired, isMine: true });
 
       socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results });
-      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.FIRED, isMine: false, results });
+      expect(store.feedback()).toEqual({ ...fired, isMine: false });
     });
 
     it('drops the draft when the turn passes', () => {

@@ -5,8 +5,13 @@
 
 <div class="status">
   @if (timeLeft(); as time) {
-    <p role="timer">{{ text.timeLeft(time) }}</p>
+    <p role="timer" [class.is-low]="isTimeLow()">{{ text.timeLeft(time) }}</p>
   }
+  <p class="time-low" aria-live="polite">
+    @if (isTimeLow() && !store.isConfirmed()) {
+      {{ text.timeLow }}
+    }
+  </p>
   <p aria-live="polite">
     @if (startsInSeconds(); as seconds) {
       {{ text.startsIn(seconds) }}
@@ -40,6 +45,37 @@
   }
 </ul>
 
+<div class="fleet">
+  <div class="fleet-actions">
+    <button type="button" [attr.aria-disabled]="store.isEditable() ? null : 'true'" (click)="store.randomize()">
+      {{ text.randomize }}
+    </button>
+    @if (store.isConfirmed()) {
+      <button
+        type="button"
+        class="primary"
+        aria-describedby="lock-hint"
+        [attr.aria-disabled]="store.isLockPending() ? 'true' : null"
+        (click)="store.unlock()"
+      >
+        {{ store.isLockPending() ? text.unlocking : text.unlock }}
+      </button>
+    } @else {
+      <button
+        type="button"
+        class="primary"
+        aria-describedby="lock-hint"
+        [attr.aria-disabled]="store.canConfirm() ? null : 'true'"
+        (click)="store.confirm()"
+      >
+        {{ store.isLockPending() ? text.confirming : text.confirm }}
+      </button>
+    }
+  </div>
+  <p id="lock-hint" class="hint">{{ lockHint() }}</p>
+  <p class="error" role="alert">{{ errorMessage() }}</p>
+</div>
+
 <app-board-grid
   [label]="text.boardLabel"
   [ships]="store.ships()"
@@ -60,33 +96,3 @@
     }
   }
 </div>
-
-<div class="fleet-actions">
-  <button type="button" [attr.aria-disabled]="store.isEditable() ? null : 'true'" (click)="store.randomize()">
-    {{ text.randomize }}
-  </button>
-  @if (store.isConfirmed()) {
-    <button
-      type="button"
-      class="primary"
-      aria-describedby="lock-hint"
-      [attr.aria-disabled]="store.isLockPending() ? 'true' : null"
-      (click)="store.unlock()"
-    >
-      {{ store.isLockPending() ? text.unlocking : text.unlock }}
-    </button>
-  } @else {
-    <button
-      type="button"
-      class="primary"
-      aria-describedby="lock-hint"
-      [attr.aria-disabled]="store.canConfirm() ? null : 'true'"
-      (click)="store.confirm()"
-    >
-      {{ store.isLockPending() ? text.confirming : text.confirm }}
-    </button>
-  }
-</div>
-<p id="lock-hint" class="hint">{{ lockHint() }}</p>
-
-<p class="error" role="alert">{{ errorMessage() }}</p>

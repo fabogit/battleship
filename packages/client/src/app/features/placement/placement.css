@@ -21,6 +21,23 @@ p {
   gap: 0.25rem;
 }
 
+/* Bold and in the warning colour over the last seconds (ADR-0108); the line under it says it in words. */
+.is-low,
+.time-low {
+  color: var(--color-pending);
+  font-weight: 700;
+}
+
+/* Empty but for its live region until the deadline runs low: no gap for it then. */
+.time-low:empty {
+  margin-top: -0.25rem;
+}
+
+/* The fleet actions, their hint and their errors, spaced by margins so that an empty error line takes no room. */
+.fleet > * + :not(:empty) {
+  margin-top: 0.25rem;
+}
+
 .dock {
   display: flex;
   flex-wrap: wrap;
@@ -75,6 +92,10 @@ p {
   color: var(--color-muted);
 }
 
+.hint {
+  font-size: 0.875rem;
+}
+
 .ship-actions,
 .fleet-actions {
   display: flex;
@@ -102,6 +123,34 @@ p {
 
 .error {
   color: var(--color-error);
+}
+
+/*
+ * Short screens, under 40rem (640px) tall, as for the rules screen: tighter spacing and a smaller dock, so that the
+ * deadline, "Confirm fleet" and the top of the board are in view without a scroll at 320 × 568.
+ */
+@media (height < 40rem) {
+  :host {
+    gap: 0.5rem;
+  }
+
+  h1 {
+    font-size: 1.25rem;
+  }
+
+  .dock {
+    gap: 0.25rem;
+  }
+
+  .dock button {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+  }
+
+  .cells span {
+    width: 0.5rem;
+    height: 0.5rem;
+  }
 }
 
 .visually-hidden {
