@@ -109,5 +109,9 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0103](0103-negotiation-ttl-on-the-wire.md)         | The negotiation TTL on the wire            | Accepted, 2026-11-01   |
 | [ADR-0104](0104-room-failure-containment.md)            | Room failure containment                   | Accepted, 2026-10-31   |
 | [ADR-0105](0105-server-error-on-the-wire.md)            | `SERVER_ERROR` on the wire                 | Accepted, 2026-10-31   |
+| [ADR-0106](0106-who-starts-after-a-reload.md)           | Who starts, not the dice, after a reload   | Accepted, 2026-11-01   |
+| [ADR-0107](0107-dice-animation-in-the-client.md)        | The dice animation in the client           | Accepted, 2026-11-01   |
+| [ADR-0108](0108-low-time-warning.md)                    | Low-time warning                           | Accepted, 2026-11-01   |
+| [ADR-0109](0109-afk-warning.md)                         | AFK warning and the automatic shot         | Accepted, 2026-11-01   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

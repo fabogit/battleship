@@ -145,7 +145,8 @@ export function placementSnapshot(roomId: string, placement: Partial<PlacementSn
 }
 
 /**
- * A snapshot of a room in `IN_PROGRESS`, seen by its creator Ada playing against Grace: no shots yet, Ada's turn.
+ * A snapshot of a room in `IN_PROGRESS`, seen by its creator Ada playing against Grace: no shots yet, Ada's turn, with
+ * its whole time left under the default rules. Pass `turnRemainingMs: null` for the dice animation.
  * @param roomId Any well-formed id; specs use the one their route or store expects.
  * @param battle Fields of the `IN_PROGRESS` part to override.
  * @returns A new snapshot on every call, from the creator's side (`me` is `P1`).
@@ -162,7 +163,7 @@ export function battleSnapshot(roomId: string, battle: Partial<BattleSnapshot> =
       currentTurn: SEATS.P1,
       shotsAllowed: 1,
       myDraftTargets: [],
-      turnRemainingMs: null,
+      turnRemainingMs: DEFAULT_RULES.turnTimeLimitSeconds * 1_000,
       isPaused: false,
       afkCount: { me: 0, opponent: 0 },
       ...battle,

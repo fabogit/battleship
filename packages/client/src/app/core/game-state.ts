@@ -1,7 +1,9 @@
 import { DestroyRef, Service, computed, inject, signal, type Signal } from '@angular/core';
 import {
+  ROOM_PHASES,
   SERVER_EVENTS,
   type Coordinate,
+  type DiceRolledPayload,
   type PlacedShip,
   type PlayerStateSnapshot,
   type RoomPhase,
@@ -28,6 +30,12 @@ export interface BoardView {
 export interface TrackingBoardView extends BoardView {
   /** The receiver's draft targets for the current turn; empty when it is not their turn. */
   readonly draftTargets: readonly Coordinate[];
+}
+
+/** The dice roll that started the match, as this client received it (ADR-0107). */
+export interface ReceivedDiceRoll extends DiceRolledPayload {
+  /** `performance.now()` when `DICE_ROLLED` arrived, in ms: the animation plays `DICE_ANIMATION_MS` from there. */
+  readonly receivedAt: number;
 }
 
 /** A snapshot with the moment it arrived, which every countdown counts from, and what changed for the opponent. */
@@ -98,6 +106,15 @@ export class GameStateService {
   private readonly now = signal(0);
   /** The interval refreshing `now`; set only while a countdown is running. */
   private ticker: ReturnType<typeof setInterval> | undefined;
+
+  /** Set by `DICE_ROLLED`, cleared by a snapshot of another room or outside `IN_PROGRESS`; read through `diceRoll`. */
+  private readonly diceRollSignal = signal<ReceivedDiceRoll | null>(null);
+
+  /**
+   * The dice roll that started the match in progress, when this client received it live (ADR-0107); `null` otherwise,
+   * after a reload in particular: the snapshot carries no dice, only who starts (ADR-0106).
+   */
+  readonly diceRoll = this.diceRollSignal.asReadonly();
 
   /** The latest snapshot; `null` before the first `STATE` and after `clear()`. */
   readonly snapshot = computed(() => this.synced()?.snapshot ?? null);
@@ -186,32 +203,49 @@ export class GameStateService {
   /** Time left before the disconnected opponent forfeits their seat, in ms; `null` while they are connected. */
   readonly opponentForfeitRemainingMs = this.countdown(OPPONENT_FORFEIT);
 
-  /** Applies every `STATE` from the socket; stops listening and ticking with the injector. */
+  /**
+   * Applies every `STATE` from the socket and keeps every `DICE_ROLLED` with its arrival time; stops listening and
+   * ticking with the injector.
+   */
   constructor() {
-    const stopListening = inject(GameSocketService).on(SERVER_EVENTS.STATE, (snapshot) => {
+    const socket = inject(GameSocketService);
+    const stopListeningToState = socket.on(SERVER_EVENTS.STATE, (snapshot) => {
       this.apply(snapshot);
     });
+    // Sent right before the `STATE` that starts the match (ADR-0094), while the room page still shows placement.
+    const stopListeningToDice = socket.on(SERVER_EVENTS.DICE_ROLLED, (payload) => {
+      this.diceRollSignal.set({ ...payload, receivedAt: performance.now() });
+    });
     inject(DestroyRef).onDestroy(() => {
-      stopListening();
+      stopListeningToState();
+      stopListeningToDice();
       this.stopTicking();
     });
   }
 
-  /** Forgets the snapshot and stops the countdowns, e.g. after leaving the room; the next `STATE` starts over. */
+  /**
+   * Forgets the snapshot and the dice roll and stops the countdowns, e.g. after leaving the room; the next `STATE`
+   * starts over.
+   */
   clear(): void {
     this.stopTicking();
     this.synced.set(null);
+    this.diceRollSignal.set(null);
   }
 
   /**
    * Stores a snapshot, compares the opponent with the previous snapshot of the same room, and re-syncs every countdown
-   * to its remaining times. Ticks every `COUNTDOWN_TICK_MS` until the longest running countdown reaches zero.
+   * to its remaining times. Ticks every `COUNTDOWN_TICK_MS` until the longest running countdown reaches zero. Drops the
+   * dice roll once the snapshot is of another room or outside `IN_PROGRESS`: it belonged to a match that is over.
    * @param snapshot The `STATE` just received.
    */
   private apply(snapshot: PlayerStateSnapshot): void {
     const receivedAt = performance.now();
     const previous = this.synced();
     const before = previous?.snapshot.roomId === snapshot.roomId ? previous : null;
+    if (snapshot.phase !== ROOM_PHASES.IN_PROGRESS || (previous !== null && before === null)) {
+      this.diceRollSignal.set(null);
+    }
     const opponent = snapshot.opponent;
     const wasAway = before?.snapshot.opponent?.isConnected === false;
     this.stopTicking();

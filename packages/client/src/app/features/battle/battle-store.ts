@@ -4,6 +4,7 @@ import { CLIENT_EVENTS, SERVER_EVENTS, type Coordinate, type ErrorCode, type Sho
 import { GameSocketService, type TransportError } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { createSyncedDraft } from '../../core/synced-draft';
+import { DiceAnimation } from './dice-animation';
 import { isSameTargets, toggleTarget, type TargetDraft, type TargetRefusal } from './target-draft';
 
 /** What the last battle action or fired turn was, announced to the player (ADR-0043). */
@@ -46,6 +47,14 @@ export type BattleFeedback =
       readonly isMine: boolean;
       /** One result per target, in firing order. */
       readonly results: readonly ShotResult[];
+      /** The shooter's `afkCount` when `SHOT_RESOLVED` arrived, before the `STATE` that follows it. */
+      readonly afkCountBefore: number;
+      /**
+       * Whether the server fired it because the shooter's time ran out (ADR-0109): decided once, by the first `STATE`
+       * after it, which then counts one more timeout for the shooter than `afkCountBefore`, and kept from there.
+       * `false` until that `STATE` arrives.
+       */
+      readonly isAutomatic: boolean;
     };
 
 /** Why a battle command failed: the server's refusal, or no reply at all (ADR-0035). */
@@ -62,6 +71,8 @@ export class BattleStore {
   private readonly socket = inject(GameSocketService);
   /** The latest snapshot: the turn, the allowance and the server's draft. */
   private readonly gameState = inject(GameStateService);
+  /** Holds aiming while the dice roll for the first turn (ADR-0107). */
+  private readonly dice = inject(DiceAnimation);
 
   /** The `IN_PROGRESS` part of the latest snapshot; `null` outside battle. */
   private readonly battle = computed(() => this.gameState.snapshot()?.battle ?? null);
@@ -75,9 +86,11 @@ export class BattleStore {
   private readonly feedbackSignal = signal<BattleFeedback | null>(null);
   /**
    * The last tap's outcome or the last fired turn; `null` before the first one and after a failed update, unless a
-   * later tap or turn set it.
+   * later tap or turn set it. A fired turn says whether it was automatic once the `STATE` after it has arrived.
    */
   readonly feedback = this.feedbackSignal.asReadonly();
+  /** Whether the last fired turn still waits for the `STATE` that tells whether it was automatic. */
+  private isShotAwaitingState = false;
 
   /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */
   private readonly errorSignal = signal<BattleCommandError | null>(null);
@@ -103,18 +116,42 @@ export class BattleStore {
   private readonly isFiringSignal = signal(false);
   /** Whether a `FIRE` waits for its ack. */
   readonly isFiring = this.isFiringSignal.asReadonly();
-  /** Whether a tap on "Enemy waters" changes the draft: the player's turn, with no shot on its way. */
-  readonly canTarget = computed(() => this.isMyTurn() && !this.isFiring());
+  /**
+   * Whether a tap on "Enemy waters" changes the draft: the player's turn, with no shot on its way, once the dice
+   * animation has shown who starts (ADR-0107).
+   */
+  readonly canTarget = computed(() => this.isMyTurn() && !this.isFiring() && !this.dice.isPlaying());
   /** Whether "Fire" would send the turn: the draft holds exactly the allowed number of targets. */
   readonly canFire = computed(() => this.canTarget() && this.draftTargets().length === this.shotsAllowed());
 
-  /** Announces every fired turn; stops with the view. */
+  /** Announces every fired turn, and whether it was automatic once the `STATE` after it arrives; stops with the view. */
   constructor() {
     const stopListening = this.socket.on(SERVER_EVENTS.SHOT_RESOLVED, ({ shooter, results }) => {
       const isMine = shooter === this.gameState.snapshot()?.me.seat;
-      this.feedbackSignal.set({ kind: BATTLE_FEEDBACK.FIRED, isMine, results });
+      const afkCount = this.battle()?.afkCount;
+      const afkCountBefore = afkCount === undefined ? 0 : isMine ? afkCount.me : afkCount.opponent;
+      this.feedbackSignal.set({ kind: BATTLE_FEEDBACK.FIRED, isMine, results, afkCountBefore, isAutomatic: false });
+      this.isShotAwaitingState = true;
     });
-    inject(DestroyRef).onDestroy(stopListening);
+    // Only the first STATE after the shot decides: a later timeout under "Pass the turn" sends no SHOT_RESOLVED, and
+    // must not turn the shot still announced into an automatic one.
+    const stopDeciding = this.socket.on(SERVER_EVENTS.STATE, (snapshot) => {
+      if (!this.isShotAwaitingState) {
+        return;
+      }
+      this.isShotAwaitingState = false;
+      const feedback = this.feedbackSignal();
+      if (feedback?.kind !== BATTLE_FEEDBACK.FIRED) {
+        return;
+      }
+      const afkCount = snapshot.battle?.afkCount;
+      const afkCountAfter = afkCount === undefined ? 0 : feedback.isMine ? afkCount.me : afkCount.opponent;
+      this.feedbackSignal.set({ ...feedback, isAutomatic: afkCountAfter > feedback.afkCountBefore });
+    });
+    inject(DestroyRef).onDestroy(() => {
+      stopListening();
+      stopDeciding();
+    });
   }
 
   /**

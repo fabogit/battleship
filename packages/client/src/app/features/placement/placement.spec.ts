@@ -13,7 +13,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FakeGameSocket, placementSnapshot, provideFakeGameSocket } from '../../../testing/fake-game-socket';
-import { GameStateService } from '../../core/game-state';
+import { COUNTDOWN_TICK_MS, GameStateService } from '../../core/game-state';
 import { CELL_STATES } from '../../shared/board-grid/board-cells';
 import { Placement } from './placement';
 import { PLACEMENT_TEXT } from './placement.text';
@@ -113,12 +113,41 @@ beforeEach(async () => {
 
 afterEach(() => {
   TestBed.inject(GameStateService).clear();
+  vi.useRealTimers();
 });
+
+/**
+ * Delivers a placement snapshot under fake timers and renders it with `detectChanges`: `whenStable` waits on the
+ * scheduler's timers, which fake timers hold.
+ * @param placement Fields of the `PLACEMENT` part to override.
+ */
+function receiveNow(placement: Partial<PlacementSnapshot> = {}): void {
+  socket.fire(SERVER_EVENTS.STATE, placementSnapshot(ROOM_ID, placement));
+  fixture.detectChanges();
+}
+
+/**
+ * Lets time pass under fake timers and renders the countdowns.
+ * @param ms How long, in ms.
+ */
+function wait(ms: number): void {
+  vi.advanceTimersByTime(ms);
+  fixture.detectChanges();
+}
+
+/** @returns The deadline line. */
+function deadline(): Element | null {
+  return view().querySelector('[role="timer"]');
+}
 
 describe('Placement', () => {
   it('shows the deadline, the opponent and every ship of the dock, with its size', () => {
+    // On fake timers: under a loaded suite, a second could pass between the snapshot and the assertion (#31).
+    vi.useFakeTimers();
+    receiveNow();
+
     expect(view().querySelector('h1')?.textContent).toBe(PLACEMENT_TEXT.heading);
-    expect(view().querySelector('[role="timer"]')?.textContent).toBe(PLACEMENT_TEXT.timeLeft('1:00'));
+    expect(deadline()?.textContent).toBe(PLACEMENT_TEXT.timeLeft('1:00'));
     expect(view().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Grace'));
     expect(view().querySelector('.dock')?.getAttribute('aria-label')).toBe(PLACEMENT_TEXT.dockLabel);
 
@@ -226,10 +255,58 @@ describe('Placement', () => {
     expect(view().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Grace'));
   });
 
-  it('counts down to the start once both fleets are confirmed', async () => {
-    await receive({ myShips: FULL_FLEET, hasConfirmed: { me: true, opponent: true }, startCountdownMs: 4_200 });
-
+  it('counts down to the start once both fleets are confirmed, and drops it when one is unlocked', () => {
+    vi.useFakeTimers();
+    receiveNow({ myShips: FULL_FLEET, hasConfirmed: { me: true, opponent: true }, startCountdownMs: 4_200 });
     expect(view().textContent).toContain(PLACEMENT_TEXT.startsIn(5));
+
+    // Countdowns are recomputed every COUNTDOWN_TICK_MS (250 ms): 1 250 ms in, 2 950 ms are left.
+    wait(1_250);
+    expect(view().textContent).toContain(PLACEMENT_TEXT.startsIn(3));
+
+    receiveNow({ myShips: FULL_FLEET, hasConfirmed: { me: true, opponent: false }, startCountdownMs: null });
+    expect(view().textContent).not.toContain(PLACEMENT_TEXT.startsIn(3));
+    expect(view().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Grace'));
+  });
+
+  it('counts the deadline down between snapshots, and follows every new one', () => {
+    vi.useFakeTimers();
+    receiveNow();
+
+    wait(1_000);
+    expect(deadline()?.textContent).toBe(PLACEMENT_TEXT.timeLeft('0:59'));
+
+    wait(20_000);
+    expect(deadline()?.textContent).toBe(PLACEMENT_TEXT.timeLeft('0:39'));
+
+    // A reload or a reconnection: the snapshot says how much time is left, whatever this page counted.
+    receiveNow({ remainingMs: 25_000 });
+    expect(deadline()?.textContent).toBe(PLACEMENT_TEXT.timeLeft('0:25'));
+  });
+
+  it('warns over the last 10 seconds that the fleet is then completed, until it is locked (ADR-0108)', () => {
+    vi.useFakeTimers();
+    receiveNow({ remainingMs: 10_400 });
+    expect(deadline()?.textContent).toBe(PLACEMENT_TEXT.timeLeft('0:11'));
+    expect(deadline()?.classList).not.toContain('is-low');
+    expect(view().querySelector('.time-low')?.textContent.trim()).toBe('');
+
+    wait(COUNTDOWN_TICK_MS * 2);
+    expect(deadline()?.textContent).toBe(PLACEMENT_TEXT.timeLeft('0:10'));
+    expect(deadline()?.classList).toContain('is-low');
+    expect(view().querySelector('.time-low')?.textContent.trim()).toBe(PLACEMENT_TEXT.timeLow);
+
+    receiveNow({ remainingMs: 9_000, myShips: FULL_FLEET, hasConfirmed: { me: true, opponent: false } });
+    expect(deadline()?.classList).toContain('is-low');
+    expect(view().querySelector('.time-low')?.textContent.trim()).toBe('');
+  });
+
+  it('puts "Randomize" and "Confirm fleet" above the board, so that a small phone shows them without a scroll', () => {
+    const order = Array.from(view().querySelectorAll('.fleet-actions, app-board-grid')).map((element) =>
+      element.tagName.toLowerCase(),
+    );
+
+    expect(order).toEqual(['div', 'app-board-grid']);
   });
 
   it.each([

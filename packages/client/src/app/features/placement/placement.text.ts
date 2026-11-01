@@ -38,6 +38,8 @@ export interface PlacementText {
    * @returns The sentence.
    */
   readonly timeLeft: (time: string) => string;
+  /** Under the deadline once it runs low, while the player's fleet is not locked (ADR-0108). */
+  readonly timeLow: string;
   /**
    * While the opponent's fleet is not locked.
    * @param nickname The opponent's nickname.
@@ -150,6 +152,7 @@ export const PLACEMENT_TEXT: PlacementText = {
   shipCells: (cells) => `${String(cells)} cells`,
   placed: 'placed',
   timeLeft: (time) => `Time left: ${time}`,
+  timeLow: 'Time is almost up: your fleet is then completed at random and locked.',
   opponentPlacing: (nickname) => `${nickname} is still placing their fleet.`,
   opponentReady: (nickname) => `${nickname} is ready.`,
   startsIn: (seconds) => `Both fleets are ready. The match starts in ${String(seconds)} s.`,

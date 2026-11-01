@@ -14,6 +14,7 @@ import {
   otherSeat,
   toPlacedShip,
   type BattleSnapshot,
+  type DiceRolledPayload,
   type GameOverSnapshot,
   type PlacementSnapshot,
   type PlayerStateSnapshot,
@@ -119,6 +120,7 @@ function gameOver(overrides: Partial<GameOverSnapshot> = {}): PlayerStateSnapsho
 }
 
 let receiveState: ((snapshot: PlayerStateSnapshot) => void) | undefined;
+let receiveDice: ((payload: DiceRolledPayload) => void) | undefined;
 let socket: { readonly on: ReturnType<typeof vi.fn> };
 let state: GameStateService;
 
@@ -133,12 +135,19 @@ function receive(snapshot: PlayerStateSnapshot): void {
 beforeEach(() => {
   vi.useFakeTimers();
   receiveState = undefined;
+  receiveDice = undefined;
   socket = {
     on: vi.fn((event: string, listener: (payload: unknown) => void) => {
       if (event === SERVER_EVENTS.STATE) {
         receiveState = listener;
         return () => {
           receiveState = undefined;
+        };
+      }
+      if (event === SERVER_EVENTS.DICE_ROLLED) {
+        receiveDice = listener;
+        return () => {
+          receiveDice = undefined;
         };
       }
       return () => undefined;
@@ -235,8 +244,11 @@ describe('GameStateService', () => {
       expect(state.trackingBoard()?.shots).toEqual(OUTGOING);
     });
 
-    it('listens to STATE only: every board comes from the snapshot (ADR-0064)', () => {
-      expect(socket.on).toHaveBeenCalledExactlyOnceWith(SERVER_EVENTS.STATE, expect.any(Function));
+    it('listens to STATE and DICE_ROLLED only: every board comes from the snapshot (ADR-0064)', () => {
+      expect(socket.on.mock.calls.map(([event]) => event as string)).toEqual([
+        SERVER_EVENTS.STATE,
+        SERVER_EVENTS.DICE_ROLLED,
+      ]);
     });
 
     it.each(RECEIVER_SEATS)('tells whether the receiver won, as %s', (seat) => {
@@ -389,12 +401,57 @@ describe('GameStateService', () => {
     });
   });
 
+  describe('dice roll (ADR-0107)', () => {
+    const ROLL: DiceRolledPayload = {
+      rolls: [
+        { P1: 3, P2: 3 },
+        { P1: 6, P2: 1 },
+      ],
+      starter: SEATS.P1,
+    };
+
+    /** Delivers `DICE_ROLLED` as the server would, right before the `STATE` that starts the match. */
+    function roll(): void {
+      receiveDice?.(ROLL);
+    }
+
+    it('keeps the roll with the time it arrived, for the match it starts', () => {
+      receive(placement({ startCountdownMs: 100 }));
+      vi.advanceTimersByTime(100);
+      const arrivedAt = performance.now();
+
+      roll();
+      receive(battle({ turnRemainingMs: null, incomingShots: [], outgoingShots: [] }));
+      vi.advanceTimersByTime(5_000);
+      receive(battle({ turnRemainingMs: 30_000 }));
+
+      expect(state.diceRoll()).toEqual({ ...ROLL, receivedAt: arrivedAt });
+    });
+
+    it('drops it once the match is over, in another room, and on clear()', () => {
+      roll();
+      receive(battle());
+      receive(gameOver());
+      expect(state.diceRoll()).toBeNull();
+
+      roll();
+      receive(battle());
+      receive({ ...battle(), roomId: createRoomId(1) });
+      expect(state.diceRoll()).toBeNull();
+
+      roll();
+      state.clear();
+      expect(state.diceRoll()).toBeNull();
+    });
+  });
+
   it('stops listening and ticking when the injector is destroyed', () => {
     receive(battle());
 
     TestBed.resetTestingModule();
 
     expect(receiveState).toBeUndefined();
+    expect(receiveDice).toBeUndefined();
     expect(vi.getTimerCount()).toBe(0);
   });
 });

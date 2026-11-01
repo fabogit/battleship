@@ -4,9 +4,11 @@ import {
   SHIP_TYPES,
   SHOT_OUTCOMES,
   TARGET_VIOLATIONS,
+  TIMEOUT_ACTIONS,
   type GameOverReason,
   type ShipType,
   type ShotOutcome,
+  type TimeoutAction,
 } from '@battleship/core';
 
 import { TRANSPORT_ERRORS } from '../../core/game-socket';
@@ -44,6 +46,66 @@ export interface BattleText {
    * @returns The sentence.
    */
   readonly timeLeft: (time: string) => string;
+  /**
+   * The turn's deadline while the match is paused, frozen.
+   * @param time The remaining time, e.g. `0:25`.
+   * @returns The sentence.
+   */
+  readonly timePaused: (time: string) => string;
+  /** In place of the hint during the player's turn once its time runs low (ADR-0108), by what a timeout does. */
+  readonly myTimeLow: Readonly<Record<TimeoutAction, string>>;
+  /**
+   * In place of the hint during the opponent's turn once its time runs low (ADR-0108).
+   * @param nickname The opponent's nickname.
+   * @returns The sentence.
+   */
+  readonly opponentTimeLow: (nickname: string) => string;
+  /** The heading while the dice roll for the first turn (ADR-0107). */
+  readonly diceHeading: string;
+  /** Under the heading while the dice tumble. */
+  readonly diceRolling: string;
+  /** Under each die: whose it is; the opponent's shows their nickname. The dice are drawn only (`aria-hidden`). */
+  readonly diceOwners: {
+    /** The player's die. */
+    readonly me: string;
+  };
+  /**
+   * Under the heading once a round is a tie.
+   * @param face The face both dice show.
+   * @param nickname The opponent's nickname.
+   * @returns The sentence.
+   */
+  readonly diceTie: (face: number, nickname: string) => string;
+  /**
+   * Under the heading once the last round shows who starts.
+   * @param myFace The player's die.
+   * @param theirFace The opponent's die.
+   * @param nickname The opponent's nickname.
+   * @param isMine Whether the player starts.
+   * @returns The sentence.
+   */
+  readonly diceResult: (myFace: number, theirFace: number, nickname: string, isMine: boolean) => string;
+  /**
+   * In place of the hint while the first turn's timer waits for the dice animation, on a client that did not see the
+   * roll, as after a reload (ADR-0106).
+   * @param nickname The opponent's nickname.
+   * @param isMine Whether the player starts.
+   * @returns The sentence.
+   */
+  readonly diceStarter: (nickname: string, isMine: boolean) => string;
+  /**
+   * While the player has let turns run out in a row (ADR-0109).
+   * @param left Timeouts in a row left before the match is lost: `MAX_CONSECUTIVE_AFK_TURNS − afkCount.me`, at least 1.
+   * @returns The sentence.
+   */
+  readonly myAfk: (left: number) => string;
+  /**
+   * While the opponent has let turns run out in a row (ADR-0109).
+   * @param nickname The opponent's nickname.
+   * @param left Timeouts in a row left before they lose: `MAX_CONSECUTIVE_AFK_TURNS − afkCount.opponent`, at least 1.
+   * @returns The sentence.
+   */
+  readonly opponentAfk: (nickname: string, left: number) => string;
   /** The button firing the turn. */
   readonly fire: string;
   /** The fire button while its command runs. */
@@ -58,6 +120,8 @@ export interface BattleText {
   readonly aimingAt: (cells: string) => string;
   /** Under the fire button during the opponent's turn. */
   readonly waitForTurn: string;
+  /** Under the fire button while the dice roll for the first turn. */
+  readonly waitForDice: string;
   /** Each ship's name, as it reads inside a sentence. */
   readonly shipNames: Readonly<Record<ShipType, string>>;
   /**
@@ -92,6 +156,24 @@ export interface BattleText {
    * @returns The sentence.
    */
   readonly opponentShot: (cell: string, outcome: ShotOutcome, sunkShip: string | null, nickname: string) => string;
+  /**
+   * After the random shot fired for the player when their time ran out (ADR-0109).
+   * @param cell The cell's name.
+   * @param outcome What the shot found.
+   * @param sunkShip The name of the ship it sank, or `null`.
+   * @param nickname The opponent's nickname.
+   * @returns The sentence.
+   */
+  readonly myAutoShot: (cell: string, outcome: ShotOutcome, sunkShip: string | null, nickname: string) => string;
+  /**
+   * After the random shot fired for the opponent when their time ran out (ADR-0109).
+   * @param cell The cell's name.
+   * @param outcome What the shot found.
+   * @param sunkShip The name of the player's ship it sank, or `null`.
+   * @param nickname The opponent's nickname.
+   * @returns The sentence.
+   */
+  readonly opponentAutoShot: (cell: string, outcome: ShotOutcome, sunkShip: string | null, nickname: string) => string;
   /** The heading at game over for the winner. */
   readonly wonHeading: string;
   /** The heading at game over for the loser. */
@@ -124,14 +206,35 @@ export const BATTLE_TEXT: BattleText = {
   boardToggle: 'Board shown',
   myTurn: 'Your turn',
   opponentTurn: (nickname) => `${nickname}'s turn`,
-  myTurnHint: 'Pick a target in Enemy waters, then fire.',
+  myTurnHint: 'Aim in Enemy waters, then fire.',
   opponentTurnHint: (nickname) => `Wait for ${nickname} to fire.`,
   timeLeft: (time) => `Time left: ${time}`,
+  timePaused: (time) => `Time left: ${time}, paused`,
+  myTimeLow: {
+    [TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT]: 'Fire now, or a random shot is fired.',
+    [TIMEOUT_ACTIONS.PASS_TURN]: 'Fire now, or your turn passes.',
+  },
+  opponentTimeLow: (nickname) => `${nickname}'s time is almost up.`,
+  diceHeading: 'Who starts?',
+  diceRolling: 'Rolling the dice…',
+  diceOwners: { me: 'You' },
+  diceTie: (face, nickname) => `You and ${nickname} both rolled ${String(face)}: rolling again.`,
+  diceResult: (myFace, theirFace, nickname, isMine) =>
+    `You rolled ${String(myFace)}, ${nickname} rolled ${String(theirFace)}: ${isMine ? 'you start' : `${nickname} starts`}.`,
+  diceStarter: (nickname, isMine) =>
+    isMine ? 'The dice picked you to start.' : `The dice picked ${nickname} to start.`,
+  myAfk: (left) =>
+    left === 1 ? 'One more timeout and you lose.' : `${String(left)} more timeouts in a row and you lose.`,
+  opponentAfk: (nickname, left) =>
+    left === 1
+      ? `One more timeout and ${nickname} loses.`
+      : `${String(left)} more timeouts in a row and ${nickname} loses.`,
   fire: 'Fire',
   firing: 'Firing…',
   pickTarget: 'Tap a cell to aim.',
   aimingAt: (cells) => `Target: ${cells}.`,
   waitForTurn: 'You can aim once it is your turn.',
+  waitForDice: 'You can aim once the dice have picked who starts.',
   shipNames: {
     [SHIP_TYPES.CARRIER]: 'carrier',
     [SHIP_TYPES.BATTLESHIP]: 'battleship',
@@ -164,6 +267,26 @@ export const BATTLE_TEXT: BattleText = {
         return `${nickname} fired at ${cell}: hit.`;
       case SHOT_OUTCOMES.SUNK:
         return `${nickname} fired at ${cell} and sank your ${sunkShip ?? 'ship'}.`;
+    }
+  },
+  myAutoShot: (cell, outcome, sunkShip, nickname) => {
+    switch (outcome) {
+      case SHOT_OUTCOMES.MISS:
+        return `Your time ran out: a random shot at ${cell}, miss.`;
+      case SHOT_OUTCOMES.HIT:
+        return `Your time ran out: a random shot at ${cell}, hit!`;
+      case SHOT_OUTCOMES.SUNK:
+        return `Your time ran out: a random shot at ${cell} sank ${nickname}'s ${sunkShip ?? 'ship'}!`;
+    }
+  },
+  opponentAutoShot: (cell, outcome, sunkShip, nickname) => {
+    switch (outcome) {
+      case SHOT_OUTCOMES.MISS:
+        return `${nickname}'s time ran out: a random shot at ${cell}, miss.`;
+      case SHOT_OUTCOMES.HIT:
+        return `${nickname}'s time ran out: a random shot at ${cell}, hit.`;
+      case SHOT_OUTCOMES.SUNK:
+        return `${nickname}'s time ran out: a random shot at ${cell} sank your ${sunkShip ?? 'ship'}.`;
     }
   },
   wonHeading: 'You won!',
@@ -213,7 +336,13 @@ export function battleFeedbackMessage(
     case BATTLE_FEEDBACK.REFUSED:
       return text.refusals[feedback.reason](formatCoordinate(feedback.coordinate), feedback.shotsAllowed);
     case BATTLE_FEEDBACK.FIRED: {
-      const words = feedback.isMine ? text.myShot : text.opponentShot;
+      const words = feedback.isAutomatic
+        ? feedback.isMine
+          ? text.myAutoShot
+          : text.opponentAutoShot
+        : feedback.isMine
+          ? text.myShot
+          : text.opponentShot;
       return feedback.results
         .map(({ coordinate, outcome, sunkShip }) =>
           words(formatCoordinate(coordinate), outcome, sunkShip ? text.shipNames[sunkShip.type] : null, nickname),

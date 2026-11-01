@@ -1,14 +1,16 @@
 import { Component, DestroyRef, computed, inject, linkedSignal, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { ROOM_PHASES, SERVER_EVENTS } from '@battleship/core';
+import { MAX_CONSECUTIVE_AFK_TURNS, ROOM_PHASES, SERVER_EVENTS } from '@battleship/core';
 
 import { GameSocketService } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { BoardGrid } from '../../shared/board-grid/board-grid';
 import { formatCoordinate } from '../../shared/board-grid/coordinates';
-import { formatCountdown } from '../../shared/countdown';
+import { formatCountdown, isLowTime } from '../../shared/countdown';
+import { Die } from '../../shared/die/die';
 import { BattleStore } from './battle-store';
 import { BATTLE_TEXT, battleErrorMessage, battleFeedbackMessage } from './battle.text';
+import { DiceAnimation } from './dice-animation';
 
 /** The boards of the battle view; on a narrow screen one of them is shown at a time (ADR-0057). */
 export const BATTLE_BOARDS = {
@@ -27,6 +29,27 @@ export type BattleBoard = (typeof BATTLE_BOARDS)[keyof typeof BATTLE_BOARDS];
  */
 export const SHOT_HOLD_MS = 1_500;
 
+/** Milliseconds in a second, for `turnTimeLimitSeconds`. */
+const MS_PER_SECOND = 1_000;
+
+/** The turn's deadline as the heading row shows it. */
+interface TurnTimer {
+  /** The sentence, e.g. "Time left: 0:25". */
+  readonly label: string;
+  /** Whether the time left is in its low-time warning (ADR-0108). */
+  readonly isLow: boolean;
+}
+
+/** The dice beside the heading while they roll for the first turn (ADR-0107). */
+interface DiceView {
+  /** The player's face. */
+  readonly myFace: number;
+  /** The opponent's face. */
+  readonly theirFace: number;
+  /** Whether they are tumbling. */
+  readonly isRolling: boolean;
+}
+
 /** The board a turn brings forward, with the turn it belongs to. */
 interface TurnFocus {
   /** Identifies the turn: changes when the turn passes, a shot lands or the match ends. */
@@ -37,15 +60,16 @@ interface TurnFocus {
 
 /**
  * The `IN_PROGRESS` and `GAME_OVER` view (docs/client.md#board--interaction, docs/client.md#layout). The player taps a
- * cell of "Enemy waters" to aim and "Fire" to shoot; whose turn it is heads the page. On a narrow screen a toggle shows
- * one board at a time and brings forward the one the turn needs, after showing where the last shot landed; a wide
- * screen shows both side by side. At game over
- * the page names the winner and the reason, and "Enemy waters" reveals the opponent's whole fleet.
+ * cell of "Enemy waters" to aim and "Fire" to shoot; whose turn it is heads the page, with the turn's time left beside
+ * it, warning when it runs low (ADR-0108), and with the dice that pick who starts while they roll (ADR-0107). Turns run
+ * out in a row are counted for both players (ADR-0109). On a narrow screen a toggle shows one board at a time and
+ * brings forward the one the turn needs, after showing where the last shot landed; a wide screen shows both side by
+ * side. At game over the page names the winner and the reason, and "Enemy waters" reveals the opponent's whole fleet.
  */
 @Component({
   selector: 'app-battle',
-  imports: [BoardGrid, RouterLink],
-  providers: [BattleStore],
+  imports: [BoardGrid, Die, RouterLink],
+  providers: [BattleStore, DiceAnimation],
   templateUrl: './battle.html',
   styleUrl: './battle.css',
 })
@@ -54,6 +78,8 @@ export class Battle {
   protected readonly store = inject(BattleStore);
   /** The boards and the turn, from the snapshot. */
   protected readonly gameState = inject(GameStateService);
+  /** The dice roll for the first turn, as it plays. */
+  private readonly dice = inject(DiceAnimation);
 
   /** The words of the view. */
   protected readonly text = BATTLE_TEXT;
@@ -64,8 +90,10 @@ export class Battle {
   protected readonly opponentNickname = computed(() => this.gameState.snapshot()?.opponent?.nickname ?? '');
   /** The `GAME_OVER` part of the snapshot; `null` while the match goes on. */
   protected readonly gameOver = computed(() => this.gameState.snapshot()?.gameOver ?? null);
+  /** The `IN_PROGRESS` part of the snapshot; `null` outside the match. */
+  private readonly battle = computed(() => this.gameState.snapshot()?.battle ?? null);
 
-  /** The heading: whose turn it is, or how the match ended. */
+  /** The heading: who starts while the dice roll, then whose turn it is, or how the match ended. */
   protected readonly heading = computed(() => {
     const gameOver = this.gameOver();
     if (gameOver !== null) {
@@ -74,26 +102,105 @@ export class Battle {
       }
       return this.gameState.hasWon() === true ? this.text.wonHeading : this.text.lostHeading;
     }
+    if (this.dice.isPlaying()) {
+      return this.text.diceHeading;
+    }
     return this.gameState.isMyTurn() ? this.text.myTurn : this.text.opponentTurn(this.opponentNickname());
   });
 
-  /** Under the heading: what to do this turn, or why the match ended. */
+  /**
+   * Under the heading: why the match ended; the dice while they show; who the dice picked while the first turn's timer
+   * waits for the animation; a warning once the turn's time runs low; or what to do this turn.
+   */
   protected readonly subheading = computed(() => {
+    const nickname = this.opponentNickname();
     const gameOver = this.gameOver();
     if (gameOver !== null) {
-      return this.text.reasons[gameOver.reason](this.opponentNickname(), this.gameState.hasWon() === true);
+      return this.text.reasons[gameOver.reason](nickname, this.gameState.hasWon() === true);
     }
-    return this.gameState.isMyTurn() ? this.text.myTurnHint : this.text.opponentTurnHint(this.opponentNickname());
+    const isMyTurn = this.gameState.isMyTurn();
+    const frame = this.dice.frame();
+    if (frame !== null) {
+      const me = this.gameState.snapshot()?.me.seat;
+      const opponent = this.gameState.snapshot()?.opponent?.seat;
+      const myFace = me === undefined ? 0 : frame.roll[me];
+      const theirFace = opponent === undefined ? 0 : frame.roll[opponent];
+      if (frame.isRolling) {
+        return this.text.diceRolling;
+      }
+      return frame.isLast
+        ? this.text.diceResult(myFace, theirFace, nickname, isMyTurn)
+        : this.text.diceTie(myFace, nickname);
+    }
+    const battle = this.battle();
+    if (battle !== null && battle.turnRemainingMs === null && !this.hasShots()) {
+      return this.text.diceStarter(nickname, isMyTurn);
+    }
+    if (this.timer()?.isLow === true && battle?.isPaused === false) {
+      const timeoutAction = this.gameState.snapshot()?.rules.timeoutAction;
+      if (isMyTurn && timeoutAction !== undefined) {
+        return this.text.myTimeLow[timeoutAction];
+      }
+      if (!isMyTurn) {
+        return this.text.opponentTimeLow(nickname);
+      }
+    }
+    return isMyTurn ? this.text.myTurnHint : this.text.opponentTurnHint(nickname);
   });
 
-  /** The turn's deadline as `m:ss`; `null` while the snapshot carries none, during the dice animation. */
-  protected readonly timeLeft = computed(() => {
+  /** The dice beside the heading while they show; `null` otherwise. */
+  protected readonly diceView = computed<DiceView | null>(() => {
+    const frame = this.dice.frame();
+    const snapshot = this.gameState.snapshot();
+    if (frame === null || !snapshot?.opponent) {
+      return null;
+    }
+    return {
+      myFace: frame.roll[snapshot.me.seat],
+      theirFace: frame.roll[snapshot.opponent.seat],
+      isRolling: frame.isRolling,
+    };
+  });
+
+  /**
+   * The turn's deadline beside the heading; `null` while the snapshot carries none (during the dice animation) and
+   * while the dice show. Frozen and said to be paused while the match is paused.
+   */
+  protected readonly timer = computed<TurnTimer | null>(() => {
     const remainingMs = this.gameState.turnRemainingMs();
-    return remainingMs === null ? null : formatCountdown(remainingMs);
+    const snapshot = this.gameState.snapshot();
+    if (remainingMs === null || snapshot?.battle == null || this.dice.frame() !== null) {
+      return null;
+    }
+    const time = formatCountdown(remainingMs);
+    return {
+      label: snapshot.battle.isPaused ? this.text.timePaused(time) : this.text.timeLeft(time),
+      isLow: isLowTime(remainingMs, snapshot.rules.turnTimeLimitSeconds * MS_PER_SECOND),
+    };
+  });
+
+  /**
+   * Turns run out in a row (ADR-0109): a warning for the player while they have let any run out, and one about the
+   * opponent while they have; each until that player fires. Empty outside the match.
+   */
+  protected readonly afkWarnings = computed<readonly string[]>(() => {
+    const afkCount = this.battle()?.afkCount;
+    if (afkCount === undefined) {
+      return [];
+    }
+    return [
+      ...(afkCount.me > 0 ? [this.text.myAfk(MAX_CONSECUTIVE_AFK_TURNS - afkCount.me)] : []),
+      ...(afkCount.opponent > 0
+        ? [this.text.opponentAfk(this.opponentNickname(), MAX_CONSECUTIVE_AFK_TURNS - afkCount.opponent)]
+        : []),
+    ];
   });
 
   /** Under "Fire": the picked targets, or what to do before firing. */
   protected readonly fireHint = computed(() => {
+    if (this.dice.isPlaying()) {
+      return this.text.waitForDice;
+    }
     if (!this.store.isMyTurn()) {
       return this.text.waitForTurn;
     }
@@ -162,6 +269,15 @@ export class Battle {
       stopListening();
       clearTimeout(this.holdTimer);
     });
+  }
+
+  /**
+   * Tells whether any shot has been fired in the match.
+   * @returns Whether either board has a shot.
+   */
+  private hasShots(): boolean {
+    const battle = this.battle();
+    return battle !== null && battle.incomingShots.length + battle.outgoingShots.length > 0;
   }
 
   /**

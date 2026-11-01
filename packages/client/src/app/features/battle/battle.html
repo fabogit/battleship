@@ -1,10 +1,28 @@
-<h1>{{ heading() }}</h1>
+<div class="heading">
+  <h1>{{ heading() }}</h1>
+  @if (diceView(); as dice) {
+    <div class="dice" aria-hidden="true">
+      <span class="die">
+        <app-die [face]="dice.myFace" [isRolling]="dice.isRolling" />
+        <span class="owner">{{ text.diceOwners.me }}</span>
+      </span>
+      <span class="die">
+        <app-die [face]="dice.theirFace" [isRolling]="dice.isRolling" />
+        <span class="owner">{{ opponentNickname() }}</span>
+      </span>
+    </div>
+  } @else if (timer(); as timer) {
+    <p role="timer" [class.is-low]="timer.isLow">{{ timer.label }}</p>
+  }
+</div>
 
 <div class="status">
   <p aria-live="polite">{{ subheading() }}</p>
-  @if (timeLeft(); as time) {
-    <p role="timer">{{ text.timeLeft(time) }}</p>
-  }
+  <div class="afk" aria-live="polite">
+    @for (warning of afkWarnings(); track $index) {
+      <p>{{ warning }}</p>
+    }
+  </div>
   @if (gameOver()) {
     <p>{{ text.revealed(opponentNickname()) }}</p>
     <p>

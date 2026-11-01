@@ -1,7 +1,10 @@
+import { signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import {
   CLIENT_EVENTS,
+  DEFAULT_RULES,
+  DICE_ANIMATION_MS,
   ERROR_CODES,
   GAME_OVER_REASONS,
   ORIENTATIONS,
@@ -9,6 +12,7 @@ import {
   SERVER_EVENTS,
   SHIP_TYPES,
   SHOT_OUTCOMES,
+  TIMEOUT_ACTIONS,
   otherSeat,
   toPlacedShip,
   type BattleSnapshot,
@@ -27,8 +31,9 @@ import {
   provideFakeGameSocket,
 } from '../../../testing/fake-game-socket';
 import { TRANSPORT_ERRORS } from '../../core/game-socket';
-import { GameStateService } from '../../core/game-state';
+import { COUNTDOWN_TICK_MS, GameStateService } from '../../core/game-state';
 import { CELL_STATES } from '../../shared/board-grid/board-cells';
+import { PREFERS_REDUCED_MOTION } from '../../shared/reduced-motion';
 import { BATTLE_BOARDS, Battle, SHOT_HOLD_MS } from './battle';
 import { BATTLE_TEXT } from './battle.text';
 import { createRoomId } from '../../../testing/session-fixtures';
@@ -49,6 +54,7 @@ const THEIR_CARRIER = toPlacedShip({
 
 let socket: FakeGameSocket;
 let fixture: ComponentFixture<Battle>;
+let prefersReducedMotion: ReturnType<typeof signal<boolean>>;
 
 /** @returns The rendered view. */
 function view(): HTMLElement {
@@ -154,7 +160,14 @@ function text(selector: string): string | undefined {
 beforeEach(async () => {
   socket = new FakeGameSocket();
   socket.emitWithAck.mockResolvedValue({ ok: true });
-  TestBed.configureTestingModule({ providers: [provideFakeGameSocket(socket), provideRouter([])] });
+  prefersReducedMotion = signal(false);
+  TestBed.configureTestingModule({
+    providers: [
+      provideFakeGameSocket(socket),
+      provideRouter([]),
+      { provide: PREFERS_REDUCED_MOTION, useValue: prefersReducedMotion },
+    ],
+  });
   TestBed.inject(GameStateService);
   socket.fire(SERVER_EVENTS.STATE, battleSnapshot(ROOM_ID, { myShips: [MY_DESTROYER] }));
   fixture = TestBed.createComponent(Battle);
@@ -181,7 +194,6 @@ describe('Battle', () => {
       expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
       expect(pressed(BATTLE_TEXT.enemyWaters)).toBe('true');
       expect(pressed(BATTLE_TEXT.myFleet)).toBe('false');
-      expect(view().querySelector('[role="timer"]')).toBeNull();
     });
 
     it('draws both boards, only "Enemy waters" interactive', () => {
@@ -411,6 +423,237 @@ describe('Battle', () => {
       );
       expect(myCells).toContain('B1, miss');
       expect(myCells).toContain('A1, ship');
+    });
+  });
+
+  describe('timers, dice and AFK (#31)', () => {
+    // Fake timers throughout, rendered with detectChanges: whenStable waits on the scheduler's timers, which fake
+    // timers hold.
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    /**
+     * Delivers a snapshot and renders it.
+     * @param snapshot The `STATE`.
+     */
+    function receiveNow(snapshot: PlayerStateSnapshot): void {
+      socket.fire(SERVER_EVENTS.STATE, snapshot);
+      fixture.detectChanges();
+    }
+
+    /**
+     * Lets time pass and renders the result.
+     * @param ms How long, in ms.
+     */
+    function wait(ms: number): void {
+      vi.advanceTimersByTime(ms);
+      fixture.detectChanges();
+    }
+
+    /** @returns The turn timer, or `null`. */
+    function timer(): Element | null {
+      return view().querySelector('[role="timer"]');
+    }
+
+    /** @returns The warnings about turns run out in a row. */
+    function afkWarnings(): string[] {
+      return Array.from(view().querySelectorAll('.afk p')).map((line) => line.textContent.trim());
+    }
+
+    it.each(RECEIVER_SEATS)(
+      'counts both turns down beside the heading, warning over the last 10 seconds, as %s',
+      (seat) => {
+        receiveNow(battleFrom(seat, { currentTurn: seat, turnRemainingMs: 10_400 }));
+        expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:11'));
+        expect(timer()?.classList).not.toContain('is-low');
+        expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.myTurnHint);
+
+        wait(COUNTDOWN_TICK_MS * 2);
+        expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:10'));
+        expect(timer()?.classList).toContain('is-low');
+        expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.myTimeLow.AUTO_RANDOM_SHOT);
+
+        receiveNow(battleFrom(seat, { currentTurn: otherSeat(seat), turnRemainingMs: 30_000 }));
+        expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:30'));
+        expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.opponentTurnHint('Grace'));
+
+        wait(20_000);
+        expect(timer()?.classList).toContain('is-low');
+        expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.opponentTimeLow('Grace'));
+      },
+    );
+
+    it('warns over the last 5 seconds of a 15-second turn, in the words of "Pass the turn"', () => {
+      const rules = { ...DEFAULT_RULES, turnTimeLimitSeconds: 15, timeoutAction: TIMEOUT_ACTIONS.PASS_TURN } as const;
+      receiveNow({ ...battleSnapshot(ROOM_ID, { turnRemainingMs: 5_200 }), rules });
+      expect(timer()?.classList).not.toContain('is-low');
+
+      wait(COUNTDOWN_TICK_MS);
+      expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:05'));
+      expect(timer()?.classList).toContain('is-low');
+      expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.myTimeLow.PASS_TURN);
+    });
+
+    it('holds a paused turn still and says so, without urging the player to fire', () => {
+      receiveNow(battleSnapshot(ROOM_ID, { turnRemainingMs: 8_000, isPaused: true }));
+
+      wait(5_000);
+
+      expect(timer()?.textContent).toBe(BATTLE_TEXT.timePaused('0:08'));
+      expect(timer()?.classList).toContain('is-low');
+      expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.myTurnHint);
+    });
+
+    it('keeps the turn timer in sync after a reconnect', () => {
+      receiveNow(battleSnapshot(ROOM_ID, { turnRemainingMs: 30_000 }));
+      wait(10_000);
+      expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:20'));
+
+      // The connection dropped and came back: the server's time went on, and its snapshot wins over the local count.
+      receiveNow(battleSnapshot(ROOM_ID, { turnRemainingMs: 6_000 }));
+      expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:06'));
+      expect(timer()?.classList).toContain('is-low');
+
+      wait(1_000);
+      expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:05'));
+    });
+
+    it('shows the time left after a reload mid-match, from the snapshot alone', () => {
+      // A reload: a new page with no snapshot and no dice, then the handshake's STATE.
+      TestBed.inject(GameStateService).clear();
+      receiveNow(
+        battleSnapshot(ROOM_ID, {
+          currentTurn: SEATS.P2,
+          outgoingShots: [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.MISS }],
+          turnRemainingMs: 17_300,
+        }),
+      );
+
+      expect(text('h1')).toBe(BATTLE_TEXT.opponentTurn('Grace'));
+      expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:18'));
+      expect(view().querySelector('app-die')).toBeNull();
+      wait(2_500);
+      expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:15'));
+    });
+
+    describe('the dice roll (ADR-0107)', () => {
+      /**
+       * The dice of the view.
+       * @returns How many there are, and whether they tumble.
+       */
+      function dice(): { count: number; isRolling: boolean } {
+        const shown = Array.from(view().querySelectorAll('app-die'));
+        return { count: shown.length, isRolling: shown.some((die) => die.classList.contains('is-rolling')) };
+      }
+
+      it.each(RECEIVER_SEATS.flatMap((seat) => [true, false].map((isMine) => [seat, isMine] as const)))(
+        'rolls a tie and a re-roll, ends on who starts, then lets the turn go on, as %s (starts: %s)',
+        (seat, isMine) => {
+          const starter = isMine ? seat : otherSeat(seat);
+          const decisive = { [starter]: 6, [otherSeat(starter)]: 2 } as Record<Seat, number>;
+          socket.fire(SERVER_EVENTS.DICE_ROLLED, { rolls: [{ P1: 4, P2: 4 }, decisive], starter });
+          receiveNow(battleFrom(seat, { currentTurn: starter, turnRemainingMs: null }));
+
+          expect(text('h1')).toBe(BATTLE_TEXT.diceHeading);
+          expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.diceRolling);
+          expect(dice()).toEqual({ count: 2, isRolling: true });
+          expect(text('#fire-hint')).toBe(BATTLE_TEXT.waitForDice);
+          expect(enemyCell('A1').getAttribute('aria-disabled')).toBe('true');
+          expect(timer()).toBeNull();
+
+          wait(DICE_ANIMATION_MS / 4);
+          expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.diceTie(4, 'Grace'));
+          expect(dice().isRolling).toBe(false);
+
+          wait(DICE_ANIMATION_MS / 4);
+          expect(dice().isRolling).toBe(true);
+
+          wait(DICE_ANIMATION_MS / 4);
+          const [myFace, theirFace] = isMine ? [6, 2] : [2, 6];
+          expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.diceResult(myFace, theirFace, 'Grace', isMine));
+          expect(text('h1')).toBe(BATTLE_TEXT.diceHeading);
+
+          wait(DICE_ANIMATION_MS / 4);
+          expect(text('h1')).toBe(isMine ? BATTLE_TEXT.myTurn : BATTLE_TEXT.opponentTurn('Grace'));
+          expect(enemyCell('A1').getAttribute('aria-disabled')).toBe(isMine ? null : 'true');
+          // Until the server starts the first turn's timer, the result stays in its place.
+          expect(dice()).toEqual({ count: 2, isRolling: false });
+
+          receiveNow(battleFrom(seat, { currentTurn: starter, turnRemainingMs: 30_000 }));
+          expect(dice().count).toBe(0);
+          expect(timer()?.textContent).toBe(BATTLE_TEXT.timeLeft('0:30'));
+          expect(text('.status [aria-live]')).toBe(
+            isMine ? BATTLE_TEXT.myTurnHint : BATTLE_TEXT.opponentTurnHint('Grace'),
+          );
+        },
+      );
+
+      it('shows the result still and at once, and lets the starter aim, when the player asks for reduced motion', () => {
+        prefersReducedMotion.set(true);
+        socket.fire(SERVER_EVENTS.DICE_ROLLED, {
+          rolls: [
+            { P1: 3, P2: 3 },
+            { P1: 5, P2: 1 },
+          ],
+          starter: SEATS.P1,
+        });
+        receiveNow(battleSnapshot(ROOM_ID, { turnRemainingMs: null }));
+
+        expect(text('h1')).toBe(BATTLE_TEXT.myTurn);
+        expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.diceResult(5, 1, 'Grace', true));
+        expect(dice()).toEqual({ count: 2, isRolling: false });
+        expect(enemyCell('A1').getAttribute('aria-disabled')).toBeNull();
+      });
+
+      it.each(RECEIVER_SEATS)(
+        'says who the dice picked after a reload during the animation, with no dice to show (ADR-0106), as %s',
+        (seat) => {
+          TestBed.inject(GameStateService).clear();
+          receiveNow(battleFrom(seat, { currentTurn: otherSeat(seat), turnRemainingMs: null }));
+
+          expect(text('h1')).toBe(BATTLE_TEXT.opponentTurn('Grace'));
+          expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.diceStarter('Grace', false));
+          expect(dice().count).toBe(0);
+          expect(timer()).toBeNull();
+
+          receiveNow(battleFrom(seat, { currentTurn: seat, turnRemainingMs: null }));
+          expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.diceStarter('Grace', true));
+        },
+      );
+    });
+
+    describe('turns run out in a row (ADR-0109)', () => {
+      it('warns the player who let turns run out how many are left, and tells the other one', () => {
+        receiveNow(battleSnapshot(ROOM_ID, { afkCount: { me: 1, opponent: 0 } }));
+        expect(afkWarnings()).toEqual([BATTLE_TEXT.myAfk(2)]);
+
+        receiveNow(battleSnapshot(ROOM_ID, { afkCount: { me: 2, opponent: 2 } }));
+        expect(afkWarnings()).toEqual([BATTLE_TEXT.myAfk(1), BATTLE_TEXT.opponentAfk('Grace', 1)]);
+
+        receiveNow(battleSnapshot(ROOM_ID, { afkCount: { me: 0, opponent: 1 } }));
+        expect(afkWarnings()).toEqual([BATTLE_TEXT.opponentAfk('Grace', 2)]);
+
+        receiveNow(battleSnapshot(ROOM_ID));
+        expect(afkWarnings()).toEqual([]);
+      });
+
+      it.each(RECEIVER_SEATS)('words a shot fired when time ran out, by either player, as %s', (seat) => {
+        const results = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.MISS }];
+        receiveNow(battleFrom(seat, { currentTurn: seat }));
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results });
+        receiveNow(battleFrom(seat, { currentTurn: otherSeat(seat), afkCount: { me: 1, opponent: 0 } }));
+        expect(text('.feedback')).toBe(BATTLE_TEXT.myAutoShot('A1', SHOT_OUTCOMES.MISS, null, 'Grace'));
+
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results });
+        receiveNow(battleFrom(seat, { currentTurn: seat, afkCount: { me: 1, opponent: 1 } }));
+        expect(text('.feedback')).toBe(BATTLE_TEXT.opponentAutoShot('A1', SHOT_OUTCOMES.MISS, null, 'Grace'));
+
+        // A shot the player fires sets their count back to zero: it was not automatic.
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results });
+        receiveNow(battleFrom(seat, { currentTurn: otherSeat(seat), afkCount: { me: 0, opponent: 1 } }));
+        expect(text('.feedback')).toBe(BATTLE_TEXT.myShot('A1', SHOT_OUTCOMES.MISS, null, 'Grace'));
+      });
     });
   });
 });

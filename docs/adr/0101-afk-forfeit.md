@@ -29,6 +29,7 @@ The rest is decided here:
 ## Links
 
 - Added on 2026-10-31 for AFK ([#30](https://github.com/fabogit/battleship/issues/30)).
+- Client side on 2026-11-01 ([#31](https://github.com/fabogit/battleship/issues/31)): the AFK warning ([ADR-0109](0109-afk-warning.md)).
 - Spec: [Server: AFK](../server.md#afk) · [Protocol: Snapshot](../protocol.md#snapshot)
 - Implements: [ADR-0009](0009-afk.md) (AFK)
 - Related: [ADR-0099](0099-turn-timer.md) (turn timer) · [ADR-0100](0100-timeout-actions.md) (timeout actions) · [ADR-0074](0074-pause.md) (pause) · [ADR-0072](0072-seat-presence.md) (disconnect forfeit)

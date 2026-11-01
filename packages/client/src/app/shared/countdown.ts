@@ -35,3 +35,17 @@ export function formatCountdown(remainingMs: number): string {
 export function wholeMinutes(ms: number): number {
   return Math.floor(ms / MS_PER_MINUTE);
 }
+
+/** The most time a countdown can have left when it starts warning that it is running out, in ms (ADR-0108). */
+export const LOW_TIME_MS = 10_000;
+
+/**
+ * Tells whether a countdown is in its low-time warning (ADR-0108): its last `LOW_TIME_MS`, or its last third when the
+ * whole countdown is shorter than three times that, so a 15-second turn warns over its last 5 seconds.
+ * @param remainingMs Time left, in ms.
+ * @param limitMs The countdown's whole time, e.g. the turn's `turnTimeLimitSeconds` in ms.
+ * @returns Whether the time left is at or under the threshold; it starts as the countdown reads `0:10` (or `0:05`).
+ */
+export function isLowTime(remainingMs: number, limitMs: number): boolean {
+  return remainingMs <= Math.min(LOW_TIME_MS, limitMs / 3);
+}

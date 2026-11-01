@@ -1,9 +1,9 @@
 import { Component, computed, inject } from '@angular/core';
-import { FLEET, SHIP_LENGTH, type ShipType } from '@battleship/core';
+import { FLEET, PLACEMENT_TIME_LIMIT_MS, SHIP_LENGTH, type ShipType } from '@battleship/core';
 
 import { GameStateService } from '../../core/game-state';
 import { BoardGrid } from '../../shared/board-grid/board-grid';
-import { formatCountdown, remainingSeconds } from '../../shared/countdown';
+import { formatCountdown, isLowTime, remainingSeconds } from '../../shared/countdown';
 import { findShip } from './fleet-draft';
 import { PlacementStore } from './placement-store';
 import { PLACEMENT_TEXT, placementErrorMessage, placementFeedbackMessage } from './placement.text';
@@ -27,7 +27,8 @@ interface DockEntry {
 /**
  * The `PLACEMENT` view, touch-first (docs/client.md#board--interaction, ADR-0053): tap a ship in the dock, then a
  * cell to place it; tap a placed ship to move, rotate or remove it. "Randomize" fills the board, "Confirm fleet" and
- * "Unlock fleet" toggle the lock, and the opponent's lock is shown as it changes. Everything works with the keyboard
+ * "Unlock fleet" toggle the lock, above the board so that they are in view on the smallest phone, and the opponent's
+ * lock is shown as it changes. The deadline warns when it runs low (ADR-0108). Everything works with the keyboard
  * too: the dock and the actions are buttons, and the board is a grid of buttons. Its content goes beside the heading:
  * the room page's "Leave room" (ADR-0080).
  */
@@ -54,6 +55,12 @@ export class Placement {
   protected readonly timeLeft = computed(() => {
     const remainingMs = this.gameState.placementRemainingMs();
     return remainingMs === null ? null : formatCountdown(remainingMs);
+  });
+
+  /** Whether the deadline is in its low-time warning (ADR-0108). */
+  protected readonly isTimeLow = computed(() => {
+    const remainingMs = this.gameState.placementRemainingMs();
+    return remainingMs !== null && isLowTime(remainingMs, PLACEMENT_TIME_LIMIT_MS);
   });
 
   /** Whole seconds before the match starts, while both fleets are locked; `null` otherwise. */
