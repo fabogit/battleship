@@ -4,9 +4,10 @@
  * Bumped on any breaking protocol change; checked in the Socket.io handshake (ADR-0017). 2: the game-over snapshot
  * carries both final boards (ADR-0064). 3: `JOIN_ROOM` opens rules negotiation instead of placement (ADR-0084). 4: a room
  * the server closes tells the sockets still in it with `ROOM_CLOSED` (ADR-0097). 5: a server failure refuses a command
- * with `SERVER_ERROR`, or closes its room with the `ROOM_CLOSED` reason `SERVER_ERROR` (ADR-0105).
+ * with `SERVER_ERROR`, or closes its room with the `ROOM_CLOSED` reason `SERVER_ERROR` (ADR-0105). 6: a room whose
+ * players do not agree on the rules in time closes with the `ROOM_CLOSED` reason `NEGOTIATION_TTL` (ADR-0103).
  */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /** Side length of the square board, in cells. */
 export const BOARD_SIZE = 10;
@@ -39,6 +40,13 @@ export const GAME_OVER_TTL_MS = 120_000;
  * `MAX_ROOMS` for long.
  */
 export const WAITING_TTL_MS = 600_000;
+
+/**
+ * Lifetime of a room in `RULES_NEGOTIATION` whose players have not both confirmed the rules, counted from each entry
+ * into that phase; neither an edit nor a confirmation restarts it (ADR-0102). Long enough for two friends to agree on a
+ * handful of rules, short enough that two connected sockets cannot hold a room's place under `MAX_ROOMS` for long.
+ */
+export const NEGOTIATION_TTL_MS = 600_000;
 
 /** Nicknames are trimmed, non-empty and rendered as text only. Counted in UTF-16 code units, like HTML `maxlength`. */
 export const NICKNAME_MAX_LENGTH = 20;

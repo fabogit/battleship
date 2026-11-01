@@ -2,6 +2,7 @@ import {
   CLIENT_EVENTS,
   DEFAULT_RULES,
   ERROR_CODES,
+  NEGOTIATION_TTL_MS,
   ROOM_CLOSED_REASONS,
   ROOM_PHASES,
   SEATS,
@@ -12,6 +13,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ROOM_TIMER_KINDS } from '../src/room/room-timers.js';
 import type { RoomState } from '../src/room/room.js';
 import {
+  agreeOnRules,
+  clock,
   drop,
   P1_FLEET_SEED,
   placedFleet,
@@ -333,6 +336,26 @@ describe('a room timer task that throws', () => {
 
     await expectClosed(failing.roomId, [failing.p1, failing.p2]);
     expectLoggedFailure('Room failed', { roomId: failing.roomId, timer: ROOM_TIMER_KINDS.PLACEMENT });
+    await expectToPlay(other);
+  });
+
+  it('closes its room when the negotiation TTL fails to remove it, and the other rooms keep theirs', async () => {
+    await startLogged();
+    const failing = await seatedPlayers();
+    clock.advance(NEGOTIATION_TTL_MS / 2);
+    const other = await seatedPlayers();
+    vi.spyOn(rooms, 'remove').mockImplementationOnce(fault);
+
+    clock.advance(NEGOTIATION_TTL_MS / 2);
+    await expectClosed(failing.roomId, [failing.p1, failing.p2]);
+    expectLoggedFailure('Room failed', { roomId: failing.roomId, timer: ROOM_TIMER_KINDS.RULES_NEGOTIATION });
+
+    // The other room is still negotiating on its own TTL.
+    expect(rooms.get(other.roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+    await agreeOnRules(other.p1, other.p2);
+    for (const { inbox } of [other.p1, other.p2]) {
+      expect((await inbox.states(2))?.phase).toBe(ROOM_PHASES.PLACEMENT);
+    }
     await expectToPlay(other);
   });
 });

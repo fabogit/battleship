@@ -18,6 +18,12 @@ export const ROOM_TIMER_KINDS = {
    */
   PLACEMENT: 'PLACEMENT',
   /**
+   * Removes a room whose players have not both confirmed the rules, `NEGOTIATION_TTL_MS` after it entered
+   * `RULES_NEGOTIATION`: at a join; an edit or a confirmation does not restart it (docs/server.md#room-lifecycle,
+   * ADR-0102).
+   */
+  RULES_NEGOTIATION: 'RULES_NEGOTIATION',
+  /**
    * Runs the turn timer of a match (docs/server.md#turns, ADR-0099): at the end of the dice animation, to send the
    * `STATE` that starts the first turn's timer (ADR-0093), then at the end of every turn while the match runs, where the
    * turn times out. A pause stops it, a resume starts it again with the time the turn had left.

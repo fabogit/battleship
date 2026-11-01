@@ -140,6 +140,11 @@ describe('wire values', () => {
   });
 
   it('ROOM_CLOSED_REASONS', () => {
-    expect(Object.values(ROOM_CLOSED_REASONS)).toEqual(['WAITING_TTL', 'GAME_OVER_TTL', 'SERVER_ERROR']);
+    expect(Object.values(ROOM_CLOSED_REASONS)).toEqual([
+      'WAITING_TTL',
+      'NEGOTIATION_TTL',
+      'GAME_OVER_TTL',
+      'SERVER_ERROR',
+    ]);
   });
 });

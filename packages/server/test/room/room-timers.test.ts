@@ -20,6 +20,7 @@ describe('RoomTimers', () => {
       'DISCONNECT_FORFEIT',
       'GAME_OVER',
       'PLACEMENT',
+      'RULES_NEGOTIATION',
       'TURN',
       'WAITING_FOR_OPPONENT',
     ]);
