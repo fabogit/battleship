@@ -7,25 +7,27 @@ import { ROOM_TEXT } from '../../client/src/app/features/room/room.text';
 import { RULES_TEXT } from '../../client/src/app/features/rules/rules.text';
 import { test, expect } from '../src/fixtures.ts';
 import {
+  STARTS_IN,
   agreeOnRules,
   confirmRandomFleet,
   createRoom,
   endStartCountdown,
   joinRoom,
   mainHeading,
+  placementTimer,
   turnHeadings,
+  turnTimer,
 } from '../src/flows.ts';
 
 /**
- * The smallest phone the layout supports, held as a phone, and a laptop screen (#53 F1, F4). "Leave room" sits beside
- * the heading (ADR-0080), so it is in view at the top of the page, as is "Confirm rules". "Confirm fleet" sits under
- * the placement board, which fills either screen, so it only has to come whole into view once scrolled to; so does
- * "Fire" on the phone, where Enemy waters fills the screen, while the laptop shows it at the top of the page. Both
- * coming into view without a scroll is #31's.
+ * The smallest phone the layout supports, held as a phone, and a laptop screen (#53 F1, F4). Every main action is in
+ * view at the top of the page, with no scroll, together with the countdowns (#31): "Leave room" beside the heading
+ * (ADR-0080), "Confirm rules", the placement deadline and "Confirm fleet" above the board, and in the battle the turn
+ * timer beside the heading with "Fire" under Enemy waters.
  */
 const SCREENS = [
-  { viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true, fireScroll: 'to' },
-  { viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false, fireScroll: 'top' },
+  { viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true },
+  { viewport: { width: 1280, height: 800 }, isMobile: false, hasTouch: false },
 ] as const;
 
 /** Both color schemes: the dark one has its own palette, not its own layout, but a regression may hide in either. */
@@ -46,22 +48,16 @@ async function expectNoHorizontalScroll(page: Page, view: string): Promise<void>
 }
 
 /**
- * Asserts that a control is whole inside the viewport, with no ancestor clipping it.
+ * Asserts that a control is whole inside the viewport at the top of the page, with no scroll and no ancestor clipping
+ * it.
  * @param control The control.
  * @param what The control and where it is, for the failure message.
- * @param scroll `top` checks it at the top of the page, `to` once the page is scrolled to it.
  */
-async function expectInView(control: Locator, what: string, scroll: 'top' | 'to'): Promise<void> {
-  if (scroll === 'top') {
-    await control.page().evaluate(() => {
-      window.scrollTo(0, 0);
-    });
-  } else {
-    await control.scrollIntoViewIfNeeded();
-  }
-  await expect(control, `${what}, ${scroll === 'top' ? 'at the top of the page' : 'scrolled to'}`).toBeInViewport({
-    ratio: 1,
+async function expectInView(control: Locator, what: string): Promise<void> {
+  await control.page().evaluate(() => {
+    window.scrollTo(0, 0);
   });
+  await expect(control, `${what}, at the top of the page`).toBeInViewport({ ratio: 1 });
 }
 
 for (const screen of SCREENS) {
@@ -85,7 +81,7 @@ for (const screen of SCREENS) {
       const roomUrl = await createRoom(ada);
       const leave = ada.page.getByRole('button', { name: ROOM_TEXT.leave });
       await expectNoHorizontalScroll(ada.page, 'lobby');
-      await expectInView(leave, '"Leave room" in the lobby', 'top');
+      await expectInView(leave, '"Leave room" in the lobby');
 
       await ada.page.getByRole('button', { name: LOBBY_TEXT.share }).click();
       const dialog = ada.page.getByRole('dialog', { name: LOBBY_TEXT.dialogHeading });
@@ -114,36 +110,34 @@ for (const screen of SCREENS) {
       await joinRoom(grace, roomUrl);
       await expect(mainHeading(ada.page)).toHaveText(RULES_TEXT.heading);
       await expectNoHorizontalScroll(ada.page, 'rules');
-      await expectInView(leave, '"Leave room" on the rules screen', 'top');
+      await expectInView(leave, '"Leave room" on the rules screen');
       await expectInView(
         ada.page.getByRole('button', { name: RULES_TEXT.confirm }),
         '"Confirm rules" on the rules screen',
-        'top',
       );
 
       await agreeOnRules([ada, grace]);
       await expectNoHorizontalScroll(ada.page, 'placement');
-      await expectInView(leave, '"Leave room" in placement', 'top');
+      await expectInView(leave, '"Leave room" in placement');
+      await expectInView(placementTimer(ada.page), 'the deadline in placement');
       await expectInView(
         ada.page.getByRole('button', { name: PLACEMENT_TEXT.confirm }),
         '"Confirm fleet" in placement',
-        'to',
       );
 
       await confirmRandomFleet(ada);
       await confirmRandomFleet(grace);
+      await expectInView(ada.page.getByText(STARTS_IN), 'the start countdown in placement');
       await endStartCountdown([ada, grace], skipServerClock);
       await expect(mainHeading(ada.page)).toHaveText(turnHeadings(grace));
+      await expect(turnTimer(ada.page)).toBeVisible();
       await expectNoHorizontalScroll(ada.page, 'battle');
       if (screen.isMobile) {
         // One board at a time on a narrow screen; Fire sits under Enemy waters.
         await ada.page.getByRole('button', { name: BATTLE_TEXT.enemyWaters, exact: true }).click();
       }
-      await expectInView(
-        ada.page.getByRole('button', { name: BATTLE_TEXT.fire, exact: true }),
-        '"Fire"',
-        screen.fireScroll,
-      );
+      await expectInView(turnTimer(ada.page), 'the turn timer');
+      await expectInView(ada.page.getByRole('button', { name: BATTLE_TEXT.fire, exact: true }), '"Fire"');
     });
   }
 }

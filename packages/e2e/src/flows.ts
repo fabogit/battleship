@@ -234,7 +234,7 @@ export async function firstShooter(players: readonly [Player, Player]): Promise<
 
 /**
  * Waits for the dice animation's end on both pages, skipping the server clock to it, so the first turn's timer runs
- * (ADR-0093): each page shows the whole turn time.
+ * (ADR-0093): each page shows the turn's time.
  * @param players The two players, both in the battle.
  * @param skipServerClock The journey's `skipServerClock` fixture.
  */
@@ -256,6 +256,41 @@ export async function startTurnTimer(
 export function turnTimer(page: Page): Locator {
   const pattern = new RegExp(`^${escape(BATTLE_TEXT.timeLeft('@')).replace('@', '\\d+:\\d{2}')}$`);
   return page.getByRole('timer').filter({ hasText: pattern });
+}
+
+/**
+ * The placement deadline.
+ * @param page The player's page.
+ * @returns The `timer` reading "Time left: m:ss".
+ */
+export function placementTimer(page: Page): Locator {
+  const pattern = new RegExp(`^${escape(PLACEMENT_TEXT.timeLeft('@')).replace('@', '\\d+:\\d{2}')}$`);
+  return page.getByRole('timer').filter({ hasText: pattern });
+}
+
+/**
+ * Reads the seconds a countdown shows.
+ * @param timer A `timer` reading "Time left: m:ss".
+ * @returns The whole seconds it shows.
+ */
+export async function timerSeconds(timer: Locator): Promise<number> {
+  const [, minutes = '0', seconds = '0'] = /(\d+):(\d{2})/.exec((await timer.textContent()) ?? '') ?? [];
+  return Number(minutes) * 60 + Number(seconds);
+}
+
+/**
+ * The last words of the dice animation, whoever starts: "You rolled 5, Grace rolled 3: you start." or "…: Grace
+ * starts." (ADR-0107).
+ * @param opponent The player's opponent.
+ * @returns A pattern matching both.
+ */
+export function diceResult(opponent: Player): RegExp {
+  const variants = [true, false].map((isMine) =>
+    escape(BATTLE_TEXT.diceResult(1, 2, opponent.nickname, isMine))
+      .replace('1', '\\d')
+      .replace('2', '\\d'),
+  );
+  return new RegExp(`^(${variants.join('|')})$`);
 }
 
 /**

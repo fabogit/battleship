@@ -16,9 +16,13 @@ test('a player who lets three turns in a row run out loses by AFK forfeit', asyn
   const active = idle === ada ? grace : ada;
   await startTurnTimer([ada, grace], skipServerClock);
 
-  for (const target of ['A1', 'A2'].slice(0, MAX_CONSECUTIVE_AFK_TURNS - 1)) {
+  for (const [timedOut, target] of ['A1', 'A2'].slice(0, MAX_CONSECUTIVE_AFK_TURNS - 1).entries()) {
     await skipServerClock(TURN_LIMIT_MS);
     await expect(mainHeading(active.page)).toHaveText(BATTLE_TEXT.myTurn);
+    // Both are told how many timeouts in a row are left before the idle player loses (ADR-0109).
+    const left = MAX_CONSECUTIVE_AFK_TURNS - (timedOut + 1);
+    await expect(idle.page.getByText(BATTLE_TEXT.myAfk(left))).toBeVisible();
+    await expect(active.page.getByText(BATTLE_TEXT.opponentAfk(idle.nickname, left))).toBeVisible();
     await fire(active, target);
     await expect(mainHeading(idle.page)).toHaveText(BATTLE_TEXT.myTurn);
   }
