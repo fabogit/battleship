@@ -32,6 +32,7 @@ Details in [Server: Room lifecycle](../server.md#room-lifecycle) (#113).
 ## Links
 
 - Added on 2026-10-31 for room place limits ([#113](https://github.com/fabogit/battleship/issues/113)).
+- Amended on 2026-11-01 ([#128](https://github.com/fabogit/battleship/issues/128)): `RULES_NEGOTIATION` has its own TTL now, so two connected sockets no longer hold a place there ([ADR-0102](0102-negotiation-ttl.md)).
 - Spec: [Server: Room lifecycle](../server.md#room-lifecycle) · [Server: Hardening](../server.md#hardening) · [Domain: Constants](../domain.md#constants)
 - Amends: [ADR-0065](0065-clock-and-room-timers.md) (a `WAITING_FOR_OPPONENT` kind; `CREATE_ROOM` and `JOIN_ROOM` review the timers) · [ADR-0073](0073-room-lifecycle-with-forfeits.md) (a waiting room closes without a forfeit too)
 - Related: [ADR-0095](0095-moving-on-frees-a-lone-waiting-seat.md) (one socket, one waiting room) · [ADR-0097](0097-room-closed-notice.md) (the notice) · [ADR-0066](0066-rate-limit-and-message-size.md) (per-socket rate limit) · [ADR-0081](0081-one-proxy-hop-on-render.md) (why no per-address cap)
