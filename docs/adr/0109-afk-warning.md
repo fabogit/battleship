@@ -12,7 +12,7 @@ The battle view reads `afkCount` ([ADR-0101](0101-afk-forfeit.md)) and, while ei
 
 Each line stays until that player fires, which sets their count back to zero; both can show at once. They name what is left rather than what happened, since the count lasts across the other player's turns, when "your time ran out" would no longer be news.
 
-The shot the server fires for a player whose time ran out ([ADR-0100](0100-timeout-actions.md)) is worded as such: "Your time ran out: a random shot at B7, miss." and "Grace's time ran out: a random shot at A1, hit.", in place of "You fired at …". `BattleStore` keeps the shooter's `afkCount` when `SHOT_RESOLVED` arrives, and calls the shot automatic once the `STATE` after it counts one more timeout for the shooter. A shot that ends the match leaves no count to compare (the `STATE` is `GAME_OVER`) and reads as a fired one.
+The shot the server fires for a player whose time ran out ([ADR-0100](0100-timeout-actions.md)) is worded as such: "Your time ran out: a random shot at B7, miss." and "Grace's time ran out: a random shot at A1, hit.", in place of "You fired at …". `BattleStore` keeps the shooter's `afkCount` when `SHOT_RESOLVED` arrives, and calls the shot automatic when the first `STATE` after it counts one more timeout for the shooter. That `STATE` alone decides, and the answer is kept: under "Pass the turn" a later timeout sends no `SHOT_RESOLVED`, so the shot still announced would otherwise turn automatic when its shooter's count goes up. A shot that ends the match leaves no count to compare (the `STATE` is `GAME_OVER`) and reads as a fired one.
 
 ## Considered options
 

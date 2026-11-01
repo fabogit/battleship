@@ -273,6 +273,47 @@ describe('BattleStore', () => {
       expect(store.feedback()).toEqual({ ...fired, isMine: false });
     });
 
+    it.each(RECEIVER_SEATS.flatMap((seat) => [true, false].map((isMine) => [seat, isMine] as const)))(
+      'decides once whether a shot was automatic, as %s (own shot: %s): a later timeout does not relabel it',
+      (seat, isMine) => {
+        const shooter = isMine ? seat : otherSeat(seat);
+        const counts = (shooterCount: number, otherCount: number) =>
+          isMine ? { me: shooterCount, opponent: otherCount } : { me: otherCount, opponent: shooterCount };
+        socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: shooter })));
+
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter, results: [MISS_ON_J10] });
+        socket.fire(
+          SERVER_EVENTS.STATE,
+          fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: otherSeat(shooter), afkCount: counts(0, 0) })),
+        );
+        expect(store.feedback()).toMatchObject({ isMine, isAutomatic: false });
+
+        // Under "Pass the turn" both turns then time out, with no SHOT_RESOLVED: the shot still announced stays manual.
+        socket.fire(
+          SERVER_EVENTS.STATE,
+          fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: shooter, afkCount: counts(0, 1) })),
+        );
+        socket.fire(
+          SERVER_EVENTS.STATE,
+          fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: otherSeat(shooter), afkCount: counts(1, 1) })),
+        );
+        expect(store.feedback()).toMatchObject({ isMine, isAutomatic: false });
+
+        // A shot the server fires on a timeout is automatic, and stays so after the shooter's count is reset.
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter, results: [MISS_ON_J10] });
+        socket.fire(
+          SERVER_EVENTS.STATE,
+          fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: otherSeat(shooter), afkCount: counts(2, 1) })),
+        );
+        expect(store.feedback()).toMatchObject({ isMine, isAutomatic: true });
+        socket.fire(
+          SERVER_EVENTS.STATE,
+          fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: shooter, afkCount: counts(2, 0) })),
+        );
+        expect(store.feedback()).toMatchObject({ isMine, isAutomatic: true });
+      },
+    );
+
     it('drops the draft when the turn passes', () => {
       store.activateCell(B7);
 
