@@ -30,6 +30,7 @@ What the clients get follows the order after a `FIRE` ([ADR-0047](0047-reply-ord
 ## Links
 
 - Added on 2026-10-31 for timeout actions ([#30](https://github.com/fabogit/battleship/issues/30)).
+- Client side on 2026-11-01 ([#31](https://github.com/fabogit/battleship/issues/31)): the client words the automatic shot from `afkCount` ([ADR-0109](0109-afk-warning.md)).
 - Spec: [Server: Turns](../server.md#turns) · [Domain: Shot engine](../domain.md#shot-engine) · [Server: Logging](../server.md#logging)
 - Related: [ADR-0099](0099-turn-timer.md) (turn timer) · [ADR-0101](0101-afk-forfeit.md) (AFK) · [ADR-0033](0033-turn-resolution.md) (turn resolution) · [ADR-0030](0030-random-number-generation.md) (randomness) · [ADR-0047](0047-reply-order.md) (reply order) · [ADR-0104](0104-room-failure-containment.md) (failure containment)
 - Issues: [#30](https://github.com/fabogit/battleship/issues/30) · [#31](https://github.com/fabogit/battleship/issues/31) (AFK warning) · [#32](https://github.com/fabogit/battleship/issues/32) (salvo)

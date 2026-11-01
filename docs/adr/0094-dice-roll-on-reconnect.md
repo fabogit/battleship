@@ -21,6 +21,7 @@ What the timers UI (#31) can rely on:
 ## Links
 
 - Added on 2026-10-31 for the dice roll ([#29](https://github.com/fabogit/battleship/issues/29)).
+- Settled on 2026-11-01 ([#31](https://github.com/fabogit/battleship/issues/31)): the snapshot stays without the roll, and a client back during the animation shows who starts ([ADR-0106](0106-who-starts-after-a-reload.md)).
 - Spec: [Protocol: Server → client](../protocol.md#server--client) · [Protocol: Snapshot](../protocol.md#snapshot) · [Server: Sessions & reconnection](../server.md#sessions--reconnection)
 - Related: [ADR-0092](0092-dice-roll-at-match-start.md) (dice roll) · [ADR-0093](0093-dice-animation.md) (dice animation) · [ADR-0063](0063-session-rebinding.md) (rebinding) · [ADR-0017](0017-protocol-versioning.md) (protocol versioning)
 - Issues: [#29](https://github.com/fabogit/battleship/issues/29) · [#31](https://github.com/fabogit/battleship/issues/31) (timers UI) · [#30](https://github.com/fabogit/battleship/issues/30) (turn timer)
