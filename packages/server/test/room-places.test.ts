@@ -1,9 +1,11 @@
 import {
   CLIENT_EVENTS,
+  DEFAULT_RULES,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
   MAX_ROOMS,
+  NEGOTIATION_TTL_MS,
   RATE_LIMIT_EVENTS_PER_SECOND,
   ROOM_CLOSED_REASONS,
   ROOM_PHASES,
@@ -188,9 +190,10 @@ describe('the waiting TTL', () => {
     clock.advance(WAITING_TTL_MS - 1);
     await joinRoom(bob, roomId);
 
-    clock.advance(10 * WAITING_TTL_MS);
+    // Only the negotiation TTL is left, which runs out later (ADR-0102).
+    expect(clock.pendingCount).toBe(1);
+    clock.advance(NEGOTIATION_TTL_MS - 1);
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
-    expect(clock.pendingCount).toBe(0);
   });
 
   it('starts again when a seat is freed before the match by LEAVE_ROOM', async () => {
@@ -227,6 +230,148 @@ describe('the waiting TTL', () => {
   });
 });
 
+// Two connected players can no longer hold a room in RULES_NEGOTIATION: it closes NEGOTIATION_TTL_MS after the join
+// that opened the phase, whatever they send meanwhile (#128, ADR-0102).
+describe('the negotiation TTL', () => {
+  it('closes a room whose two connected players never agree, and tells both', async () => {
+    await start();
+    const { p1, p2, roomId } = await seatedPlayers();
+
+    clock.advance(NEGOTIATION_TTL_MS - 1);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+    clock.advance(1);
+    expect(rooms.get(roomId)).toBeUndefined();
+    for (const { inbox, socket } of [p1, p2]) {
+      expect(await inbox.roomClosed()).toEqual({ roomId, reason: ROOM_CLOSED_REASONS.NEGOTIATION_TTL });
+      expect(socket.connected).toBe(true);
+    }
+    expect(clock.pendingCount).toBe(0);
+
+    // Both stay connected, in no room: a rules command is refused, and either can create a new room.
+    expect(await send(p2, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 })).toEqual({
+      ok: false,
+      error: ERROR_CODES.NOT_ALLOWED,
+    });
+    await createRoom(p1);
+  });
+
+  it('is not restarted by an edit or a confirmation', async () => {
+    await start();
+    const { p1, p2, roomId } = await seatedPlayers();
+    clock.advance(NEGOTIATION_TTL_MS / 2);
+    const edited = (await send(p1, CLIENT_EVENTS.UPDATE_RULES, {
+      rules: { ...DEFAULT_RULES, areAdjacentShipsAllowed: true },
+    })) as { ok: true; rulesVersion: number };
+    expect(edited.rulesVersion).toBe(1);
+    clock.advance(NEGOTIATION_TTL_MS / 4);
+    expect(await send(p2, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: edited.rulesVersion })).toEqual({ ok: true });
+
+    clock.advance(NEGOTIATION_TTL_MS / 4 - 1);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+    clock.advance(1);
+    expect(rooms.get(roomId)).toBeUndefined();
+    for (const { inbox } of [p1, p2]) {
+      // The STATE of the edit and of the confirmation, then the notice.
+      await inbox.states(2);
+      expect(await inbox.roomClosed()).toEqual({ roomId, reason: ROOM_CLOSED_REASONS.NEGOTIATION_TTL });
+    }
+  });
+
+  it('is not restarted by a reconnection', async () => {
+    await start();
+    const { p1, p2, roomId, sessions } = await seatedPlayers();
+    clock.advance(NEGOTIATION_TTL_MS - 10_000);
+    await drop(p2, roomId, SEATS.P2);
+    const back = await player(sessions.P2);
+    expect((await back.inbox.state()).roomId).toBe(roomId);
+
+    clock.advance(10_000);
+    expect(rooms.get(roomId)).toBeUndefined();
+    // P1 saw P2 drop and come back.
+    await p1.inbox.states(2);
+    for (const { inbox } of [p1, back]) {
+      expect(await inbox.roomClosed()).toEqual({ roomId, reason: ROOM_CLOSED_REASONS.NEGOTIATION_TTL });
+    }
+  });
+
+  it('lets a last confirmation handled before it runs start placement, and leaves no timer of its own', async () => {
+    await start();
+    const { p1, p2, roomId } = await seatedPlayers();
+    expect(await send(p1, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 })).toEqual({ ok: true });
+    clock.advance(NEGOTIATION_TTL_MS - 1);
+    expect(await send(p2, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 })).toEqual({ ok: true });
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
+    // Only the end of placement is pending.
+    expect(clock.pendingCount).toBe(1);
+
+    clock.advance(1);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.PLACEMENT);
+    for (const { inbox } of [p1, p2]) {
+      expect((await inbox.states(2))?.phase).toBe(ROOM_PHASES.PLACEMENT);
+    }
+  });
+
+  it('refuses a last confirmation the server handles after it ran', async () => {
+    await start();
+    const { p1, p2, roomId } = await seatedPlayers();
+    expect(await send(p1, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 })).toEqual({ ok: true });
+    clock.advance(NEGOTIATION_TTL_MS);
+
+    expect(await send(p2, CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: 0 })).toEqual({
+      ok: false,
+      error: ERROR_CODES.NOT_ALLOWED,
+    });
+    expect(rooms.get(roomId)).toBeUndefined();
+    // P2 saw P1 confirm, then the room close.
+    await p2.inbox.state();
+    expect(await p2.inbox.roomClosed()).toEqual({ roomId, reason: ROOM_CLOSED_REASONS.NEGOTIATION_TTL });
+  });
+
+  it('closes the room before a seat that drops late is forfeited', async () => {
+    await start();
+    const { p1, p2, roomId, sessions } = await seatedPlayers();
+    // Away for less than DISCONNECT_FORFEIT_MS when the TTL runs out: the seat away does not stop it.
+    clock.advance(NEGOTIATION_TTL_MS - DISCONNECT_FORFEIT_MS / 3);
+    await drop(p2, roomId, SEATS.P2);
+    expect((await p1.inbox.state()).opponent?.isConnected).toBe(false);
+
+    clock.advance(DISCONNECT_FORFEIT_MS / 3 - 1);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+    clock.advance(1);
+    expect(rooms.get(roomId)).toBeUndefined();
+    expect(await p1.inbox.roomClosed()).toEqual({ roomId, reason: ROOM_CLOSED_REASONS.NEGOTIATION_TTL });
+    // The player away learns it when they come back.
+    await expect(player(sessions.P2)).rejects.toThrow(ERROR_CODES.SESSION_INVALID);
+  });
+
+  it('stops when an early drop is forfeited, and the next join starts a new one', async () => {
+    await start();
+    const { p1, p2, roomId } = await seatedPlayers();
+    await drop(p2, roomId, SEATS.P2);
+    clock.advance(DISCONNECT_FORFEIT_MS);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
+    // Only the waiting TTL is pending.
+    expect(clock.pendingCount).toBe(1);
+
+    // Carol joins just before the first negotiation would have run out.
+    clock.advance(NEGOTIATION_TTL_MS - DISCONNECT_FORFEIT_MS - 1);
+    const carol = await player();
+    await joinRoom(carol, roomId);
+    clock.advance(1);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+
+    clock.advance(NEGOTIATION_TTL_MS - 2);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+    clock.advance(1);
+    expect(rooms.get(roomId)).toBeUndefined();
+    // P1 saw P2 drop, the seat freed and Carol join.
+    expect((await p1.inbox.states(3))?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+    for (const { inbox } of [p1, carol]) {
+      expect(await inbox.roomClosed()).toEqual({ roomId, reason: ROOM_CLOSED_REASONS.NEGOTIATION_TTL });
+    }
+  });
+});
+
 describe('ROOM_CLOSED', () => {
   it('tells both players when the game-over TTL closes their room', async () => {
     await start();
@@ -247,7 +392,7 @@ describe('ROOM_CLOSED', () => {
   });
 });
 
-// The acceptance test of #113: a client can no longer keep every place under MAX_ROOMS for itself.
+// The acceptance tests of #113 and #128: a client can no longer keep every place under MAX_ROOMS for itself.
 describe('room places', () => {
   it('keeps one socket to a single waiting room, however many it creates', async () => {
     await start();
@@ -292,6 +437,28 @@ describe('room places', () => {
         roomId: roomIds[index],
         reason: ROOM_CLOSED_REASONS.WAITING_TTL,
       });
+    }
+    await createRoom(late, 'Late');
+  });
+
+  it('frees every place NEGOTIATION_TTL_MS after MAX_ROOMS pairs of sockets opened their negotiations', async () => {
+    await start();
+    const pairs: SeatedPlayers[] = [];
+    for (let index = 0; index < MAX_ROOMS; index++) {
+      pairs.push(await seatedPlayers());
+    }
+    const late = await player();
+    expect(await send(late, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Late' })).toEqual({
+      ok: false,
+      error: ERROR_CODES.SERVER_FULL,
+    });
+
+    clock.advance(NEGOTIATION_TTL_MS);
+    expect(rooms.size).toBe(0);
+    for (const { p1, p2, roomId } of pairs) {
+      for (const { inbox } of [p1, p2]) {
+        expect(await inbox.roomClosed()).toEqual({ roomId, reason: ROOM_CLOSED_REASONS.NEGOTIATION_TTL });
+      }
     }
     await createRoom(late, 'Late');
   });

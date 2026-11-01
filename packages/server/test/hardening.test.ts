@@ -5,6 +5,7 @@ import {
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
+  NEGOTIATION_TTL_MS,
   RATE_LIMIT_EVENTS_PER_SECOND,
   ROOM_PHASES,
   SEATS,
@@ -213,7 +214,9 @@ describe('game-over TTL', () => {
     const [p1, p2] = await Promise.all([player(), player()]);
     const roomId = await createRoom(p1);
     await send(p2, CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
-    clock.advance(10 * GAME_OVER_TTL_MS);
+    // Past the game-over TTL, short of the negotiation TTL (ADR-0102).
+    expect(NEGOTIATION_TTL_MS).toBeGreaterThan(GAME_OVER_TTL_MS);
+    clock.advance(NEGOTIATION_TTL_MS - 1);
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
   });
 });

@@ -27,7 +27,7 @@ A room removed because nobody is left in it: its last seat was freed by `LEAVE_R
 _Avoid_: expired room (for this case)
 
 **Expired room**:
-A room removed because a TTL ran out: the waiting TTL, `WAITING_TTL_MS` after it started waiting with nobody joining, or the game-over TTL, `GAME_OVER_TTL_MS` after the match ("Room expired" in the logs). A player still in it gets `ROOM_CLOSED` with the reason. The UI calls both a closed room ("This room has closed").
+A room removed because a TTL ran out: the waiting TTL, `WAITING_TTL_MS` after it started waiting with nobody joining, the negotiation TTL, `NEGOTIATION_TTL_MS` after a join with the rules not confirmed by both, or the game-over TTL, `GAME_OVER_TTL_MS` after the match ("Room expired" in the logs). A player still in it gets `ROOM_CLOSED` with the reason. The UI calls both a closed room ("This room has closed").
 _Avoid_: closed room (in server code and logs)
 
 **Nickname**:

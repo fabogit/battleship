@@ -28,6 +28,7 @@ When the server closes a room with a socket still bound to it, that socket gets 
 
 - Added on 2026-10-31 for room place limits ([#113](https://github.com/fabogit/battleship/issues/113)).
 - Amended on 2026-10-31 ([#123](https://github.com/fabogit/battleship/issues/123)): a room that fails after a change was stored closes with the reason `SERVER_ERROR`, and `PROTOCOL_VERSION` goes to 5 ([ADR-0104](0104-room-failure-containment.md), [ADR-0105](0105-server-error-on-the-wire.md)).
+- Amended on 2026-11-01 ([#128](https://github.com/fabogit/battleship/issues/128)): a room whose players do not agree on the rules in time closes with the reason `NEGOTIATION_TTL`, and `PROTOCOL_VERSION` goes to 6 ([ADR-0103](0103-negotiation-ttl-on-the-wire.md)).
 - Spec: [Protocol: Server → client](../protocol.md#server--client) · [Server: Room lifecycle](../server.md#room-lifecycle) · [Domain: Constants](../domain.md#constants)
 - Amends: [ADR-0065](0065-clock-and-room-timers.md) (an expired room is told)
 - Related: [ADR-0017](0017-protocol-versioning.md) (protocol versioning) · [ADR-0084](0084-protocol-version-3.md) (version 3) · [ADR-0096](0096-waiting-ttl.md) (waiting TTL) · [ADR-0098](0098-closed-room-view.md) (closed-room view)

@@ -23,7 +23,7 @@ events:
     description: The server is restarting; any match in progress is lost (docs/deployment.md#backend-render).
     subscribeOnConnect: true
   - name: ROOM_CLOSED
-    description: The server closed this seat's room, with the reason (`WAITING_TTL`, `GAME_OVER_TTL`, `SERVER_ERROR`); the socket stays connected in no room (ADR-0097, ADR-0105).
+    description: The server closed this seat's room, with the reason (`WAITING_TTL`, `NEGOTIATION_TTL`, `GAME_OVER_TTL`, `SERVER_ERROR`); the socket stays connected in no room (ADR-0097, ADR-0103, ADR-0105).
     subscribeOnConnect: true
 settings:
   version: '4'

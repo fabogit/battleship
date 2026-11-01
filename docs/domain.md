@@ -6,7 +6,7 @@ The domain lives in `packages/core`; each section covers one of its modules: `co
 
 | Constant                       | Value                               | Notes                                                                                                                                                                                                                         |
 | ------------------------------ | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PROTOCOL_VERSION`             | `5`                                 | Bumped on any breaking protocol change                                                                                                                                                                                        |
+| `PROTOCOL_VERSION`             | `6`                                 | Bumped on any breaking protocol change                                                                                                                                                                                        |
 | `BOARD_SIZE`                   | `10`                                |                                                                                                                                                                                                                               |
 | `PLACEMENT_TIME_LIMIT_MS`      | `60_000`                            | Re-evaluate after mobile playtesting                                                                                                                                                                                          |
 | `START_COUNTDOWN_MS`           | `5_000`                             | Capped by remaining placement time                                                                                                                                                                                            |
@@ -15,6 +15,7 @@ The domain lives in `packages/core`; each section covers one of its modules: `co
 | `DISCONNECT_FORFEIT_MS`        | `180_000`                           | Max absence of a seated player, in any phase but `GAME_OVER`; with `GAME_OVER_TTL_MS`, bounds a room nobody sits in, which must close before Render's 15 min spin-down ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)) |
 | `GAME_OVER_TTL_MS`             | `120_000`                           | Room in `GAME_OVER` without a rematch agreement, counted from the end of the match                                                                                                                                            |
 | `WAITING_TTL_MS`               | `600_000`                           | Room in `WAITING_FOR_OPPONENT` that nobody joins, counted from each entry into that phase, its player connected or not ([ADR-0096](adr/0096-waiting-ttl.md))                                                                  |
+| `NEGOTIATION_TTL_MS`           | `600_000`                           | Room in `RULES_NEGOTIATION` whose players have not both confirmed, counted from each entry into that phase; edits and confirmations do not restart it ([ADR-0102](adr/0102-negotiation-ttl.md))                               |
 | `NICKNAME_MAX_LENGTH`          | `20`                                | Trimmed, non-empty, rendered as text only; counted in UTF-16 code units, like HTML `maxlength`                                                                                                                                |
 | `ROOM_ID_LENGTH`               | `8`                                 | Characters in a room id                                                                                                                                                                                                       |
 | `ROOM_ID_ALPHABET`             | `'23456789abcdefghjkmnpqrstuvwxyz'` | Digits and lowercase letters without `0`, `1`, `i`, `l`, `o`                                                                                                                                                                  |
@@ -138,7 +139,9 @@ export type RematchChoice = (typeof REMATCH_CHOICES)[keyof typeof REMATCH_CHOICE
 
 export const ROOM_CLOSED_REASONS = {
   WAITING_TTL: 'WAITING_TTL', // nobody joined within WAITING_TTL_MS
+  NEGOTIATION_TTL: 'NEGOTIATION_TTL', // the rules not confirmed by both within NEGOTIATION_TTL_MS (ADR-0102)
   GAME_OVER_TTL: 'GAME_OVER_TTL', // GAME_OVER_TTL_MS after the match
+  SERVER_ERROR: 'SERVER_ERROR', // the server failed after a change was stored (ADR-0105)
 } as const; // sent with ROOM_CLOSED (ADR-0097)
 export type RoomClosedReason = (typeof ROOM_CLOSED_REASONS)[keyof typeof ROOM_CLOSED_REASONS];
 ```

@@ -5,6 +5,7 @@ import {
   CLIENT_EVENTS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
+  NEGOTIATION_TTL_MS,
   PAYLOAD_PARSERS,
   ROOM_CLOSED_REASONS,
   ROOM_PHASES,
@@ -87,7 +88,8 @@ export interface RoomHandlersOptions {
   readonly rooms: RoomManager;
   /**
    * The time of each command, passed to room logic and the snapshot projection, and the room timers: the end of
-   * placement, the turn timer, the disconnect forfeit, the waiting TTL and the game-over TTL (ADR-0065).
+   * placement, the turn timer, the disconnect forfeit, the waiting TTL, the negotiation TTL and the game-over TTL
+   * (ADR-0065).
    */
   readonly clock: Clock;
 }
@@ -100,8 +102,8 @@ interface CommandContext {
   readonly now: () => number;
   /**
    * Brings a room's timers in line with its stored state: the end of placement, the turn timer, the forfeit of the seat
-   * away longest, the waiting TTL and the game-over TTL; called after every accepted command and every change to its
-   * seats' presence.
+   * away longest, the waiting TTL, the negotiation TTL and the game-over TTL; called after every accepted command and
+   * every change to its seats' presence.
    * @param roomId The room that changed; an id no room has stops whatever timers it had left.
    */
   readonly reviewTimers: (roomId: string) => void;
@@ -139,7 +141,8 @@ interface CommandContext {
  * starts with `STATE` after the dice animation and times the turn out at its end (ADR-0099). Seat presence is tracked
  * here too (docs/server.md#seat-presence, ADR-0072): a seat with no socket bound to it is away, its forfeit clock runs
  * as a room timer, and every socket of the room gets `STATE` when a seat drops or comes back. A room nobody joins expires after
- * `WAITING_TTL_MS` (ADR-0096), a room in `GAME_OVER` after `GAME_OVER_TTL_MS`, and one nobody is left in closes
+ * `WAITING_TTL_MS` (ADR-0096), a room whose players do not agree on the rules after `NEGOTIATION_TTL_MS` (ADR-0102), a
+ * room in `GAME_OVER` after `GAME_OVER_TTL_MS`, and one nobody is left in closes
  * (docs/server.md#room-lifecycle); the sockets still in an expired room lose their seat and get `ROOM_CLOSED`
  * (ADR-0097). A throw in room logic stays in its room (ADR-0104): before anything is stored it refuses the command with
  * `SERVER_ERROR`; after a change is stored, in a timer task, or in a socket's `connection` or `disconnect`, it closes
@@ -327,6 +330,16 @@ export default fp<RoomHandlersOptions>(
       } else if (!timers.isRunning(roomId, ROOM_TIMER_KINDS.WAITING_FOR_OPPONENT)) {
         timers.start(roomId, ROOM_TIMER_KINDS.WAITING_FOR_OPPONENT, clock.now() + WAITING_TTL_MS, () => {
           expire(roomId, ROOM_TIMER_KINDS.WAITING_FOR_OPPONENT, ROOM_CLOSED_REASONS.WAITING_TTL);
+        });
+      }
+      // The negotiation TTL counts from the join that opened `RULES_NEGOTIATION`; edits and confirmations do not move
+      // it. The second confirmation stops it with the phase, and a seat freed before then sends the room back to waiting,
+      // so the next join starts a new one (ADR-0102).
+      if (room.phase !== ROOM_PHASES.RULES_NEGOTIATION) {
+        timers.stop(roomId, ROOM_TIMER_KINDS.RULES_NEGOTIATION);
+      } else if (!timers.isRunning(roomId, ROOM_TIMER_KINDS.RULES_NEGOTIATION)) {
+        timers.start(roomId, ROOM_TIMER_KINDS.RULES_NEGOTIATION, clock.now() + NEGOTIATION_TTL_MS, () => {
+          expire(roomId, ROOM_TIMER_KINDS.RULES_NEGOTIATION, ROOM_CLOSED_REASONS.NEGOTIATION_TTL);
         });
       }
       // The game-over TTL counts from the end of the match; leaving `GAME_OVER` (a rematch, #36) stops it.

@@ -33,6 +33,7 @@ The first users are the room TTLs. After every change to a room's sockets or pha
 - Amended on 2026-10-31 ([#113](https://github.com/fabogit/battleship/issues/113)): a room nobody joins expires on the `WAITING_FOR_OPPONENT` room timer, reviewed after `CREATE_ROOM` and `JOIN_ROOM` too ([ADR-0096](0096-waiting-ttl.md)), and a socket still in an expired room gets `ROOM_CLOSED` ([ADR-0097](0097-room-closed-notice.md)).
 - Amended on 2026-10-31 ([#123](https://github.com/fabogit/battleship/issues/123)): every timer task runs inside `RoomTimers`' containment, and one that throws closes its room with the `ROOM_CLOSED` reason `SERVER_ERROR` instead of ending the process ([ADR-0104](0104-room-failure-containment.md)).
 - Amended on 2026-10-31 ([#30](https://github.com/fabogit/battleship/issues/30)): each turn runs on the `TURN` room timer, reviewed with the others ([ADR-0099](0099-turn-timer.md)).
+- Amended on 2026-11-01 ([#128](https://github.com/fabogit/battleship/issues/128)): a room whose players do not both confirm the rules expires on the `RULES_NEGOTIATION` room timer, `NEGOTIATION_TTL_MS` after the join ([ADR-0102](0102-negotiation-ttl.md)).
 - Spec: [Server: Room lifecycle](../server.md#room-lifecycle) · [Server: Testability](../server.md#testability) · [Domain: Constants](../domain.md#constants)
 - Amends: [ADR-0039](0039-room-registry.md) (rooms are removed)
 - Related: [ADR-0037](0037-room-transition-shape.md) (room logic without timers), [ADR-0027](0027-shutdown-signals.md) (shutdown)

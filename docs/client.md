@@ -133,9 +133,9 @@ Any other address redirects to `/`. The room id reaches `Room` as an input (`wit
 
 ## Rules screen
 
-Decisions: [ADR-0086](adr/0086-rules-edits-sent-at-once.md) (edits sent at once), [ADR-0087](adr/0087-rules-controls-as-native-inputs.md) (native inputs), [ADR-0088](adr/0088-rules-change-notices.md) (change notices).
+Decisions: [ADR-0086](adr/0086-rules-edits-sent-at-once.md) (edits sent at once), [ADR-0087](adr/0087-rules-controls-as-native-inputs.md) (native inputs), [ADR-0088](adr/0088-rules-change-notices.md) (change notices), [ADR-0103](adr/0103-negotiation-ttl-on-the-wire.md) (the time limit).
 
-`Rules` (`features/rules`) is the room page's view in `RULES_NEGOTIATION`, under the presence banner, with "Leave room" beside its heading "Match rules" ([Routes & lobby flow](#routes--lobby-flow)). `RulesStore`, provided by the view, holds the rules on screen, the confirmations and the commands. Under the heading, "Agree on the rules with Grace."
+`Rules` (`features/rules`) is the room page's view in `RULES_NEGOTIATION`, under the presence banner, with "Leave room" beside its heading "Match rules" ([Routes & lobby flow](#routes--lobby-flow)). `RulesStore`, provided by the view, holds the rules on screen, the confirmations and the commands. Under the heading, "Agree on the rules with Grace. The match starts when you have both confirmed them; if you have not within 10 minutes, the room closes." (`NEGOTIATION_TTL_MS`, [ADR-0102](adr/0102-negotiation-ttl.md)); there is no countdown, as on the waiting screen.
 
 - **Controls**, native inputs in one `fieldset`, whose legend "Rules" is visually hidden since the heading names the screen:
   - "Extra turn on hit" and "Ships may touch": checkboxes with `role="switch"`, drawn as switches. The whole row is the label, 2.75 rem (44 px) high.
@@ -195,16 +195,16 @@ Decisions: [ADR-0075](adr/0075-client-connection-states.md) (status line, screen
 
   The explanations quote `DISCONNECT_FORFEIT_MS` and `GAME_OVER_TTL_MS` in minutes, e.g. "You were away for more than 3 minutes, or you left the room, so your seat was given up. If the room is still waiting for a player, you can join it again." Joining forgets the refused seat's snapshot of the room first, so the new seat, `P1` when the creator left ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)), starts from its own `STATE`.
 
-- **Closed room** (the room view `closed`): when the server closes the room with the player still in it (`ROOM_CLOSED`, [ADR-0097](adr/0097-room-closed-notice.md)), the page shows "This room has closed", the reason and a "Create a new room" link home, in place of the waiting screen or the game-over screen:
+- **Closed room** (the room view `closed`): when the server closes the room with the player still in it (`ROOM_CLOSED`, [ADR-0097](adr/0097-room-closed-notice.md)), the page shows "This room has closed", the reason and a "Create a new room" link home, in place of the waiting screen, the rules screen or the game-over screen:
 
-  | `reason`        | Sentence                                                                                                                                         |
-  | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | `WAITING_TTL`   | "Nobody joined within 10 minutes, so the room closed to free its place on the server. Create a new room and send the new link to your opponent." |
-  | `GAME_OVER_TTL` | "The match was over, and a room closes 2 minutes after its match ends."                                                                          |
+  | `reason`          | Sentence                                                                                                                                                                                                                              |
+  | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `WAITING_TTL`     | "Nobody joined within 10 minutes, so the room closed to free its place on the server. Create a new room and send the new link to your opponent."                                                                                      |
+  | `NEGOTIATION_TTL` | "The rules were not confirmed by both players within 10 minutes, so the room closed to free its place on the server. Create a new room and send the new link to your opponent." ([ADR-0103](adr/0103-negotiation-ttl-on-the-wire.md)) |
+  | `GAME_OVER_TTL`   | "The match was over, and a room closes 2 minutes after its match ends."                                                                                                                                                               |
+  | `SERVER_ERROR`    | "The server ran into an error in this room and could not go on with it, so the match was lost. Other rooms were not affected. Create a new room and send the new link to your opponent."                                              |
 
-  | `SERVER_ERROR` | "The server ran into an error in this room and could not go on with it, so the match was lost. Other rooms were not affected. Create a new room and send the new link to your opponent." |
-
-  The minutes come from `WAITING_TTL_MS` and `GAME_OVER_TTL_MS`; `closedReasons` gets both for every reason, as `seatLosses` does, since a server error has no TTL ([ADR-0105](adr/0105-server-error-on-the-wire.md)). The tab remembers the reason until a reload; after one it holds no seat in the room, so the page shows the join form, which answers "Room not found". The not-found sentence says that rooms close when nobody joins them in time or a few minutes after their players have left. The e2e journey `waiting-ttl.spec.ts` plays the waiting case ([Development: End-to-end journeys](development.md#end-to-end-journeys)).
+  The minutes come from `WAITING_TTL_MS`, `GAME_OVER_TTL_MS` and `NEGOTIATION_TTL_MS`; `closedReasons` gets all three for every reason, as `seatLosses` does, since a server error has no TTL ([ADR-0105](adr/0105-server-error-on-the-wire.md)). The tab remembers the reason until a reload; after one it holds no seat in the room, so the page shows the join form, which answers "Room not found". The not-found sentence says that rooms close when nobody joins them in time or a few minutes after their players have left. The e2e journey `waiting-ttl.spec.ts` plays the waiting case ([Development: End-to-end journeys](development.md#end-to-end-journeys)).
 
 - **Opponent presence** (`Presence`, above the waiting screen, the rules screen, placement and battle; every sentence but the countdown in one polite live region that the room page keeps across those views):
   - "Grace is disconnected." while `opponent.isConnected` is `false`, game over included. In production the server notices a closed tab about 10 s after it closes (Render's proxy); locally at once.

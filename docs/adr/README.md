@@ -105,6 +105,8 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0099](0099-turn-timer.md)                          | Turn timer                                 | Accepted, 2026-10-31   |
 | [ADR-0100](0100-timeout-actions.md)                     | Timeout actions                            | Accepted, 2026-10-31   |
 | [ADR-0101](0101-afk-forfeit.md)                         | AFK forfeit                                | Accepted, 2026-10-31   |
+| [ADR-0102](0102-negotiation-ttl.md)                     | Negotiation TTL                            | Accepted, 2026-11-01   |
+| [ADR-0103](0103-negotiation-ttl-on-the-wire.md)         | The negotiation TTL on the wire            | Accepted, 2026-11-01   |
 | [ADR-0104](0104-room-failure-containment.md)            | Room failure containment                   | Accepted, 2026-10-31   |
 | [ADR-0105](0105-server-error-on-the-wire.md)            | `SERVER_ERROR` on the wire                 | Accepted, 2026-10-31   |
 

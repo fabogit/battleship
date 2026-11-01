@@ -5,7 +5,7 @@ import { PROTOCOL_VERSION } from '../src/index.js';
 
 describe('@battleship/core', () => {
   it('exports PROTOCOL_VERSION', () => {
-    expect(PROTOCOL_VERSION).toBe(5);
+    expect(PROTOCOL_VERSION).toBe(6);
   });
 
   it('has zero runtime dependencies', () => {

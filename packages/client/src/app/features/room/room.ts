@@ -5,6 +5,7 @@ import {
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_TTL_MS,
+  NEGOTIATION_TTL_MS,
   ROOM_PHASES,
   WAITING_TTL_MS,
   isRoomId,
@@ -205,7 +206,11 @@ export class Room {
     const reason = this.sessions.closure(this.roomId());
     return reason === null
       ? ''
-      : this.text.closedReasons[reason](wholeMinutes(WAITING_TTL_MS), wholeMinutes(GAME_OVER_TTL_MS));
+      : this.text.closedReasons[reason](
+          wholeMinutes(WAITING_TTL_MS),
+          wholeMinutes(GAME_OVER_TTL_MS),
+          wholeMinutes(NEGOTIATION_TTL_MS),
+        );
   });
 
   /** Whether the refused room may still wait for a player, so the page offers the join form again. */

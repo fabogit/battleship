@@ -42,6 +42,7 @@ The client words both:
 ## Links
 
 - Added on 2026-10-31 for containing a room handler failure ([#123](https://github.com/fabogit/battleship/issues/123)).
+- Amended on 2026-11-01 ([#128](https://github.com/fabogit/battleship/issues/128)): `closedReasons` takes the negotiation minutes too ([ADR-0103](0103-negotiation-ttl-on-the-wire.md)).
 - Spec: [Protocol: Error codes](../protocol.md#error-codes) · [Protocol: Server → client](../protocol.md#server--client) · [Client: Connection states](../client.md#connection-states) · [Domain: Constants](../domain.md#constants)
 - Related: [ADR-0104](0104-room-failure-containment.md) (containment) · [ADR-0017](0017-protocol-versioning.md) (protocol versioning) · [ADR-0097](0097-room-closed-notice.md) (version 4, room-closed notice) · [ADR-0098](0098-closed-room-view.md) (closed-room view) · [ADR-0061](0061-handshake-checks.md) (handshake checks) · [ADR-0046](0046-commands-ahead-of-room-logic.md) (`NOT_ALLOWED`)
 - Issues: [#123](https://github.com/fabogit/battleship/issues/123) · [#113](https://github.com/fabogit/battleship/issues/113)

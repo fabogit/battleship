@@ -174,6 +174,11 @@ export type GameOverReason = (typeof GAME_OVER_REASONS)[keyof typeof GAME_OVER_R
 export const ROOM_CLOSED_REASONS = {
   /** Nobody joined the room within `WAITING_TTL_MS` of its entry into `WAITING_FOR_OPPONENT` (ADR-0096). */
   WAITING_TTL: 'WAITING_TTL',
+  /**
+   * The players did not both confirm the rules within `NEGOTIATION_TTL_MS` of the room's entry into
+   * `RULES_NEGOTIATION` (ADR-0102).
+   */
+  NEGOTIATION_TTL: 'NEGOTIATION_TTL',
   /** The match ended `GAME_OVER_TTL_MS` ago without a rematch. */
   GAME_OVER_TTL: 'GAME_OVER_TTL',
   /** The server failed while running the room, after a change was stored, so the room could not go on (ADR-0105). */

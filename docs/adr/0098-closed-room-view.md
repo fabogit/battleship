@@ -31,6 +31,7 @@ The minutes come from `WAITING_TTL_MS` and `GAME_OVER_TTL_MS`; a server error ha
 
 - Added on 2026-10-31 for room place limits ([#113](https://github.com/fabogit/battleship/issues/113)).
 - Amended on 2026-10-31 ([#123](https://github.com/fabogit/battleship/issues/123)): the reason `SERVER_ERROR` has its sentence ([ADR-0105](0105-server-error-on-the-wire.md)).
+- Amended on 2026-11-01 ([#128](https://github.com/fabogit/battleship/issues/128)): the reason `NEGOTIATION_TTL` has its sentence, and the rules screen says the limit beforehand ([ADR-0103](0103-negotiation-ttl-on-the-wire.md)).
 - Spec: [Client: Connection states](../client.md#connection-states) · [Client: Routes & lobby flow](../client.md#routes--lobby-flow)
 - Related: [ADR-0097](0097-room-closed-notice.md) (the notice) · [ADR-0096](0096-waiting-ttl.md) (waiting TTL) · [ADR-0076](0076-refused-seat-explanation.md) (refused seat) · [ADR-0078](0078-leaving-before-the-match.md) (leaving before the match)
 - Issues: [#113](https://github.com/fabogit/battleship/issues/113) · [#123](https://github.com/fabogit/battleship/issues/123)

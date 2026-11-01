@@ -32,6 +32,7 @@ Details in [Server: Rules negotiation](../server.md#rules-negotiation) (#26).
 ## Links
 
 - Added on 2026-10-29 for rules negotiation ([#26](https://github.com/fabogit/battleship/issues/26)).
+- Amended on 2026-11-01 ([#128](https://github.com/fabogit/battleship/issues/128)): a negotiation that does not end in two confirmations within `NEGOTIATION_TTL_MS` of the join closes the room; edits and confirmations do not restart the time ([ADR-0102](0102-negotiation-ttl.md)).
 - Spec: [Server: Rules negotiation](../server.md#rules-negotiation) · [Protocol: Client → server](../protocol.md#client--server)
 - Implements: [ADR-0003](0003-rules-editing.md) (rules editing) · [ADR-0004](0004-stale-confirmation-protection.md) (stale confirmation)
 - Amends: [ADR-0046](0046-commands-ahead-of-room-logic.md) (the rules commands have their room logic) · [ADR-0037](0037-room-transition-shape.md) (`RULES_NEGOTIATION` has its variant)

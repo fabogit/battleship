@@ -16,11 +16,12 @@ export interface RulesText {
   /** The page heading. */
   readonly heading: string;
   /**
-   * Under the heading: who the rules are agreed with.
+   * Under the heading: who the rules are agreed with, and how long the room waits for both confirmations (ADR-0102).
    * @param nickname The opponent's nickname.
-   * @returns The sentence.
+   * @param minutes `NEGOTIATION_TTL_MS` in minutes.
+   * @returns The sentences.
    */
-  readonly intro: (nickname: string) => string;
+  readonly intro: (nickname: string, minutes: number) => string;
   /** The legend of the rules fieldset. */
   readonly legend: string;
   /** The switch for `isExtraTurnOnHitEnabled`. */
@@ -104,7 +105,8 @@ export interface RulesText {
  */
 export const RULES_TEXT: RulesText = {
   heading: 'Match rules',
-  intro: (nickname) => `Agree on the rules with ${nickname}.`,
+  intro: (nickname, minutes) =>
+    `Agree on the rules with ${nickname}. The match starts when you have both confirmed them; if you have not within ${String(minutes)} minutes, the room closes.`,
   legend: 'Rules',
   extraTurn: 'Extra turn on hit',
   adjacentShips: 'Ships may touch',

@@ -4,6 +4,7 @@ import {
   DICE_ANIMATION_MS,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
+  NEGOTIATION_TTL_MS,
   ORIENTATIONS,
   PLACEMENT_VIOLATIONS,
   PROTOCOL_VERSION,
@@ -348,6 +349,21 @@ describe('room logs', () => {
 
     expect(lines).toContainEqual(
       expect.objectContaining({ msg: 'Room expired', roomId, reason: 'WAITING_FOR_OPPONENT', roomCount: 0 }),
+    );
+  });
+
+  it('record a room expired in rules negotiation after NEGOTIATION_TTL_MS at info', async () => {
+    const { baseUrl, lines } = await start('info');
+    const [p1, p2] = [client(baseUrl), client(baseUrl)];
+    const created: unknown = await p1
+      .timeout(ACK_TIMEOUT_MS)
+      .emitWithAck(CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' });
+    const { roomId } = created as { roomId: string };
+    await p2.timeout(ACK_TIMEOUT_MS).emitWithAck(CLIENT_EVENTS.JOIN_ROOM, { roomId, nickname: 'Bob' });
+    clock.advance(NEGOTIATION_TTL_MS);
+
+    expect(lines).toContainEqual(
+      expect.objectContaining({ msg: 'Room expired', roomId, reason: 'RULES_NEGOTIATION', roomCount: 0 }),
     );
   });
 
