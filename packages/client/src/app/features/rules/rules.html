@@ -2,7 +2,7 @@
   <h1>{{ text.heading }}</h1>
   <ng-content />
 </div>
-<p class="intro">{{ text.intro(opponentNickname()) }}</p>
+<p class="intro">{{ text.intro(opponentNickname(), negotiationMinutes) }}</p>
 
 <fieldset class="rules">
   <legend class="visually-hidden">{{ text.legend }}</legend>

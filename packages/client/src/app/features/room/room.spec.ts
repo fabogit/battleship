@@ -212,7 +212,7 @@ describe('Room', () => {
       await receive(joinedSnapshot());
 
       expect(heading()).toBe(RULES_TEXT.heading);
-      expect(page().textContent).toContain(RULES_TEXT.intro('Ada'));
+      expect(page().textContent).toContain(RULES_TEXT.intro('Ada', 10));
     });
 
     it('shows a not-found screen with a way home for ROOM_NOT_FOUND', async () => {
@@ -292,7 +292,7 @@ describe('Room', () => {
       await receive({ ...joined, me: joined.opponent ?? joined.me, opponent: joined.me });
 
       expect(heading()).toBe(RULES_TEXT.heading);
-      expect(page().textContent).toContain(RULES_TEXT.intro('Grace'));
+      expect(page().textContent).toContain(RULES_TEXT.intro('Grace', 10));
     });
 
     it('moves on to placement once both confirm the rules (#27)', async () => {
@@ -395,8 +395,22 @@ describe('Room', () => {
       await close(ROOM_ID, ROOM_CLOSED_REASONS.WAITING_TTL);
 
       expect(heading()).toBe(ROOM_TEXT.closedHeading);
-      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.WAITING_TTL(10, 2));
+      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.WAITING_TTL(10, 2, 10));
       expect(page().querySelector('input#room-link')).toBeNull();
+      expect(page().querySelector('app-presence')).toBeNull();
+      expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
+      expect(page().querySelector('a')?.textContent.trim()).toBe(ROOM_TEXT.createOwn);
+    });
+
+    it('says on the rules screen that the rules were not agreed in time, with a way to create a new room (#128)', async () => {
+      await receive(negotiationSnapshot(ROOM_ID));
+
+      await close(ROOM_ID, ROOM_CLOSED_REASONS.NEGOTIATION_TTL);
+
+      expect(heading()).toBe(ROOM_TEXT.closedHeading);
+      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.NEGOTIATION_TTL(10, 2, 10));
+      expect(page().textContent).toContain('within 10 minutes');
+      expect(page().querySelector('fieldset')).toBeNull();
       expect(page().querySelector('app-presence')).toBeNull();
       expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
       expect(page().querySelector('a')?.textContent.trim()).toBe(ROOM_TEXT.createOwn);
@@ -408,7 +422,7 @@ describe('Room', () => {
       await close(ROOM_ID, ROOM_CLOSED_REASONS.GAME_OVER_TTL);
 
       expect(heading()).toBe(ROOM_TEXT.closedHeading);
-      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.GAME_OVER_TTL(10, 2));
+      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.GAME_OVER_TTL(10, 2, 10));
       expect(page().querySelector('[role="grid"]')).toBeNull();
     });
 
@@ -418,7 +432,7 @@ describe('Room', () => {
       await close(ROOM_ID, ROOM_CLOSED_REASONS.SERVER_ERROR);
 
       expect(heading()).toBe(ROOM_TEXT.closedHeading);
-      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.SERVER_ERROR(10, 2));
+      expect(page().textContent).toContain(ROOM_TEXT.closedReasons.SERVER_ERROR(10, 2, 10));
       expect(page().textContent).toContain('the match was lost');
       expect(page().querySelector('[role="grid"]')).toBeNull();
       expect(page().querySelector('app-presence')).toBeNull();

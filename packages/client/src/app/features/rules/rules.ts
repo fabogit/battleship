@@ -1,7 +1,8 @@
 import { Component, afterRenderEffect, computed, inject, viewChildren, type ElementRef } from '@angular/core';
-import { TIMEOUT_ACTIONS, type GameRules } from '@battleship/core';
+import { NEGOTIATION_TTL_MS, TIMEOUT_ACTIONS, type GameRules } from '@battleship/core';
 
 import { GameStateService } from '../../core/game-state';
+import { wholeMinutes } from '../../shared/countdown';
 import { RulesStore, TURN_TIME_LIMIT_OPTIONS } from './rules-store';
 import { RULES_TEXT, rulesErrorMessage, rulesNoticeMessage } from './rules.text';
 
@@ -9,7 +10,8 @@ import { RULES_TEXT, rulesErrorMessage, rulesNoticeMessage } from './rules.text'
  * The `RULES_NEGOTIATION` view (docs/client.md#rules-screen): both players edit one set of rules and confirm it. The
  * controls are native inputs in a fieldset, and every change is sent at once (ADR-0086, ADR-0087); "Confirm rules"
  * accepts the version on screen. Both confirmations are listed, and a polite live region says who changed what and
- * whose confirmation it cleared (ADR-0088). Salvo is not offered until its engine lands (#32, #34). Its content goes
+ * whose confirmation it cleared (ADR-0088). The intro says how long the room waits for both confirmations
+ * (ADR-0102). Salvo is not offered until its engine lands (#32, #34). Its content goes
  * beside the heading: the room page's "Leave room" (ADR-0080).
  */
 @Component({
@@ -30,6 +32,8 @@ export class Rules {
   protected readonly turnTimeLimits = TURN_TIME_LIMIT_OPTIONS;
   /** The timeout action options, in the order of `TIMEOUT_ACTIONS`. */
   protected readonly timeoutActions = Object.values(TIMEOUT_ACTIONS);
+  /** How long the room waits for both confirmations before it closes (ADR-0102). */
+  protected readonly negotiationMinutes = wholeMinutes(NEGOTIATION_TTL_MS);
 
   /** The opponent's nickname; empty in the moment the seat is freed. */
   protected readonly opponentNickname = computed(() => this.gameState.snapshot()?.opponent?.nickname ?? '');

@@ -120,6 +120,14 @@ describe('Rules', () => {
     expect(screen().textContent.toLowerCase()).not.toContain('salvo');
   });
 
+  it('says the room closes if the rules are not confirmed by both within NEGOTIATION_TTL_MS (#128)', async () => {
+    await render();
+
+    const intro = screen().querySelector('.intro')?.textContent.trim();
+    expect(intro).toBe(RULES_TEXT.intro('Grace', 10));
+    expect(intro).toContain('within 10 minutes, the room closes');
+  });
+
   it('shows the rules of the snapshot, and of every later one', async () => {
     const rules: GameRules = {
       ...DEFAULT_RULES,

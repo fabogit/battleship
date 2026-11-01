@@ -1,4 +1,4 @@
-import { GAME_OVER_TTL_MS, WAITING_TTL_MS } from '@battleship/core';
+import { GAME_OVER_TTL_MS, NEGOTIATION_TTL_MS, WAITING_TTL_MS } from '@battleship/core';
 
 import { HOME_TEXT } from '../../client/src/app/features/home/home.text';
 import { LOBBY_TEXT } from '../../client/src/app/features/lobby/lobby.text';
@@ -21,7 +21,11 @@ test('a room nobody joins closes after WAITING_TTL_MS, and its creator creates a
   await expect(mainHeading(ada.page)).toHaveText(ROOM_TEXT.closedHeading);
   await expect(
     ada.page.getByText(
-      ROOM_TEXT.closedReasons.WAITING_TTL(wholeMinutes(WAITING_TTL_MS), wholeMinutes(GAME_OVER_TTL_MS)),
+      ROOM_TEXT.closedReasons.WAITING_TTL(
+        wholeMinutes(WAITING_TTL_MS),
+        wholeMinutes(GAME_OVER_TTL_MS),
+        wholeMinutes(NEGOTIATION_TTL_MS),
+      ),
     ),
   ).toBeVisible();
   await expect(ada.page.getByRole('textbox', { name: LOBBY_TEXT.linkLabel })).toBeHidden();

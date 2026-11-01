@@ -52,10 +52,11 @@ export interface RoomText {
    * Why the server closed the room, by `ROOM_CLOSED_REASONS` value, and what the player can do.
    * @param waitingMinutes `WAITING_TTL_MS` in minutes.
    * @param gameOverMinutes `GAME_OVER_TTL_MS` in minutes.
+   * @param negotiationMinutes `NEGOTIATION_TTL_MS` in minutes.
    * @returns The explanation.
    */
   readonly closedReasons: Readonly<
-    Record<RoomClosedReason, (waitingMinutes: number, gameOverMinutes: number) => string>
+    Record<RoomClosedReason, (waitingMinutes: number, gameOverMinutes: number, negotiationMinutes: number) => string>
   >;
   /** For a seat the server refused, by what the page could tell of the cause (ADR-0076). */
   readonly seatLosses: Readonly<Record<SeatLoss, SeatLossText>>;
@@ -91,6 +92,8 @@ export const ROOM_TEXT: RoomText = {
   closedReasons: {
     [ROOM_CLOSED_REASONS.WAITING_TTL]: (waitingMinutes) =>
       `Nobody joined within ${String(waitingMinutes)} minutes, so the room closed to free its place on the server. Create a new room and send the new link to your opponent.`,
+    [ROOM_CLOSED_REASONS.NEGOTIATION_TTL]: (_waitingMinutes, _gameOverMinutes, negotiationMinutes) =>
+      `The rules were not confirmed by both players within ${String(negotiationMinutes)} minutes, so the room closed to free its place on the server. Create a new room and send the new link to your opponent.`,
     [ROOM_CLOSED_REASONS.GAME_OVER_TTL]: (_waitingMinutes, gameOverMinutes) =>
       `The match was over, and a room closes ${String(gameOverMinutes)} minutes after its match ends.`,
     [ROOM_CLOSED_REASONS.SERVER_ERROR]: () =>
