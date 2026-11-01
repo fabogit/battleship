@@ -160,7 +160,10 @@ h2 {
   }
 }
 
-/* Wide screens: both boards side by side, so the toggle has nothing to do. */
+/*
+ * Wide screens: both boards side by side, so the toggle has nothing to do. Cells shrink below 3rem (48px) when the
+ * viewport is too short for both boards, the lines above them and "Fire" (25rem, 400px), never below 1.5rem (24px).
+ */
 @media (width >= 52rem) {
   .toggle {
     display: none;
@@ -168,5 +171,9 @@ h2 {
 
   .boards {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .boards app-board-grid {
+    --board-cell-max: clamp(1.5rem, (100dvh - 25rem) / 10, 3rem);
   }
 }

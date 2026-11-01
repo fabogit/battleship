@@ -22,6 +22,7 @@ Board cells share the board's width in ten equal columns, between 1.5 rem (24 px
 ## Links
 
 - Added on 2026-10-07 for the board grid component ([#18](https://github.com/fabogit/battleship/issues/18)).
+- Amended on 2026-11-01 ([#31](https://github.com/fabogit/battleship/issues/31)): in the battle view's side-by-side layout the cells also shrink with the viewport's height, within the same bounds, so that "Fire" stays in view on a laptop ([Client: Layout](../client.md#layout)).
 - Spec: [Client: Board & interaction](../client.md#board--interaction) · [Client: Layout](../client.md#layout)
 - Related: [ADR-0041](0041-board-keyboard-navigation.md) (keyboard navigation)
 - Issues: [#18](https://github.com/fabogit/battleship/issues/18)
