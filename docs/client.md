@@ -249,7 +249,7 @@ Decision: [ADR-0057](adr/0057-battle-layout.md).
   | 390 × 844  | 673 → 653–678 | 697 → 690–715               | 825 → 713–738                    |
   | 1280 × 800 | 720 → 700     | 744 → 737                   | **848** → 700                    |
 
-  At 390 × 844 the dice result under the heading takes one line or two, by the faces and the nicknames (25 px). With the banner before the match, "Confirm rules" ends at 487 px at 320 × 568 and 360 × 640 (679 px before at 360 × 640), "Confirm fleet" at 405 px at both (563 px before). Nothing scrolls sideways, with nicknames of 20 characters too.
+  On short screens the turn timer and the toggle's labels are 0.875 rem and the heading row's gap 0.5 rem, so that with a wide system font (DejaVu Sans, as on Linux and the CI runner) "Time left: 0:30, paused" stays beside the heading at 320 px and "Enemy waters" on one line: with nicknames of 20 characters "Fire" then ends at 563 px at 320 × 568 and 625 px at 360 × 640 in either font. At 390 × 844 the dice result under the heading takes one line or two, by the faces and the nicknames (25 px). With the banner before the match, "Confirm rules" ends at 487 px at 320 × 568 and 360 × 640 (679 px before at 360 × 640), "Confirm fleet" at 405 px at both (563 px before). Nothing scrolls sideways, with nicknames of 20 characters too.
 
 - Room link shared through the system share sheet on phones and tablets, and through the share dialog (QR code, link, "Copy link") elsewhere; "Copy link" is on the page too ([Routes & lobby flow](#routes--lobby-flow)).
 

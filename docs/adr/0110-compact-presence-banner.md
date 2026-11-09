@@ -15,9 +15,10 @@ While the opponent was away, the presence banner ([ADR-0077](0077-opponent-prese
   - on wide screens, in the clamp of [ADR-0057](0057-battle-layout.md): `(100dvh − 25rem − --presence-block-size) / 10`;
   - on short narrow screens held upright, in a new clamp: `(100dvh − 17.5rem − --presence-block-size) / 10`. Without the banner, a phone held upright stays width-bound (28.8 px allowed against 26.2 px of width at 320×568). In landscape the board keeps its cells: that layout is #38.
 - **The short-screen breakpoint** is `height < 42rem` (672 px) instead of `40rem`, in the shell, the room page, the rules screen, placement and the battle, so 360×640 counts as short.
+- **Wider system fonts:** on short screens the turn timer and the toggle's labels are 0.875 rem (14 px), and the heading row's gap 0.5 rem. With DejaVu Sans (Linux, and the CI runner) "Time left: 0:30, paused" wrapped under the heading at 320 px, and "Enemy waters" onto two lines: 36 px more above "Fire" while paused. The compact banner was the first to find it, since only an away opponent pauses the match.
 - **Two gaps the view takes back:** the room page's gap under an empty banner (8 px on short screens, 16 px otherwise) and the battle status's gap above its empty AFK live region (4 px). The first was meant to be cancelled by a negative margin on the banner, but a grid row never gets shorter than zero, so the gap stayed. The view under the banner now takes it back with its own negative margin.
 
-Measured with Playwright on the local stack, light and dark alike. The figures are the bottom edge of "Fire" from the top of the viewport, for the player whose turn it is, with a target aimed:
+Measured with Playwright on the local stack (Noto Sans), light and dark alike. The figures are the bottom edge of "Fire" from the top of the viewport, for the player whose turn it is, with a target aimed:
 
 | Viewport | No banner     | "Grace is back." / low time | Opponent away, paused or running |
 | -------- | ------------- | --------------------------- | -------------------------------- |
@@ -40,10 +41,10 @@ At 390×844 the dice result under the heading takes one line or two, by the face
 ## Consequences
 
 - At 320×568 the cells shrink to the 1.5 rem floor while the opponent is away, and grow back when they return. At 360×640 and up, a phone held upright keeps its cells.
-- The longest nicknames (20 characters, `NICKNAME_MAX_LENGTH`) wrap "Grace is disconnected." into two lines at 320 px, so the banner takes three lines (63 px), 19 px over its budget. "Fire" still ends at 563 px at 320×568 and 625 px at 360×640.
+- The longest nicknames (20 characters, `NICKNAME_MAX_LENGTH`) wrap "Grace is disconnected." into two lines at 320 px, so the banner takes three lines (63 px), 19 px over its budget. "Fire" still ends at 563 px at 320×568 and 625 px at 360×640, with Noto Sans and with DejaVu Sans alike.
 - `--presence-block-size` is a contract between `room.css` and `battle.css`, set only while the compact banner shows a forfeit countdown. "Grace is back." for one snapshot is not budgeted. It costs 37 px at 1280×800, where "Fire" still ends at 737 px.
 - The rules screen hides its intro at 360×640 too, as it already did at 320×568.
-- The initial bundle grows by 1.60 kB raw, 0.23 kB estimated transfer: 494.64 → 496.24 kB of the 500 kB warning budget, 129.54 → 129.77 kB.
+- The initial bundle grows by 1.78 kB raw, 0.24 kB estimated transfer: 494.64 → 496.42 kB of the 500 kB warning budget, 129.54 → 129.78 kB.
 
 ## Links
 
