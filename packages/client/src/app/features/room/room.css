@@ -1,6 +1,8 @@
 :host {
+  --room-gap: 1rem;
+
   display: grid;
-  gap: 1rem;
+  gap: var(--room-gap);
 }
 
 h1,
@@ -16,19 +18,26 @@ p {
   color: var(--color-error);
 }
 
-/* The presence banner is zero high while the opponent is connected: no gap for it then. */
-app-presence:not(:has(p:not(:empty))) {
-  margin-bottom: -1rem;
+/*
+ * The presence banner is zero high while the opponent is connected: the view under it takes the gap back. A negative
+ * margin on the banner itself would not: a grid row is never shorter than zero, so the gap stayed (#54, F2).
+ */
+app-presence:not(:has(p:not(:empty))) + * {
+  margin-top: calc(-1 * var(--room-gap));
 }
 
-/* Short screens, under 40rem (640px) tall: half the gap, so that the views' main actions stay in view at 320 × 568. */
-@media (height < 40rem) {
-  :host {
-    gap: 0.5rem;
-  }
+/*
+ * While the battle's compact banner counts down an away opponent's forfeit, the battle view takes its height off the
+ * size of its cells: the button's 2.75rem (44px) and the gap under it (ADR-0110).
+ */
+:host:has(> app-presence.is-compact [role='timer']) {
+  --presence-block-size: calc(2.75rem + var(--room-gap));
+}
 
-  app-presence:not(:has(p:not(:empty))) {
-    margin-bottom: -0.5rem;
+/* Short screens, under 42rem (672px) tall: half the gap, so that the views' main actions stay in view at 320 × 568. */
+@media (height < 42rem) {
+  :host {
+    --room-gap: 0.5rem;
   }
 }
 

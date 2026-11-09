@@ -26,10 +26,10 @@ header {
 }
 
 /*
- * Short screens, under 40rem (640px) tall: the name and the status on one line, and less space around them, so that
+ * Short screens, under 42rem (672px) tall: the name and the status on one line, and less space around them, so that
  * the views' main actions are in view without a scroll at 320 × 568 (docs/client.md#layout).
  */
-@media (height < 40rem) {
+@media (height < 42rem) {
   :host {
     padding-block: 0.5rem;
   }
