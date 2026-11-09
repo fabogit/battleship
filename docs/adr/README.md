@@ -113,5 +113,6 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0107](0107-dice-animation-in-the-client.md)        | The dice animation in the client           | Accepted, 2026-11-01   |
 | [ADR-0108](0108-low-time-warning.md)                    | Low-time warning                           | Accepted, 2026-11-01   |
 | [ADR-0109](0109-afk-warning.md)                         | AFK warning and the automatic shot         | Accepted, 2026-11-01   |
+| [ADR-0110](0110-compact-presence-banner.md)             | Compact presence banner in the battle      | Accepted, 2026-11-09   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).
