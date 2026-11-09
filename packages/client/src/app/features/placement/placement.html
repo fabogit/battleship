@@ -13,14 +13,17 @@
     }
   </p>
   <p aria-live="polite">
-    @if (startsInSeconds(); as seconds) {
-      {{ text.startsIn(seconds) }}
+    @if (startCountdown() !== null) {
+      {{ text.bothReady }}
     } @else if (store.isOpponentConfirmed()) {
       <span class="ok">{{ text.opponentReady(opponentNickname()) }}</span>
     } @else {
       {{ text.opponentPlacing(opponentNickname()) }}
     }
   </p>
+  @if (startCountdown(); as countdown) {
+    <p role="timer">{{ countdown }}</p>
+  }
 </div>
 
 <ul class="dock" [attr.aria-label]="text.dockLabel">

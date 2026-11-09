@@ -20,8 +20,8 @@ export const ALL_CELLS: readonly string[] = Array.from({ length: BOARD_SIZE * BO
   formatCoordinate({ x: index % BOARD_SIZE, y: Math.floor(index / BOARD_SIZE) }),
 );
 
-/** The placement status while the start countdown runs, whatever the seconds left: "Both fleets are ready. …". */
-export const STARTS_IN: RegExp = new RegExp(escape(PLACEMENT_TEXT.startsIn(0)).replace('0', '\\d+'));
+/** The start countdown's timer in placement while seconds are left, whatever they are: "The match starts in 3 s". */
+export const STARTS_IN: RegExp = new RegExp(escape(PLACEMENT_TEXT.startsIn(1)).replace('1', '\\d+'));
 
 /**
  * The page's main heading: the screen's title, or whose turn it is during the battle.

@@ -140,6 +140,16 @@ function deadline(): Element | null {
   return view().querySelector('[role="timer"]');
 }
 
+/** @returns The live region with the opponent's status, which says both fleets are ready once the countdown runs. */
+function opponentStatus(): Element | null {
+  return view().querySelector('.status [aria-live]:not(.time-low)');
+}
+
+/** @returns The start countdown's line, right after the opponent's status. */
+function startTimer(): Element | null {
+  return view().querySelector('.status [aria-live]:not(.time-low) + [role="timer"]');
+}
+
 describe('Placement', () => {
   it('shows the deadline, the opponent and every ship of the dock, with its size', () => {
     // On fake timers: under a loaded suite, a second could pass between the snapshot and the assertion (#31).
@@ -258,15 +268,44 @@ describe('Placement', () => {
   it('counts down to the start once both fleets are confirmed, and drops it when one is unlocked', () => {
     vi.useFakeTimers();
     receiveNow({ myShips: FULL_FLEET, hasConfirmed: { me: true, opponent: true }, startCountdownMs: 4_200 });
-    expect(view().textContent).toContain(PLACEMENT_TEXT.startsIn(5));
+    expect(opponentStatus()?.textContent.trim()).toBe(PLACEMENT_TEXT.bothReady);
+    expect(startTimer()?.textContent.trim()).toBe(PLACEMENT_TEXT.startsIn(5));
 
     // Countdowns are recomputed every COUNTDOWN_TICK_MS (250 ms): 1 250 ms in, 2 950 ms are left.
     wait(1_250);
-    expect(view().textContent).toContain(PLACEMENT_TEXT.startsIn(3));
+    expect(startTimer()?.textContent.trim()).toBe(PLACEMENT_TEXT.startsIn(3));
 
     receiveNow({ myShips: FULL_FLEET, hasConfirmed: { me: true, opponent: false }, startCountdownMs: null });
-    expect(view().textContent).not.toContain(PLACEMENT_TEXT.startsIn(3));
-    expect(view().textContent).toContain(PLACEMENT_TEXT.opponentPlacing('Grace'));
+    expect(startTimer()).toBeNull();
+    expect(opponentStatus()?.textContent.trim()).toBe(PLACEMENT_TEXT.opponentPlacing('Grace'));
+  });
+
+  it('says once that the match is about to start, and ticks the seconds in a timer outside the live region', () => {
+    vi.useFakeTimers();
+    receiveNow({ myShips: FULL_FLEET, hasConfirmed: { me: true, opponent: true }, startCountdownMs: 5_000 });
+    const announced = new Set<string | undefined>();
+    const shown = new Set<string | undefined>();
+
+    for (let elapsed = 0; elapsed < 5_000; elapsed += 250) {
+      announced.add(opponentStatus()?.textContent.trim());
+      shown.add(startTimer()?.textContent.trim());
+      wait(250);
+    }
+
+    expect([...announced]).toHaveLength(1);
+    expect([...shown]).toHaveLength(5);
+    expect(startTimer()?.closest('[aria-live]')).toBeNull();
+  });
+
+  it('says the match is starting once the local countdown reaches 0, until the STATE that starts it', () => {
+    vi.useFakeTimers();
+    receiveNow({ myShips: FULL_FLEET, hasConfirmed: { me: true, opponent: true }, startCountdownMs: 1_000 });
+    expect(startTimer()?.textContent.trim()).toBe(PLACEMENT_TEXT.startsIn(1));
+
+    wait(1_250);
+
+    expect(opponentStatus()?.textContent.trim()).toBe(PLACEMENT_TEXT.bothReady);
+    expect(startTimer()?.textContent.trim()).toBe(PLACEMENT_TEXT.starting);
   });
 
   it('counts the deadline down between snapshots, and follows every new one', () => {

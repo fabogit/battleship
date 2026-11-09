@@ -63,10 +63,17 @@ export class Placement {
     return remainingMs !== null && isLowTime(remainingMs, PLACEMENT_TIME_LIMIT_MS);
   });
 
-  /** Whole seconds before the match starts, while both fleets are locked; `null` otherwise. */
-  protected readonly startsInSeconds = computed(() => {
+  /**
+   * The start countdown's line, while both fleets are locked: the whole seconds left, or `starting` once they reach 0
+   * before the `STATE` that starts the match; `null` otherwise.
+   */
+  protected readonly startCountdown = computed(() => {
     const remainingMs = this.gameState.startCountdownMs();
-    return remainingMs === null ? null : remainingSeconds(remainingMs);
+    if (remainingMs === null) {
+      return null;
+    }
+    const seconds = remainingSeconds(remainingMs);
+    return seconds === 0 ? this.text.starting : this.text.startsIn(seconds);
   });
 
   /** Every ship of the fleet, largest first, with whether it is placed and selected. */

@@ -52,12 +52,16 @@ export interface PlacementText {
    * @returns The sentence.
    */
   readonly opponentReady: (nickname: string) => string;
+  /** In place of the opponent's status while both fleets are locked and the start countdown runs, said once. */
+  readonly bothReady: string;
   /**
-   * While both fleets are locked and the match is about to start.
-   * @param seconds Whole seconds left.
-   * @returns The sentence.
+   * The start countdown, under `bothReady`, while seconds are left.
+   * @param seconds Whole seconds left, at least 1.
+   * @returns The line.
    */
   readonly startsIn: (seconds: number) => string;
+  /** The start countdown once it reads 0, until the `STATE` that starts the match. */
+  readonly starting: string;
   /**
    * Above the actions on the selected ship.
    * @param ship The ship's name.
@@ -155,7 +159,9 @@ export const PLACEMENT_TEXT: PlacementText = {
   timeLow: 'Time is almost up: your fleet is then completed at random and locked.',
   opponentPlacing: (nickname) => `${nickname} is still placing their fleet.`,
   opponentReady: (nickname) => `${nickname} is ready.`,
-  startsIn: (seconds) => `Both fleets are ready. The match starts in ${String(seconds)} s.`,
+  bothReady: 'Both fleets are ready.',
+  startsIn: (seconds) => `The match starts in ${String(seconds)} s`,
+  starting: 'The match is starting…',
   selectedShip: (ship) => `${ship} selected`,
   rotate: 'Rotate',
   remove: 'Remove',
