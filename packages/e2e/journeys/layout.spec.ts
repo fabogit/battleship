@@ -1,3 +1,4 @@
+import { NICKNAME_MAX_LENGTH } from '@battleship/core';
 import type { BrowserContextOptions, Locator, Page } from '@playwright/test';
 
 import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
@@ -47,6 +48,12 @@ const PHONES = [
   { width: 320, height: 568 },
   { width: 360, height: 640 },
 ] as const;
+
+/**
+ * Nicknames as long as allowed (`NICKNAME_MAX_LENGTH`): the compact banner's sentence names the opponent, so these wrap
+ * it the most at phone width (three lines beside the button at 320 px).
+ */
+const LONGEST_NICKNAMES = ['Wilhelmina Montgomer', 'Maximiliana Rosewood'] as const;
 
 /**
  * Asserts that the page does not scroll sideways.
@@ -164,11 +171,13 @@ for (const viewport of PHONES) {
     skipServerClock,
   }) => {
     const options: BrowserContextOptions = { viewport, isMobile: true, hasTouch: true };
-    const ada = await openPlayer('Ada', options);
-    const grace = await openPlayer('Grace', options);
-    await startBattle(ada, grace, skipServerClock);
-    const shooter = await firstShooter([ada, grace]);
-    const opponent = shooter === ada ? grace : ada;
+    const [creatorName, joinerName] = LONGEST_NICKNAMES;
+    expect([creatorName.length, joinerName.length]).toEqual([NICKNAME_MAX_LENGTH, NICKNAME_MAX_LENGTH]);
+    const creator = await openPlayer(creatorName, options);
+    const joiner = await openPlayer(joinerName, options);
+    await startBattle(creator, joiner, skipServerClock);
+    const shooter = await firstShooter([creator, joiner]);
+    const opponent = shooter === creator ? joiner : creator;
     const { page } = shooter;
     await expect(turnTimer(page)).toBeVisible();
     await page.getByRole('button', { name: BATTLE_TEXT.enemyWaters, exact: true }).click();

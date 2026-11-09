@@ -26,7 +26,7 @@ Measured with Playwright on the local stack, light and dark alike. The figures a
 | 390×844  | 673 → 653–678 | 697 → 690–715               | 825 → 713–738                    |
 | 1280×800 | 720 → 700     | 744 → 737                   | **848** → 700                    |
 
-At 390×844 the dice result under the heading takes one line or two, by the faces and the nicknames, so "Fire" moves by 25 px between runs. With the banner before the match, "Confirm rules" ends at 487 px at 320×568 (unchanged) and at 487 px at 360×640 (679 before). "Confirm fleet" ends at 405 px at both (563 before at 360×640). Nothing scrolls sideways. The e2e journey `layout.spec.ts` checks "Fire" with the opponent away at 320×568 and 360×640. Details in [Client: Layout](../client.md#layout) and [Client: Connection states](../client.md#connection-states).
+At 390×844 the dice result under the heading takes one line or two, by the faces and the nicknames, so "Fire" moves by 25 px between runs. With the banner before the match, "Confirm rules" ends at 487 px at 320×568 (unchanged) and at 487 px at 360×640 (679 before). "Confirm fleet" ends at 405 px at both (563 before at 360×640). Nothing scrolls sideways. The e2e journey `layout.spec.ts` checks "Fire" with the opponent away at 320×568 and 360×640, between players with nicknames of 20 characters. Details in [Client: Layout](../client.md#layout) and [Client: Connection states](../client.md#connection-states).
 
 ## Considered options
 
