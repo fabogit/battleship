@@ -1,7 +1,10 @@
 <div class="summary">
   <div class="announcement" aria-live="polite">
     @if (isOpponentAway()) {
-      <p class="pending">{{ text.away(nickname()) }}</p>
+      <p class="pending">
+        {{ awayAround().before }}<span class="nickname">{{ nickname() }}</span
+        >{{ awayAround().after }}
+      </p>
     } @else if (gameState.opponentReturned(); as returned) {
       <p class="ok">{{ text.back(returned) }}</p>
     } @else if (gameState.opponentDeparted(); as departed) {

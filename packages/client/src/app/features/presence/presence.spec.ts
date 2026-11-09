@@ -3,6 +3,7 @@ import {
   CLIENT_EVENTS,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
+  NICKNAME_MAX_LENGTH,
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
@@ -270,6 +271,16 @@ describe('Presence', () => {
         expect(control.startsWith(label)).toBe(true);
       },
     );
+
+    it('puts the nickname in an element of its own, which the compact banner cuts, and keeps the sentence whole (ADR-0110)', async () => {
+      const nickname = 'W'.repeat(NICKNAME_MAX_LENGTH);
+      await receive({ ...battleSnapshot(ROOM_ID, { isPaused: true }), opponent: { ...away(), nickname } });
+
+      const line = banner().querySelector('[aria-live="polite"] p');
+      expect(line?.querySelector('.nickname')?.textContent).toBe(nickname);
+      // Screen readers get the whole sentence, whatever the banner shows.
+      expect(line?.textContent.trim()).toBe(PRESENCE_TEXT.away(nickname));
+    });
 
     it('is compact while connected too, so the live region does not change its layout when the opponent drops', async () => {
       await receive(battleSnapshot(ROOM_ID));

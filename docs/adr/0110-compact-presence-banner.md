@@ -41,7 +41,7 @@ At 390×844 the dice result under the heading takes one line or two, by the face
 ## Consequences
 
 - At 320×568 the cells shrink to the 1.5 rem floor while the opponent is away, and grow back when they return. At 360×640 and up, a phone held upright keeps its cells.
-- The longest nicknames (20 characters, `NICKNAME_MAX_LENGTH`) wrap "Grace is disconnected." into two lines at 320 px, so the banner takes three lines (63 px), 19 px over its budget. "Fire" still ends at 563 px at 320×568 and 625 px at 360×640, with Noto Sans and with DejaVu Sans alike, with a space in the nickname or without one ("WWWWWWWWWWWWWWWWWWWW"). A word that long breaks anywhere (`overflow-wrap: anywhere`); without that rule it widens the text column, and "Resume" goes off the screen.
+- In the compact banner the away opponent's nickname sits in an element of its own, on one line, cut with an ellipsis where it is wider than the text's column ("WWWWWWWWWWWWWW…"). Screen readers still read the whole sentence. So "Grace is disconnected." takes two lines at most, and the banner three (63 px), 19 px over its budget. With any nickname up to `NICKNAME_MAX_LENGTH`, spaced or not, "Fire" ends at 563 px at 320×568 and 625 px at 360×640, under Noto Sans and under DejaVu Sans. Before the cut, a nickname of 20 W's under DejaVu Sans took the sentence to three lines and the banner to four. "Fire" then ended at about 584 px at 320×568, out of view (main's e2e run [42553161349](https://github.com/fabogit/battleship/actions/runs/42553161349)).
 - `--presence-block-size` is a contract between `room.css` and `battle.css`, set only while the compact banner shows a forfeit countdown. "Grace is back." for one snapshot is not budgeted. It costs 37 px at 1280×800, where "Fire" still ends at 737 px.
 - The rules screen hides its intro at 360×640 too, as it already did at 320×568.
 - The initial bundle grows by 1.78 kB raw, 0.24 kB estimated transfer: 494.64 → 496.42 kB of the 500 kB warning budget, 129.54 → 129.78 kB.
@@ -49,6 +49,7 @@ At 390×844 the dice result under the heading takes one line or two, by the face
 ## Links
 
 - Added on 2026-11-09 for the M3 review ([#54](https://github.com/fabogit/battleship/issues/54), F2).
+- Amended on 2026-11-09 (#54, F2 follow-up): the compact banner cuts the away opponent's nickname on one line with an ellipsis. The claim that "Fire" stayed in view with any 20-character nickname, under Noto Sans and DejaVu Sans alike, did not hold for 20 W's under DejaVu Sans (see Consequences).
 - Spec: [Client: Layout](../client.md#layout) · [Client: Connection states](../client.md#connection-states)
 - Amends: [ADR-0077](0077-opponent-presence-banner.md) (the banner's layout and its countdown sentence during the match) · [ADR-0057](0057-battle-layout.md) (the banner in the cell clamp, and a height clamp on short narrow screens) · [ADR-0042](0042-board-cell-size.md) (cells also shrink with the height on a short phone held upright)
 - Related: [ADR-0074](0074-pause.md) (firing while paused) · [ADR-0080](0080-leave-room-beside-the-heading.md) (compact "Leave room", no sticky bar) · [ADR-0108](0108-low-time-warning.md) (the turn timer's "paused")

@@ -27,19 +27,33 @@ p {
  */
 :host(.is-compact) {
   display: grid;
-  grid-template-columns: auto auto;
+  /* The text's column may be narrower than the uncut nickname: the nickname is then cut to fit it. */
+  grid-template-columns: minmax(0, auto) auto;
   justify-content: start;
   align-items: center;
   column-gap: 0.75rem;
   font-size: 0.875rem;
 }
 
-/* A nickname of 20 wide letters breaks too, rather than widening the page beside the button. */
+/* A long word in a sentence that is not cut, such as "Grace is back.", breaks rather than widening the page. */
 :host(.is-compact) .summary {
   display: flex;
   flex-wrap: wrap;
   gap: 0 0.25rem;
   overflow-wrap: anywhere;
+}
+
+/*
+ * The away opponent's nickname on one line, cut with an ellipsis where it does not fit, and read in full: "Grace is
+ * disconnected." then takes two lines at most beside the button, whatever the nickname and the font (ADR-0110).
+ */
+:host(.is-compact) .nickname {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
 }
 
 :host(.is-compact) .control {
