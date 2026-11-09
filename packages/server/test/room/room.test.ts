@@ -598,9 +598,9 @@ describe('the dice roll (ADR-0002, ADR-0092, ADR-0093)', () => {
     });
   });
 
-  it('rolls for a match that starts paused, a player being away', () => {
-    const p1Away = disconnectSeat(bothConfirmed(), SEATS.P1, NOW + 1_000);
-    const ended = endPlacement(p1Away as PlacementRoom, STARTS_AT, createSeededRng(8));
+  it.each(Object.values(SEATS))('rolls for a match that starts paused, %s being away', (seat) => {
+    const away = disconnectSeat(bothConfirmed(), seat, NOW + 1_000);
+    const ended = endPlacement(away as PlacementRoom, STARTS_AT, createSeededRng(8));
     expect(ended?.dice).toEqual(rollDice(createSeededRng(8)));
     expect(ended?.state).toMatchObject({
       isPaused: true,
@@ -729,6 +729,12 @@ describe('the turn timer (ADR-0009, ADR-0074, ADR-0093, ADR-0099)', () => {
     expect(paused).toMatchObject({ turnTimeLeftMs: TURN_LIMIT_MS, turnTimerStartsAt: startsAt });
     expect(resumeTurnTimer(paused, startsAt - 1_000)).toMatchObject({ turnTimerStartsAt: startsAt });
     expect(resumeTurnTimer(paused, startsAt + 5_000)).toMatchObject({ turnTimerStartsAt: startsAt + 5_000 });
+  });
+
+  // With the system clock, a drop or a SET_PAUSED can be handled after the deadline, before the turn's timer runs.
+  it('freezes no time, never a negative one, at a pause handled after the end of the turn', () => {
+    const { state, endsAt } = firstTurn();
+    expect(pauseTurnTimer(state, endsAt + 50)).toMatchObject({ isPaused: true, turnTimeLeftMs: 0 });
   });
 
   it('times nothing out before the end of the turn, nor while the match is paused', () => {

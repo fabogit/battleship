@@ -82,7 +82,7 @@ describe('room closing', () => {
     });
   });
 
-  it('keeps the room when the creator resumes the session at the handshake', async () => {
+  it('keeps the room, and stops its forfeit timer, when the creator resumes the session at the handshake', async () => {
     await start();
     const alice = await player();
     const created = (await send(alice, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as {
@@ -90,9 +90,14 @@ describe('room closing', () => {
       playerSecret: string;
     };
     await leave(alice);
+    // The waiting TTL and Alice's forfeit.
+    expect(clock.pendingCount).toBe(2);
     clock.advance(DISCONNECT_FORFEIT_MS - 1);
 
-    await player({ roomId: created.roomId, playerSecret: created.playerSecret });
+    const back = await player({ roomId: created.roomId, playerSecret: created.playerSecret });
+    // The return's STATE follows the timers' review.
+    await back.inbox.state();
+    expect(clock.pendingCount).toBe(1);
     clock.advance(DISCONNECT_FORFEIT_MS);
     expect(rooms.get(created.roomId)?.phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
   });
