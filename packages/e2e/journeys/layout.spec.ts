@@ -50,10 +50,12 @@ const PHONES = [
 ] as const;
 
 /**
- * Nicknames as long as allowed (`NICKNAME_MAX_LENGTH`): the compact banner's sentence names the opponent, so these wrap
- * it the most at phone width (three lines beside the button at 320 px).
+ * Nicknames as long as allowed (`NICKNAME_MAX_LENGTH`), of wide letters and with no space: the compact banner's sentence
+ * names the opponent, so these wrap it the most at phone width (three lines beside the button at 320 px), and only
+ * `overflow-wrap: anywhere` keeps such a word from pushing "Resume" off the screen. Both are spaceless, since either
+ * player may be the one who goes away.
  */
-const LONGEST_NICKNAMES = ['Wilhelmina Montgomer', 'Maximiliana Rosewood'] as const;
+const LONGEST_NICKNAMES = ['WWWWWWWWWWWWWWWWWWWW', 'MMMMMMMMMMMMMMMMMMMM'] as const;
 
 /**
  * Asserts that the page does not scroll sideways.

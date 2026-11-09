@@ -41,7 +41,7 @@ At 390×844 the dice result under the heading takes one line or two, by the face
 ## Consequences
 
 - At 320×568 the cells shrink to the 1.5 rem floor while the opponent is away, and grow back when they return. At 360×640 and up, a phone held upright keeps its cells.
-- The longest nicknames (20 characters, `NICKNAME_MAX_LENGTH`) wrap "Grace is disconnected." into two lines at 320 px, so the banner takes three lines (63 px), 19 px over its budget. "Fire" still ends at 563 px at 320×568 and 625 px at 360×640, with Noto Sans and with DejaVu Sans alike.
+- The longest nicknames (20 characters, `NICKNAME_MAX_LENGTH`) wrap "Grace is disconnected." into two lines at 320 px, so the banner takes three lines (63 px), 19 px over its budget. "Fire" still ends at 563 px at 320×568 and 625 px at 360×640, with Noto Sans and with DejaVu Sans alike, with a space in the nickname or without one ("WWWWWWWWWWWWWWWWWWWW"). A word that long breaks anywhere (`overflow-wrap: anywhere`); without that rule it widens the text column, and "Resume" goes off the screen.
 - `--presence-block-size` is a contract between `room.css` and `battle.css`, set only while the compact banner shows a forfeit countdown. "Grace is back." for one snapshot is not budgeted. It costs 37 px at 1280×800, where "Fire" still ends at 737 px.
 - The rules screen hides its intro at 360×640 too, as it already did at 320×568.
 - The initial bundle grows by 1.78 kB raw, 0.24 kB estimated transfer: 494.64 → 496.42 kB of the 500 kB warning budget, 129.54 → 129.78 kB.
