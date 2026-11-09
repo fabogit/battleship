@@ -24,12 +24,12 @@ export interface PresenceText {
    */
   readonly departed: (nickname: string) => string;
   /**
-   * The opponent's forfeit countdown during the match.
-   * @param nickname The opponent's nickname.
+   * The opponent's forfeit countdown during the match. It follows `away`, which names them, and leaves the nickname out
+   * so that it fits beside the button on a phone (ADR-0110).
    * @param time The remaining time, e.g. `2:41`.
    * @returns The sentence.
    */
-  readonly forfeitsMatch: (nickname: string, time: string) => string;
+  readonly forfeitsMatch: (time: string) => string;
   /**
    * The opponent's forfeit countdown before the match.
    * @param nickname The opponent's nickname.
@@ -41,13 +41,17 @@ export interface PresenceText {
   readonly paused: string;
   /** While the opponent is away and the match runs. */
   readonly running: string;
-  /** The button pausing the match. */
+  /** The name of the button pausing the match. */
   readonly pause: string;
-  /** The pause button while its command runs. */
+  /** What the pause button shows: the start of its name (WCAG 2.5.3), short for the compact banner (ADR-0110). */
+  readonly pauseLabel: string;
+  /** The pause button while its command runs, shown and named alike. */
   readonly pausing: string;
-  /** The button resuming the match. */
+  /** The name of the button resuming the match. */
   readonly resume: string;
-  /** The resume button while its command runs. */
+  /** What the resume button shows: the start of its name (WCAG 2.5.3), short for the compact banner (ADR-0110). */
+  readonly resumeLabel: string;
+  /** The resume button while its command runs, shown and named alike. */
   readonly resuming: string;
   /** A message for each `SET_PAUSED` failure the banner explains; the others get `unexpected`. */
   readonly errors: Readonly<Partial<Record<PauseCommandError, string>>>;
@@ -63,13 +67,15 @@ export const PRESENCE_TEXT: PresenceText = {
   away: (nickname) => `${nickname} is disconnected.`,
   back: (nickname) => `${nickname} is back.`,
   departed: (nickname) => `${nickname} left the room, so their seat is free again.`,
-  forfeitsMatch: (nickname, time) => `${nickname} loses the match in ${time} unless they come back.`,
+  forfeitsMatch: (time) => `They forfeit in ${time}.`,
   freesSeat: (nickname, time) => `${nickname}'s seat is freed in ${time} unless they come back.`,
   paused: 'The match is paused.',
   running: 'The match is running.',
   pause: 'Pause match',
+  pauseLabel: 'Pause',
   pausing: 'Pausing…',
   resume: 'Resume match',
+  resumeLabel: 'Resume',
   resuming: 'Resuming…',
   errors: {
     [ERROR_CODES.NOT_ALLOWED]: 'Your opponent is back, so the match goes on.',

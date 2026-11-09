@@ -3,18 +3,24 @@ import type { BrowserContextOptions, Locator, Page } from '@playwright/test';
 import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
 import { LOBBY_TEXT } from '../../client/src/app/features/lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../../client/src/app/features/placement/placement.text';
+import { PRESENCE_TEXT } from '../../client/src/app/features/presence/presence.text';
 import { ROOM_TEXT } from '../../client/src/app/features/room/room.text';
 import { RULES_TEXT } from '../../client/src/app/features/rules/rules.text';
 import { test, expect } from '../src/fixtures.ts';
 import {
   STARTS_IN,
   agreeOnRules,
+  board,
+  cell,
   confirmRandomFleet,
   createRoom,
   endStartCountdown,
+  escape,
+  firstShooter,
   joinRoom,
   mainHeading,
   placementTimer,
+  startBattle,
   turnHeadings,
   turnTimer,
 } from '../src/flows.ts';
@@ -32,6 +38,15 @@ const SCREENS = [
 
 /** Both color schemes: the dark one has its own palette, not its own layout, but a regression may hide in either. */
 const COLOR_SCHEMES = ['light', 'dark'] as const;
+
+/**
+ * The two smallest phones held upright, the second one exactly 640 px tall (#54 F2): with the opponent away, the battle's
+ * compact banner (ADR-0110) sits above the battle view.
+ */
+const PHONES = [
+  { width: 320, height: 568 },
+  { width: 360, height: 640 },
+] as const;
 
 /**
  * Asserts that the page does not scroll sideways.
@@ -140,4 +155,37 @@ for (const screen of SCREENS) {
       await expectInView(ada.page.getByRole('button', { name: BATTLE_TEXT.fire, exact: true }), '"Fire"');
     });
   }
+}
+
+for (const viewport of PHONES) {
+  const { width, height } = viewport;
+  test(`"Fire" with the opponent away at ${String(width)}×${String(height)}`, async ({
+    openPlayer,
+    skipServerClock,
+  }) => {
+    const options: BrowserContextOptions = { viewport, isMobile: true, hasTouch: true };
+    const ada = await openPlayer('Ada', options);
+    const grace = await openPlayer('Grace', options);
+    await startBattle(ada, grace, skipServerClock);
+    const shooter = await firstShooter([ada, grace]);
+    const opponent = shooter === ada ? grace : ada;
+    const { page } = shooter;
+    await expect(turnTimer(page)).toBeVisible();
+    await page.getByRole('button', { name: BATTLE_TEXT.enemyWaters, exact: true }).click();
+    await cell(board(page, BATTLE_TEXT.enemyWaters), 'E5').click();
+
+    // The match pauses, and the player whose turn it is may still fire (ADR-0074).
+    await opponent.page.close();
+    const countdown = new RegExp(`^${escape(PRESENCE_TEXT.forfeitsMatch('@')).replace('@', '\\d+:\\d{2}')}$`);
+    await expect(page.getByRole('timer').filter({ hasText: countdown })).toBeVisible();
+    const fire = page.getByRole('button', { name: BATTLE_TEXT.fire, exact: true });
+    await expectNoHorizontalScroll(page, 'battle, opponent away');
+    await expectInView(page.getByRole('button', { name: PRESENCE_TEXT.resume }), '"Resume match"');
+    await expectInView(fire, '"Fire" with the match paused');
+
+    await page.getByRole('button', { name: PRESENCE_TEXT.resume }).click();
+    await expectInView(page.getByRole('button', { name: PRESENCE_TEXT.pause }), '"Pause match"');
+    await expectInView(fire, '"Fire" with the match running');
+    await expect(fire).not.toHaveAttribute('aria-disabled');
+  });
 }

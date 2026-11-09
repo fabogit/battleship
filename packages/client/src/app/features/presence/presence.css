@@ -14,9 +14,46 @@ p {
   margin: 0;
 }
 
+.summary,
 .announcement {
   display: grid;
   gap: 0.25rem;
+}
+
+/*
+ * The battle's compact banner (ADR-0110): the sentence and the forfeit countdown, then "Pause match" / "Resume match"
+ * right after them, on one line where they fit. On a phone the text wraps beside the button, which keeps its 2.75rem
+ * (44px) height, so two lines of text do not make the banner taller.
+ */
+:host(.is-compact) {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  align-items: center;
+  column-gap: 0.75rem;
+  font-size: 0.875rem;
+}
+
+/* A nickname of 20 wide letters breaks too, rather than widening the page beside the button. */
+:host(.is-compact) .summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+:host(.is-compact) .control {
+  margin-top: 0;
+}
+
+:host(.is-compact) button {
+  padding: 0 0.75rem;
+  white-space: nowrap;
+}
+
+/* A failure message across the banner, under the rest; no height while empty. */
+:host(.is-compact) .error {
+  grid-column: 1 / -1;
 }
 
 .pending {
@@ -29,4 +66,17 @@ p {
 
 .error {
   color: var(--color-error);
+}
+
+/*
+ * Read with the rest of the live region, not shown: in the battle the turn timer beside the heading already shows
+ * whether the match is paused ("Time left: 0:30, paused") or runs.
+ */
+.visually-hidden {
+  position: absolute;
+  width: 0.0625rem;
+  height: 0.0625rem;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

@@ -1,31 +1,43 @@
-<div class="announcement" aria-live="polite">
-  @if (isOpponentAway()) {
-    <p class="pending">{{ text.away(nickname()) }}</p>
-  } @else if (gameState.opponentReturned(); as returned) {
-    <p class="ok">{{ text.back(returned) }}</p>
-  } @else if (gameState.opponentDeparted(); as departed) {
-    <p>{{ text.departed(departed) }}</p>
-  }
-  @if (isPaused()) {
-    <p>{{ text.paused }}</p>
-  } @else if (isOpponentAway() && isPaused() === false) {
-    <p>{{ text.running }}</p>
+<div class="summary">
+  <div class="announcement" aria-live="polite">
+    @if (isOpponentAway()) {
+      <p class="pending">{{ text.away(nickname()) }}</p>
+    } @else if (gameState.opponentReturned(); as returned) {
+      <p class="ok">{{ text.back(returned) }}</p>
+    } @else if (gameState.opponentDeparted(); as departed) {
+      <p>{{ text.departed(departed) }}</p>
+    }
+    @if (isPaused()) {
+      <p [class.visually-hidden]="isCompact()">{{ text.paused }}</p>
+    } @else if (isOpponentAway() && isPaused() === false) {
+      <p [class.visually-hidden]="isCompact()">{{ text.running }}</p>
+    }
+  </div>
+
+  @if (forfeitMessage(); as message) {
+    <p role="timer">{{ message }}</p>
   }
 </div>
 
-@if (forfeitMessage(); as message) {
-  <p role="timer">{{ message }}</p>
-}
-
 @if (hasPauseControl()) {
-  <p>
+  <p class="control">
     @if (gameState.canPause()) {
-      <button type="button" [attr.aria-disabled]="pending() === null ? null : 'true'" (click)="setPaused(true)">
-        {{ pending() === true ? text.pausing : text.pause }}
+      <button
+        type="button"
+        [attr.aria-label]="pending() === true ? null : text.pause"
+        [attr.aria-disabled]="pending() === null ? null : 'true'"
+        (click)="setPaused(true)"
+      >
+        {{ pending() === true ? text.pausing : text.pauseLabel }}
       </button>
     } @else {
-      <button type="button" [attr.aria-disabled]="pending() === null ? null : 'true'" (click)="setPaused(false)">
-        {{ pending() === false ? text.resuming : text.resume }}
+      <button
+        type="button"
+        [attr.aria-label]="pending() === false ? null : text.resume"
+        [attr.aria-disabled]="pending() === null ? null : 'true'"
+        (click)="setPaused(false)"
+      >
+        {{ pending() === false ? text.resuming : text.resumeLabel }}
       </button>
     }
   </p>
