@@ -50,12 +50,22 @@ interface DiceView {
   readonly isLast: boolean;
 }
 
-/** The board a turn brings forward, with the turn it belongs to. */
-interface TurnFocus {
-  /** Identifies the turn: changes when the turn passes, a shot lands or the match ends. */
-  readonly turn: string;
-  /** The board the turn shows first. */
+/**
+ * A board a narrow screen brings forward. Each turn step and each landed shot has its own object: a new one brings its
+ * board forward even when that board is in front already, over a board the player picked by hand.
+ */
+interface BoardFocus {
+  /** The board to show. */
   readonly board: BattleBoard;
+}
+
+/** The board a turn brings forward, with the turn it belongs to. */
+interface TurnFocus extends BoardFocus {
+  /**
+   * Identifies the turn: changes when the turn passes, a shot lands (an extra turn after a hit is a new turn, as the
+   * server restarts its timer) or the match ends.
+   */
+  readonly turn: string;
 }
 
 /**
@@ -219,8 +229,8 @@ export class Battle {
 
   /**
    * The board each turn brings forward (ADR-0057): "Enemy waters" during the player's turn and at game over, "My fleet"
-   * during the opponent's. It notifies only when the turn changes, so a `STATE` within the same turn keeps the board
-   * the player picked.
+   * during the opponent's. It notifies only when the turn changes, an extra turn included, so a `STATE` within the same
+   * turn keeps the board the player picked.
    */
   private readonly turnFocus = computed<TurnFocus>(
     () => {
@@ -236,26 +246,30 @@ export class Battle {
     { equal: (a, b) => a.turn === b.turn },
   );
 
-  /** The board the latest shot landed on, for `SHOT_HOLD_MS` after its `SHOT_RESOLVED`; `null` otherwise. */
-  private readonly landedOn = signal<BattleBoard | null>(null);
+  /**
+   * The board the latest shot landed on, for `SHOT_HOLD_MS` after its `SHOT_RESOLVED`; `null` otherwise. A new object
+   * for every shot, so two shots on the same board each bring it forward.
+   */
+  private readonly landedOn = signal<BoardFocus | null>(null);
   /** Clears `landedOn`; set while a shot is held. */
   private holdTimer: ReturnType<typeof setTimeout> | undefined;
 
   /**
    * The board a narrow screen shows by itself: where the latest shot landed while it is held, then the turn's. It
-   * notifies only when that board changes, so the player's own pick stays until then.
+   * notifies at every landed shot, at the end of its hold and at every turn step, compared by identity, even when the
+   * board stays the same; the player's own pick stays until then (ADR-0057).
    */
-  private readonly focusedBoard = computed(() => this.landedOn() ?? this.turnFocus().board);
+  private readonly focusedBoard = computed<BoardFocus>(() => this.landedOn() ?? this.turnFocus());
 
   /** The board shown on a narrow screen: the focused one, until the player toggles to the other one. */
-  protected readonly shownBoard = linkedSignal<BattleBoard>(() => this.focusedBoard());
+  protected readonly shownBoard = linkedSignal<BattleBoard>(() => this.focusedBoard().board);
 
   /** Holds the board each fired turn lands on; stops with the view. */
   constructor() {
     const stopListening = inject(GameSocketService).on(SERVER_EVENTS.SHOT_RESOLVED, ({ shooter }) => {
       const isMine = shooter === this.gameState.snapshot()?.me.seat;
       clearTimeout(this.holdTimer);
-      this.landedOn.set(isMine ? BATTLE_BOARDS.ENEMY_WATERS : BATTLE_BOARDS.MY_FLEET);
+      this.landedOn.set({ board: isMine ? BATTLE_BOARDS.ENEMY_WATERS : BATTLE_BOARDS.MY_FLEET });
       this.holdTimer = setTimeout(() => {
         this.landedOn.set(null);
       }, SHOT_HOLD_MS);
