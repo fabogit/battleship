@@ -50,12 +50,12 @@ const PHONES = [
 ] as const;
 
 /**
- * Nicknames as long as allowed (`NICKNAME_MAX_LENGTH`), of wide letters and with no space: the compact banner's sentence
- * names the opponent, so these wrap it the most at phone width (three lines beside the button at 320 px), and only
- * `overflow-wrap: anywhere` keeps such a word from pushing "Resume" off the screen. Both are spaceless, since either
- * player may be the one who goes away.
+ * Nicknames as long as allowed (`NICKNAME_MAX_LENGTH`), of the widest letter and with no space: the compact banner's
+ * sentence names the opponent, and such a nickname is wider than the banner's text at phone width in any font, so the
+ * banner only fits its place when it cuts the nickname on one line (ADR-0110). Both are W's, since the dice decide which
+ * player goes away; the last letter tells them apart.
  */
-const LONGEST_NICKNAMES = ['WWWWWWWWWWWWWWWWWWWW', 'MMMMMMMMMMMMMMMMMMMM'] as const;
+const LONGEST_NICKNAMES = ['WWWWWWWWWWWWWWWWWWWW', 'WWWWWWWWWWWWWWWWWWWM'] as const;
 
 /**
  * Asserts that the page does not scroll sideways.

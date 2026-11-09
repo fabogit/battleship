@@ -6,6 +6,9 @@ import { GameStateService } from '../../core/game-state';
 import { formatCountdown } from '../../shared/countdown';
 import { PRESENCE_TEXT, pauseErrorMessage } from './presence.text';
 
+/** Stands in for the nickname while `away` is split around it: a control character no nickname contains (ADR-0060). */
+const NICKNAME_MARK = '\u0000';
+
 /** Why `SET_PAUSED` failed: the server's refusal, or no reply at all (ADR-0035). */
 export type PauseCommandError = ErrorCode | TransportError;
 
@@ -33,6 +36,15 @@ export class Presence {
 
   /** The opponent's nickname; empty while the seat is free. */
   protected readonly nickname = computed(() => this.gameState.snapshot()?.opponent?.nickname ?? '');
+
+  /**
+   * `away` split around the nickname, in the locale's word order: the template puts the nickname in an element of its
+   * own, which the compact banner keeps on one line and cuts with an ellipsis (ADR-0110).
+   */
+  protected readonly awayAround = computed(() => {
+    const [before = '', after = ''] = this.text.away(NICKNAME_MARK).split(NICKNAME_MARK);
+    return { before, after };
+  });
 
   /** Whether the opponent holds a seat without a socket: the server detects a drop after a few seconds (ADR-0077). */
   protected readonly isOpponentAway = computed(() => this.gameState.snapshot()?.opponent?.isConnected === false);
