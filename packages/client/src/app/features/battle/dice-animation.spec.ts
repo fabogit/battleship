@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { EnvironmentInjector, createEnvironmentInjector, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { DICE_ANIMATION_MS, SEATS, SERVER_EVENTS, SHOT_OUTCOMES, type DiceRolledPayload } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -128,17 +128,21 @@ describe('DiceAnimation', () => {
     expect(dice.frame()).toBeNull();
   });
 
-  it('joins the animation where it is when the roll arrived earlier', () => {
-    socket.fire(SERVER_EVENTS.DICE_ROLLED, ADA_STARTS);
-    vi.advanceTimersByTime(2_000);
-    socket.fire(SERVER_EVENTS.STATE, battleSnapshot(ROOM_ID, { turnRemainingMs: null }));
+  it('joins the animation where it is in a view created after the roll arrived', () => {
+    startMatch(ADA_STARTS);
+    wait(2_000);
+
+    // The battle view provides its own instance, so a view opened now starts its timers 2 s into the roll.
+    const injector = createEnvironmentInjector([DiceAnimation], TestBed.inject(EnvironmentInjector));
+    const late = injector.get(DiceAnimation);
     TestBed.tick();
 
-    expect(dice.frame()).toMatchObject({ isRolling: false });
-    wait(999);
-    expect(dice.isPlaying()).toBe(true);
+    expect(late.frame()).toMatchObject({ isRolling: false });
+    wait(DICE_ANIMATION_MS - 2_000 - 1);
+    expect(late.isPlaying()).toBe(true);
     wait(1);
-    expect(dice.isPlaying()).toBe(false);
+    expect(late.isPlaying()).toBe(false);
+    injector.destroy();
   });
 
   it('ends at the first shot, which the starter may fire before the animation is over', () => {

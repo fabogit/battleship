@@ -297,6 +297,16 @@ describe('RulesStore', () => {
       expect(store.notice()).toBeNull();
     });
 
+    it('does not report a confirmation the first snapshot held when a later one of the same version comes', () => {
+      const confirmed = { rulesVersion: 5, hasConfirmedRules: { me: false, opponent: true } };
+      createStore(confirmed);
+
+      // As a presence change sends it: the same version and confirmations.
+      receive(confirmed);
+
+      expect(store.notice()).toBeNull();
+    });
+
     it("reports the opponent's edit, what it changed and whose confirmation it cleared", () => {
       createStore({ rulesVersion: 1, hasConfirmedRules: { me: true, opponent: false } });
 
