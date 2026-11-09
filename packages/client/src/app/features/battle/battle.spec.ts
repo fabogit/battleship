@@ -307,6 +307,83 @@ describe('Battle', () => {
     });
   });
 
+  describe('a board picked by hand, on a narrow screen (ADR-0057)', () => {
+    const HIT_E1 = { coordinate: { x: 0, y: 4 }, outcome: SHOT_OUTCOMES.HIT };
+    const HIT_E2 = { coordinate: { x: 1, y: 4 }, outcome: SHOT_OUTCOMES.HIT };
+    const HIT_A1 = { coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT };
+    const MISS_J10 = { coordinate: { x: 9, y: 9 }, outcome: SHOT_OUTCOMES.MISS };
+
+    /**
+     * Delivers a snapshot and renders it; whenStable waits on the scheduler's timers, which fake timers hold.
+     * @param snapshot The `STATE`.
+     */
+    function deliver(snapshot: PlayerStateSnapshot): void {
+      socket.fire(SERVER_EVENTS.STATE, snapshot);
+      fixture.detectChanges();
+    }
+
+    /**
+     * Taps a toggle button and renders the outcome.
+     * @param label "My fleet" or "Enemy waters".
+     */
+    function pick(label: string): void {
+      button(label)?.click();
+      fixture.detectChanges();
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    it.each(RECEIVER_SEATS)('gives way to the extra turn a hit earns, as %s', (seat) => {
+      deliver(battleFrom(seat, { currentTurn: seat, outgoingShots: [HIT_E1] }));
+      expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
+      pick(BATTLE_TEXT.myFleet);
+
+      deliver(battleFrom(seat, { currentTurn: seat, outgoingShots: [HIT_E1] }));
+      expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
+
+      deliver(battleFrom(seat, { currentTurn: seat, outgoingShots: [HIT_E1, HIT_E2] }));
+      expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
+      expect(pressed(BATTLE_TEXT.enemyWaters)).toBe('true');
+    });
+
+    it.each(RECEIVER_SEATS)('shows the player where their own shot landed, then their extra turn, as %s', (seat) => {
+      deliver(battleFrom(seat, { currentTurn: seat }));
+      expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
+      pick(BATTLE_TEXT.myFleet);
+
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results: [HIT_E1] });
+      fixture.detectChanges();
+      expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
+
+      deliver(battleFrom(seat, { currentTurn: seat, outgoingShots: [HIT_E1] }));
+      pick(BATTLE_TEXT.myFleet);
+      vi.advanceTimersByTime(SHOT_HOLD_MS);
+      fixture.detectChanges();
+
+      expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
+    });
+
+    it.each(RECEIVER_SEATS)("shows the player where the opponent's shot landed, as %s", (seat) => {
+      // The player missed, so the turn passed.
+      deliver(battleFrom(seat, { currentTurn: otherSeat(seat), outgoingShots: [MISS_J10] }));
+      expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
+      pick(BATTLE_TEXT.enemyWaters);
+
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results: [HIT_A1] });
+      fixture.detectChanges();
+      expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
+      expect(pressed(BATTLE_TEXT.myFleet)).toBe('true');
+
+      deliver(battleFrom(seat, { currentTurn: otherSeat(seat), outgoingShots: [MISS_J10], incomingShots: [HIT_A1] }));
+      vi.advanceTimersByTime(SHOT_HOLD_MS);
+      fixture.detectChanges();
+
+      expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
+    });
+  });
+
   it('announces a sinking shot with the ship', async () => {
     const sunkShip = toPlacedShip({
       type: SHIP_TYPES.DESTROYER,
