@@ -261,16 +261,39 @@ describe('BattleStore', () => {
       expect(store.draftTargets()).toEqual([B7]);
     });
 
-    it.each(RECEIVER_SEATS)('announces every fired turn, by either player, as %s', (seat) => {
-      const results = [MISS_ON_J10];
-      socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: seat })));
+    it.each(RECEIVER_SEATS)(
+      'announces every fired turn, by either player, once the STATE after it arrives, as %s',
+      (seat) => {
+        const results = [MISS_ON_J10];
+        const fired = { kind: BATTLE_FEEDBACK.FIRED, results, isAutomatic: false };
+        socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: seat })));
+        store.activateCell(B7);
+        expect(store.feedback()).toMatchObject({ kind: BATTLE_FEEDBACK.TARGETED });
 
-      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results });
-      const fired = { kind: BATTLE_FEEDBACK.FIRED, results, afkCountBefore: 0, isAutomatic: false };
-      expect(store.feedback()).toEqual({ ...fired, isMine: true });
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results });
+        expect(store.feedback()).toBeNull();
+        socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: otherSeat(seat) })));
+        expect(store.feedback()).toEqual({ ...fired, isMine: true });
 
-      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results });
-      expect(store.feedback()).toEqual({ ...fired, isMine: false });
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results });
+        expect(store.feedback()).toBeNull();
+        socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: seat })));
+        expect(store.feedback()).toEqual({ ...fired, isMine: false });
+      },
+    );
+
+    it('announces the shot after a tap made between its SHOT_RESOLVED and its STATE', async () => {
+      // Once FIRE's ack is in, the snapshot before the shot still shows the player's turn, so a tap is let through.
+      store.activateCell(B7);
+      await store.fire();
+      const results = [{ coordinate: B7, outcome: SHOT_OUTCOMES.HIT }];
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P1, results });
+
+      store.activateCell(C3);
+      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.TARGETED, coordinate: C3 });
+      receive({ outgoingShots: results, myDraftTargets: [C3] });
+
+      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.FIRED, isMine: true, results, isAutomatic: false });
     });
 
     it.each(RECEIVER_SEATS.flatMap((seat) => [true, false].map((isMine) => [seat, isMine] as const)))(

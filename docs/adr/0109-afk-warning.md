@@ -27,6 +27,7 @@ The shot the server fires for a player whose time ran out ([ADR-0100](0100-timeo
 ## Links
 
 - Added on 2026-11-01 for the timers and dice UI ([#31](https://github.com/fabogit/battleship/issues/31)).
+- Amended on 2026-11-09 for the M3 review ([#54](https://github.com/fabogit/battleship/issues/54), F1): the shot is announced only once that `STATE` arrives, the `GAME_OVER` one included, and the live region is empty until then, so no automatic shot is first worded as fired; the shot waits in its own field, so a tap made in between does not drop it.
 - Spec: [Client: Board & interaction](../client.md#board--interaction)
 - Related: [ADR-0101](0101-afk-forfeit.md) (AFK forfeit) · [ADR-0100](0100-timeout-actions.md) (timeout actions) · [ADR-0108](0108-low-time-warning.md) (low-time warning)
 - Issues: [#31](https://github.com/fabogit/battleship/issues/31) · [#30](https://github.com/fabogit/battleship/issues/30) (turn timer)

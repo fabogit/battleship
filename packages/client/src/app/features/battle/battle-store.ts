@@ -15,7 +15,7 @@ export const BATTLE_FEEDBACK = {
   UNTARGETED: 'untargeted',
   /** A tap the draft refuses; nothing changed. */
   REFUSED: 'refused',
-  /** A turn was fired, by either player: the results of `SHOT_RESOLVED`. */
+  /** A turn was fired, by either player: the results of `SHOT_RESOLVED`, set once the `STATE` after it arrives. */
   FIRED: 'fired',
 } as const;
 
@@ -47,15 +47,22 @@ export type BattleFeedback =
       readonly isMine: boolean;
       /** One result per target, in firing order. */
       readonly results: readonly ShotResult[];
-      /** The shooter's `afkCount` when `SHOT_RESOLVED` arrived, before the `STATE` that follows it. */
-      readonly afkCountBefore: number;
       /**
        * Whether the server fired it because the shooter's time ran out (ADR-0109): decided once, by the first `STATE`
-       * after it, which then counts one more timeout for the shooter than `afkCountBefore`, and kept from there.
-       * `false` until that `STATE` arrives.
+       * after `SHOT_RESOLVED`, which then counts one more timeout for the shooter, and kept from there.
        */
       readonly isAutomatic: boolean;
     };
+
+/** A fired turn between its `SHOT_RESOLVED` and the `STATE` that tells whether it was automatic (ADR-0109). */
+interface PendingShot {
+  /** Whether the receiver fired it. */
+  readonly isMine: boolean;
+  /** One result per target, in firing order. */
+  readonly results: readonly ShotResult[];
+  /** The shooter's `afkCount` when `SHOT_RESOLVED` arrived, to compare with the `STATE` that follows it. */
+  readonly afkCountBefore: number;
+}
 
 /** Why a battle command failed: the server's refusal, or no reply at all (ADR-0035). */
 export type BattleCommandError = ErrorCode | TransportError;
@@ -82,15 +89,21 @@ export class BattleStore {
   /** How many targets the turn fires; 1 until salvo mode lands (#32), 0 outside battle. */
   readonly shotsAllowed = computed(() => this.battle()?.shotsAllowed ?? 0);
 
-  /** Set by every tap and every `SHOT_RESOLVED`, for the live region; read through `feedback`. */
+  /**
+   * Set by every tap and by the first `STATE` after a `SHOT_RESOLVED`, cleared by `SHOT_RESOLVED`, for the live
+   * region; read through `feedback`.
+   */
   private readonly feedbackSignal = signal<BattleFeedback | null>(null);
   /**
-   * The last tap's outcome or the last fired turn; `null` before the first one and after a failed update, unless a
-   * later tap or turn set it. A fired turn says whether it was automatic once the `STATE` after it has arrived.
+   * The last tap's outcome or the last fired turn; `null` before the first one, after a failed update, and while a
+   * fired turn waits for the `STATE` that words it (ADR-0109), unless a tap made meanwhile set it.
    */
   readonly feedback = this.feedbackSignal.asReadonly();
-  /** Whether the last fired turn still waits for the `STATE` that tells whether it was automatic. */
-  private isShotAwaitingState = false;
+  /**
+   * The fired turn still waiting for the `STATE` that tells whether it was automatic; `null` otherwise. Kept apart from
+   * the feedback, so a tap made meanwhile cannot drop it.
+   */
+  private pendingShot: PendingShot | null = null;
 
   /** Set by every ack: the error of a refusal, `null` for a success; read through `error`. */
   private readonly errorSignal = signal<BattleCommandError | null>(null);
@@ -124,29 +137,37 @@ export class BattleStore {
   /** Whether "Fire" would send the turn: the draft holds exactly the allowed number of targets. */
   readonly canFire = computed(() => this.canTarget() && this.draftTargets().length === this.shotsAllowed());
 
-  /** Announces every fired turn, and whether it was automatic once the `STATE` after it arrives; stops with the view. */
+  /**
+   * Announces every fired turn once the `STATE` after it has told whether it was automatic, and nothing before it
+   * (ADR-0109); stops with the view.
+   */
   constructor() {
     const stopListening = this.socket.on(SERVER_EVENTS.SHOT_RESOLVED, ({ shooter, results }) => {
       const isMine = shooter === this.gameState.snapshot()?.me.seat;
       const afkCount = this.battle()?.afkCount;
       const afkCountBefore = afkCount === undefined ? 0 : isMine ? afkCount.me : afkCount.opponent;
-      this.feedbackSignal.set({ kind: BATTLE_FEEDBACK.FIRED, isMine, results, afkCountBefore, isAutomatic: false });
-      this.isShotAwaitingState = true;
+      this.pendingShot = { isMine, results, afkCountBefore };
+      // Zoneless change detection renders between the two packets: worded now, a timed-out shot would first read as
+      // fired by hand.
+      this.feedbackSignal.set(null);
     });
     // Only the first STATE after the shot decides: a later timeout under "Pass the turn" sends no SHOT_RESOLVED, and
-    // must not turn the shot still announced into an automatic one.
+    // must not turn the shot already announced into an automatic one. A GAME_OVER STATE has no count, so the shot
+    // that ends the match reads as fired by hand.
     const stopDeciding = this.socket.on(SERVER_EVENTS.STATE, (snapshot) => {
-      if (!this.isShotAwaitingState) {
+      const shot = this.pendingShot;
+      if (shot === null) {
         return;
       }
-      this.isShotAwaitingState = false;
-      const feedback = this.feedbackSignal();
-      if (feedback?.kind !== BATTLE_FEEDBACK.FIRED) {
-        return;
-      }
+      this.pendingShot = null;
       const afkCount = snapshot.battle?.afkCount;
-      const afkCountAfter = afkCount === undefined ? 0 : feedback.isMine ? afkCount.me : afkCount.opponent;
-      this.feedbackSignal.set({ ...feedback, isAutomatic: afkCountAfter > feedback.afkCountBefore });
+      const afkCountAfter = afkCount === undefined ? 0 : shot.isMine ? afkCount.me : afkCount.opponent;
+      this.feedbackSignal.set({
+        kind: BATTLE_FEEDBACK.FIRED,
+        isMine: shot.isMine,
+        results: shot.results,
+        isAutomatic: afkCountAfter > shot.afkCountBefore,
+      });
     });
     inject(DestroyRef).onDestroy(() => {
       stopListening();
