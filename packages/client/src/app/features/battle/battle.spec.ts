@@ -314,13 +314,63 @@ describe('Battle', () => {
       orientation: ORIENTATIONS.VERTICAL,
     });
 
-    socket.fire(SERVER_EVENTS.SHOT_RESOLVED, {
-      shooter: SEATS.P1,
-      results: [{ coordinate: { x: 6, y: 2 }, outcome: SHOT_OUTCOMES.SUNK, sunkShip }],
-    });
-    await fixture.whenStable();
+    const results = [{ coordinate: { x: 6, y: 2 }, outcome: SHOT_OUTCOMES.SUNK, sunkShip }];
+    socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P1, results });
+    await receive({ currentTurn: SEATS.P2, outgoingShots: results });
 
     expect(text('.feedback')).toBe("You fired at C7 and sank Grace's destroyer!");
+  });
+
+  describe('a fired turn, until the STATE after it (ADR-0109)', () => {
+    it.each(RECEIVER_SEATS.flatMap((seat) => [true, false].map((isMine) => [seat, isMine] as const)))(
+      'words a shot only once its STATE says whether it was automatic, as %s (own shot: %s)',
+      async (seat, isMine) => {
+        const shooter = isMine ? seat : otherSeat(seat);
+        const results = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.MISS }];
+        socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: shooter }));
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter, results });
+        await fixture.whenStable();
+
+        // Zoneless change detection renders between the two packets: nothing is said of the shot yet.
+        expect(text('.feedback')).toBe('');
+
+        const afkCount = isMine ? { me: 1, opponent: 0 } : { me: 0, opponent: 1 };
+        socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: otherSeat(shooter), afkCount }));
+        await fixture.whenStable();
+
+        const words = isMine ? BATTLE_TEXT.myAutoShot : BATTLE_TEXT.opponentAutoShot;
+        expect(text('.feedback')).toBe(words('A1', SHOT_OUTCOMES.MISS, null, 'Grace'));
+      },
+    );
+
+    it.each(RECEIVER_SEATS)(
+      'holds the shot that ends the match until the GAME_OVER STATE, and words it as fired, as %s',
+      async (seat) => {
+        const finalShot = { coordinate: { x: 0, y: 4 }, outcome: SHOT_OUTCOMES.SUNK, sunkShip: THEIR_CARRIER };
+        socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: seat }));
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results: [finalShot] });
+        await fixture.whenStable();
+
+        expect(text('.feedback')).toBe('');
+
+        socket.fire(
+          SERVER_EVENTS.STATE,
+          fromSeat(
+            seat,
+            gameOverSnapshot(ROOM_ID, {
+              winner: seat,
+              myShips: [MY_DESTROYER],
+              outgoingShots: [finalShot],
+              opponentShips: [THEIR_CARRIER],
+            }),
+          ),
+        );
+        await fixture.whenStable();
+
+        expect(text('h1')).toBe(BATTLE_TEXT.wonHeading);
+        expect(text('.feedback')).toBe(BATTLE_TEXT.myShot('E1', SHOT_OUTCOMES.SUNK, 'carrier', 'Grace'));
+      },
+    );
   });
 
   describe('at game over', () => {
