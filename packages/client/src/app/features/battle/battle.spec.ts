@@ -311,6 +311,7 @@ describe('Battle', () => {
     const HIT_E1 = { coordinate: { x: 0, y: 4 }, outcome: SHOT_OUTCOMES.HIT };
     const HIT_E2 = { coordinate: { x: 1, y: 4 }, outcome: SHOT_OUTCOMES.HIT };
     const HIT_A1 = { coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT };
+    const HIT_A2 = { coordinate: { x: 1, y: 0 }, outcome: SHOT_OUTCOMES.HIT };
     const MISS_J10 = { coordinate: { x: 9, y: 9 }, outcome: SHOT_OUTCOMES.MISS };
 
     /**
@@ -378,6 +379,23 @@ describe('Battle', () => {
 
       deliver(battleFrom(seat, { currentTurn: otherSeat(seat), outgoingShots: [MISS_J10], incomingShots: [HIT_A1] }));
       vi.advanceTimersByTime(SHOT_HOLD_MS);
+      fixture.detectChanges();
+
+      expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
+    });
+
+    it.each(RECEIVER_SEATS)('brings the board forward again for a second shot within the hold, as %s', (seat) => {
+      deliver(battleFrom(seat, { currentTurn: otherSeat(seat), outgoingShots: [MISS_J10] }));
+      expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
+
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results: [HIT_A1] });
+      deliver(battleFrom(seat, { currentTurn: otherSeat(seat), outgoingShots: [MISS_J10], incomingShots: [HIT_A1] }));
+      pick(BATTLE_TEXT.enemyWaters);
+      expect(shownBoard()).toBe(BATTLE_BOARDS.ENEMY_WATERS);
+      vi.advanceTimersByTime(SHOT_HOLD_MS / 3);
+
+      // The hit earned the opponent an extra turn, and they fire again before the hold is over.
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results: [HIT_A2] });
       fixture.detectChanges();
 
       expect(shownBoard()).toBe(BATTLE_BOARDS.MY_FLEET);
