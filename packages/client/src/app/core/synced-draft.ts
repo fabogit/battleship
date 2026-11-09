@@ -1,4 +1,4 @@
-import { DestroyRef, inject, signal, type Signal, type WritableSignal } from '@angular/core';
+import { DestroyRef, computed, inject, signal, type Signal, type WritableSignal } from '@angular/core';
 import { SERVER_EVENTS, type CommandEvent, type ErrorCode, type PlayerStateSnapshot } from '@battleship/core';
 
 import { GameSocketService, type CommandResult, type TransportError } from './game-socket';
@@ -36,6 +36,11 @@ export interface SyncedDraft<T, F> {
   /** The draft the view draws; ahead of the snapshot while updates wait for their ack. */
   readonly draft: Signal<T>;
   /**
+   * Whether an update was sent and its ack has not arrived yet, whatever the ack says. While it is true, `STATE` does
+   * not replace the draft.
+   */
+  readonly isUpdatePending: Signal<boolean>;
+  /**
    * Shows a new draft at once, with the feedback describing it, and sends it whole. A failed update sets the error;
    * once no other update is in flight it also puts back the server's draft and clears the feedback, which described a
    * change just dropped. It clears it only while it is still the one the latest update passed, compared by identity:
@@ -54,7 +59,7 @@ export interface SyncedDraft<T, F> {
  * @template T The draft's type: the fleet layout or the turn's targets.
  * @template F The store's feedback for the live region.
  * @param options How to read, compare and send the draft, and the store's feedback and error signals.
- * @returns The draft as a read-only signal, and `update` to change it.
+ * @returns The draft and whether an update waits for its ack, as read-only signals, and `update` to change it.
  */
 export function createSyncedDraft<T, F>(options: SyncedDraftOptions<T, F>): SyncedDraft<T, F> {
   const { read, empty, equal, send, feedback, error } = options;
@@ -72,12 +77,12 @@ export function createSyncedDraft<T, F>(options: SyncedDraftOptions<T, F>): Sync
 
   const draft = signal<T>(serverDraft(), { equal });
   // Updates sent and not yet answered; while there is one, `STATE` does not replace the draft.
-  let updatesInFlight = 0;
+  const updatesInFlight = signal(0);
   // The feedback of the latest update that passed one; a rollback clears the store's feedback only while it holds it.
   let updateFeedback: F | null = null;
 
   const stopListening = socket.on(SERVER_EVENTS.STATE, (snapshot) => {
-    if (updatesInFlight !== 0) {
+    if (updatesInFlight() !== 0) {
       return;
     }
     const serverCopy = read(snapshot);
@@ -89,21 +94,22 @@ export function createSyncedDraft<T, F>(options: SyncedDraftOptions<T, F>): Sync
 
   return {
     draft: draft.asReadonly(),
+    isUpdatePending: computed(() => updatesInFlight() > 0),
     update(next, shown) {
       if (shown !== undefined) {
         feedback.set(shown);
         updateFeedback = shown;
       }
       draft.set(next);
-      updatesInFlight++;
+      updatesInFlight.update((count) => count + 1);
       void send(next).then((result) => {
-        updatesInFlight--;
+        updatesInFlight.update((count) => count - 1);
         if (result.ok) {
           error.set(null);
           return;
         }
         error.set(result.error);
-        if (updatesInFlight === 0) {
+        if (updatesInFlight() === 0) {
           draft.set(serverDraft());
           if (feedback() === updateFeedback) {
             feedback.set(null);

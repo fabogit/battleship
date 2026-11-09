@@ -4,6 +4,7 @@ import { MAX_CONSECUTIVE_AFK_TURNS, ROOM_PHASES, SERVER_EVENTS } from '@battlesh
 
 import { GameSocketService } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
+import { MS_PER_SECOND } from '../../core/time-units';
 import { BoardGrid } from '../../shared/board-grid/board-grid';
 import { formatCoordinate } from '../../shared/board-grid/coordinates';
 import { formatCountdown, isLowTime } from '../../shared/countdown';
@@ -29,9 +30,6 @@ export type BattleBoard = (typeof BATTLE_BOARDS)[keyof typeof BATTLE_BOARDS];
  */
 export const SHOT_HOLD_MS = 1_500;
 
-/** Milliseconds in a second, for `turnTimeLimitSeconds`. */
-const MS_PER_SECOND = 1_000;
-
 /** The turn's deadline as the heading row shows it. */
 interface TurnTimer {
   /** The sentence, e.g. "Time left: 0:25". */
@@ -48,6 +46,8 @@ interface DiceView {
   readonly theirFace: number;
   /** Whether they are tumbling. */
   readonly isRolling: boolean;
+  /** Whether this round decides who starts; the rounds before it are ties. */
+  readonly isLast: boolean;
 }
 
 /** The board a turn brings forward, with the turn it belongs to. */
@@ -119,21 +119,17 @@ export class Battle {
       return this.text.reasons[gameOver.reason](nickname, this.gameState.hasWon() === true);
     }
     const isMyTurn = this.gameState.isMyTurn();
-    const frame = this.dice.frame();
-    if (frame !== null) {
-      const me = this.gameState.snapshot()?.me.seat;
-      const opponent = this.gameState.snapshot()?.opponent?.seat;
-      const myFace = me === undefined ? 0 : frame.roll[me];
-      const theirFace = opponent === undefined ? 0 : frame.roll[opponent];
-      if (frame.isRolling) {
+    const dice = this.diceView();
+    if (dice !== null) {
+      if (dice.isRolling) {
         return this.text.diceRolling;
       }
-      return frame.isLast
-        ? this.text.diceResult(myFace, theirFace, nickname, isMyTurn)
-        : this.text.diceTie(myFace, nickname);
+      return dice.isLast
+        ? this.text.diceResult(dice.myFace, dice.theirFace, nickname, isMyTurn)
+        : this.text.diceTie(dice.myFace, nickname);
     }
     const battle = this.battle();
-    if (battle !== null && battle.turnRemainingMs === null && !this.hasShots()) {
+    if (battle !== null && battle.turnRemainingMs === null && this.gameState.shotCount() === 0) {
       return this.text.diceStarter(nickname, isMyTurn);
     }
     if (this.timer()?.isLow === true && battle?.isPaused === false) {
@@ -148,7 +144,7 @@ export class Battle {
     return isMyTurn ? this.text.myTurnHint : this.text.opponentTurnHint(nickname);
   });
 
-  /** The dice beside the heading while they show; `null` otherwise. */
+  /** The dice beside the heading and the words under it while they show, by player; `null` otherwise. */
   protected readonly diceView = computed<DiceView | null>(() => {
     const frame = this.dice.frame();
     const snapshot = this.gameState.snapshot();
@@ -159,6 +155,7 @@ export class Battle {
       myFace: frame.roll[snapshot.me.seat],
       theirFace: frame.roll[snapshot.opponent.seat],
       isRolling: frame.isRolling,
+      isLast: frame.isLast,
     };
   });
 
@@ -231,10 +228,8 @@ export class Battle {
       if (snapshot?.gameOver) {
         return { turn: ROOM_PHASES.GAME_OVER, board: BATTLE_BOARDS.ENEMY_WATERS };
       }
-      const battle = snapshot?.battle;
-      const shotCount = (battle?.incomingShots.length ?? 0) + (battle?.outgoingShots.length ?? 0);
       return {
-        turn: `${battle?.currentTurn ?? ''}/${String(shotCount)}`,
+        turn: `${snapshot?.battle?.currentTurn ?? ''}/${String(this.gameState.shotCount())}`,
         board: this.gameState.isMyTurn() ? BATTLE_BOARDS.ENEMY_WATERS : BATTLE_BOARDS.MY_FLEET,
       };
     },
@@ -269,15 +264,6 @@ export class Battle {
       stopListening();
       clearTimeout(this.holdTimer);
     });
-  }
-
-  /**
-   * Tells whether any shot has been fired in the match.
-   * @returns Whether either board has a shot.
-   */
-  private hasShots(): boolean {
-    const battle = this.battle();
-    return battle !== null && battle.incomingShots.length + battle.outgoingShots.length > 0;
   }
 
   /**

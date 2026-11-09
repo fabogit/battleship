@@ -167,6 +167,15 @@ export class GameStateService {
     return null;
   });
 
+  /**
+   * The shots fired in the match in progress, by both players: the first shot ends the dice animation (ADR-0106), and
+   * every shot is a step of the turn, an extra turn on a hit included. `0` outside `IN_PROGRESS`, at game over too.
+   */
+  readonly shotCount = computed(() => {
+    const battle = this.snapshot()?.battle;
+    return battle ? battle.incomingShots.length + battle.outgoingShots.length : 0;
+  });
+
   /** Whether `SET_PAUSED { isPaused: true }` would be accepted: a running match with the opponent disconnected. */
   readonly canPause = computed(() => this.isOpponentAway() && this.snapshot()?.battle?.isPaused === false);
 

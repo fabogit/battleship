@@ -129,8 +129,6 @@ export class RulesStore {
   /** What the latest snapshot changed, for the live region; `null` when it changed nothing worth announcing. */
   readonly notice = this.noticeSignal.asReadonly();
 
-  /** `UPDATE_RULES` sent and not answered yet; read through `isUpdatePending`. */
-  private readonly updatesInFlight = signal(0);
   /** The highest version an accepted `UPDATE_RULES` of the player's got; `-1` before the first. */
   private readonly lastAckedVersion = signal(-1);
   /** Every version an accepted `UPDATE_RULES` of the player's got, to tell their edits from the opponent's. */
@@ -145,9 +143,7 @@ export class RulesStore {
     empty: DEFAULT_RULES,
     equal: areSameRules,
     send: async (rules) => {
-      this.updatesInFlight.update((count) => count + 1);
       const result = await this.socket.emitWithAck(CLIENT_EVENTS.UPDATE_RULES, { rules });
-      this.updatesInFlight.update((count) => count - 1);
       if (result.ok) {
         this.ackedVersions.add(result.rulesVersion);
         this.lastAckedVersion.update((version) => Math.max(version, result.rulesVersion));
@@ -165,7 +161,7 @@ export class RulesStore {
    * whose `STATE` has not arrived. Confirming then would accept the version before it.
    */
   readonly isUpdatePending = computed(
-    () => this.updatesInFlight() > 0 || this.rulesVersion() < this.lastAckedVersion(),
+    () => this.sync.isUpdatePending() || this.rulesVersion() < this.lastAckedVersion(),
   );
 
   /** True from sending `CONFIRM_RULES` until its ack; read through `isConfirmPending`. */

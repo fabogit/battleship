@@ -212,6 +212,25 @@ describe('GameStateService', () => {
       expect(state.isMyTurn()).toBe(false);
     });
 
+    it('counts the shots of the match in progress, by both players', () => {
+      expect(state.shotCount()).toBe(0);
+
+      receive(placement());
+      expect(state.shotCount()).toBe(0);
+
+      receive(battle({ incomingShots: [], outgoingShots: [] }));
+      expect(state.shotCount()).toBe(0);
+
+      receive(battle({ outgoingShots: [] }));
+      expect(state.shotCount()).toBe(INCOMING.length);
+
+      receive(battle());
+      expect(state.shotCount()).toBe(INCOMING.length + OUTGOING.length);
+
+      receive(gameOver());
+      expect(state.shotCount()).toBe(0);
+    });
+
     it('allows pausing and resuming only while the opponent is disconnected', () => {
       receive(battle());
       expect([state.canPause(), state.canResume()]).toEqual([false, false]);

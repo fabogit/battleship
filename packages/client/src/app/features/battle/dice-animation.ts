@@ -77,7 +77,7 @@ export class DiceAnimation {
   readonly frame = computed<DiceFrame | null>(() => {
     const progress = this.progress();
     const battle = this.gameState.snapshot()?.battle;
-    if (progress === null || !battle || battle.incomingShots.length + battle.outgoingShots.length > 0) {
+    if (progress === null || !battle || this.gameState.shotCount() > 0) {
       return null;
     }
     if (progress.isOver && battle.turnRemainingMs !== null) {

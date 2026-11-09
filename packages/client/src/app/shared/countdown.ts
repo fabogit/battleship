@@ -1,5 +1,4 @@
-/** Milliseconds in a second. */
-const MS_PER_SECOND = 1_000;
+import { MS_PER_SECOND } from '../core/time-units';
 
 /** Seconds in a minute. */
 const SECONDS_PER_MINUTE = 60;

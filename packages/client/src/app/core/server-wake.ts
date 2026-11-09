@@ -4,6 +4,7 @@ import type { HealthResponse } from '@battleship/core';
 import { firstValueFrom } from 'rxjs';
 
 import { SERVER_URL } from './server-url';
+import { MS_PER_SECOND } from './time-units';
 
 /** The states of the wake-up poll, as `ServerWakeService.status` reports them (ADR-0043). */
 export const WAKE_STATUSES = {
@@ -31,9 +32,6 @@ export const GIVE_UP_AFTER_MS = 90_000;
  * without one the room page explains a refused seat without telling a restart apart (ADR-0076).
  */
 export const STARTED_AT_TIMEOUT_MS = 10_000;
-
-/** Milliseconds in a second: `HealthResponse.uptime` is in seconds. */
-const MS_PER_SECOND = 1_000;
 
 /** Options of `ServerWakeService.wake`. */
 export interface WakeOptions {
