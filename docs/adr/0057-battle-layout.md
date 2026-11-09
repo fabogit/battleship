@@ -24,6 +24,7 @@ Below a viewport width of 52 rem (832 px) the battle view shows one board at a t
 ## Links
 
 - Added on 2026-10-10 for the battle view ([#20](https://github.com/fabogit/battleship/issues/20)).
+- Amended on 2026-11-09 for the M3 review ([#54](https://github.com/fabogit/battleship/issues/54), F2): the presence banner above the battle is compact, and while it counts down an away opponent's forfeit the cells budget its height, in the wide-screen clamp and in a new one for short phones held upright ([ADR-0110](0110-compact-presence-banner.md)).
 - Spec: [Client: Layout](../client.md#layout)
 - Related: [ADR-0042](0042-board-cell-size.md) (cell size), [ADR-0047](0047-reply-order.md) (the `SHOT_RESOLVED` that starts the hold arrives before the `STATE` that passes the turn)
 - Issues: [#20](https://github.com/fabogit/battleship/issues/20), [#30](https://github.com/fabogit/battleship/issues/30) (turn timer)

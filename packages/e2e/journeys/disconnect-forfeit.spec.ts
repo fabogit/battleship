@@ -14,7 +14,7 @@ test('a player away past DISCONNECT_FORFEIT_MS loses by forfeit', async ({ openP
 
   // The server noticed: Ada's banner says so and counts down Grace's forfeit, from the snapshot's remaining time.
   await expect(ada.page.getByText(PRESENCE_TEXT.away('Grace'))).toBeVisible();
-  const countdown = new RegExp(`^${escape(PRESENCE_TEXT.forfeitsMatch('Grace', '@')).replace('@', '\\d+:\\d{2}')}$`);
+  const countdown = new RegExp(`^${escape(PRESENCE_TEXT.forfeitsMatch('@')).replace('@', '\\d+:\\d{2}')}$`);
   await expect(ada.page.getByRole('timer').filter({ hasText: countdown })).toBeVisible();
 
   await skipServerClock(DISCONNECT_FORFEIT_MS);

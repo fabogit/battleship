@@ -20,6 +20,7 @@ export type PauseCommandError = ErrorCode | TransportError;
   selector: 'app-presence',
   templateUrl: './presence.html',
   styleUrl: './presence.css',
+  host: { '[class.is-compact]': 'isCompact()' },
 })
 export class Presence {
   /** Sends `SET_PAUSED`. */
@@ -44,9 +45,15 @@ export class Presence {
     }
     const time = formatCountdown(remainingMs);
     return this.gameState.phase() === ROOM_PHASES.IN_PROGRESS
-      ? this.text.forfeitsMatch(this.nickname(), time)
+      ? this.text.forfeitsMatch(time)
       : this.text.freesSeat(this.nickname(), time);
   });
+
+  /**
+   * Whether the banner is compact, during the match (ADR-0110): the battle needs the height for "Fire", and the turn
+   * timer beside its heading already says whether the match is paused, so that sentence is read but not shown.
+   */
+  protected readonly isCompact = computed(() => this.gameState.phase() === ROOM_PHASES.IN_PROGRESS);
 
   /** Whether the match is paused (`battle.isPaused`); `null` outside the match. */
   protected readonly isPaused = computed(() => this.gameState.snapshot()?.battle?.isPaused ?? null);

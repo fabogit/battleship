@@ -174,11 +174,11 @@ legend {
 }
 
 /*
- * On a short screen (under 40rem, 640px) "Confirm rules" would fall below the fold at 320×568 with the opponent-away
+ * On a short screen (under 42rem, 672px) "Confirm rules" would fall below the fold at 320×568 with the opponent-away
  * banner above the view: tighter spacing, the targets still 2.75rem (44px) high, and the intro read but not shown (the
  * list of confirmations names the opponent too).
  */
-@media (height < 40rem) {
+@media (height < 42rem) {
   :host {
     gap: 0.5rem;
   }

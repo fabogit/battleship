@@ -126,10 +126,10 @@ p {
 }
 
 /*
- * Short screens, under 40rem (640px) tall, as for the rules screen: tighter spacing and a smaller dock, so that the
+ * Short screens, under 42rem (672px) tall, as for the rules screen: tighter spacing and a smaller dock, so that the
  * deadline, "Confirm fleet" and the top of the board are in view without a scroll at 320 × 568.
  */
-@media (height < 40rem) {
+@media (height < 42rem) {
   :host {
     gap: 0.5rem;
   }

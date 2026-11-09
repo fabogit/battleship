@@ -79,12 +79,14 @@ function timer(): string | undefined {
 }
 
 /**
- * Finds a button by its text.
- * @param label The button's text.
+ * Finds a button by its accessible name: its `aria-label`, or else its text.
+ * @param name The button's name.
  * @returns The button, or `undefined`.
  */
-function button(label: string): HTMLButtonElement | undefined {
-  return [...banner().querySelectorAll('button')].find((element) => element.textContent.trim() === label);
+function button(name: string): HTMLButtonElement | undefined {
+  return [...banner().querySelectorAll('button')].find(
+    (element) => (element.getAttribute('aria-label') ?? element.textContent.trim()) === name,
+  );
 }
 
 describe('Presence', () => {
@@ -109,11 +111,11 @@ describe('Presence', () => {
 
       expect(announcement()).toContain(PRESENCE_TEXT.away('Grace'));
       expect(announcement()).toContain(PRESENCE_TEXT.paused);
-      expect(timer()).toBe(PRESENCE_TEXT.forfeitsMatch('Grace', '2:50'));
+      expect(timer()).toBe(PRESENCE_TEXT.forfeitsMatch('2:50'));
 
       vi.advanceTimersByTime(5_000);
       fixture.detectChanges();
-      expect(timer()).toBe(PRESENCE_TEXT.forfeitsMatch('Grace', '2:45'));
+      expect(timer()).toBe(PRESENCE_TEXT.forfeitsMatch('2:45'));
     });
 
     it('pauses with SET_PAUSED while the match runs, and shows the command waiting', async () => {
@@ -241,6 +243,40 @@ describe('Presence', () => {
       expect(announcement()).toBe('');
     });
 
+    it.each([
+      [true, PRESENCE_TEXT.paused, PRESENCE_TEXT.resume, PRESENCE_TEXT.resumeLabel],
+      [false, PRESENCE_TEXT.running, PRESENCE_TEXT.pause, PRESENCE_TEXT.pauseLabel],
+    ])(
+      'is compact (paused: %s): the sentence on whether the match runs is read, not shown, before the countdown and the control (ADR-0110)',
+      async (isPaused, sentence, control, label) => {
+        await receive({ ...battleSnapshot(ROOM_ID, { isPaused }), opponent: away() });
+
+        expect(banner().classList).toContain('is-compact');
+        const region = banner().querySelector('[aria-live="polite"]');
+        const lines = [...(region?.querySelectorAll('p') ?? [])];
+        expect(lines.map((line) => line.textContent.trim())).toEqual([PRESENCE_TEXT.away('Grace'), sentence]);
+        expect(lines.map((line) => line.classList.contains('visually-hidden'))).toEqual([false, true]);
+        // Reading order: the live region, then the countdown outside it, then the control.
+        const countdown = banner().querySelector('[role="timer"]');
+        expect(region?.contains(countdown)).toBe(false);
+        expect(countdown?.textContent.trim()).toBe(PRESENCE_TEXT.forfeitsMatch('3:00'));
+        expect([...banner().querySelectorAll('[aria-live="polite"], [role="timer"], button')]).toEqual([
+          region,
+          countdown,
+          button(control),
+        ]);
+        // The button shows the start of its name (WCAG 2.5.3 label in name).
+        expect(button(control)?.textContent.trim()).toBe(label);
+        expect(control.startsWith(label)).toBe(true);
+      },
+    );
+
+    it('is compact while connected too, so the live region does not change its layout when the opponent drops', async () => {
+      await receive(battleSnapshot(ROOM_ID));
+
+      expect(banner().classList).toContain('is-compact');
+    });
+
     it('works from the joiner seat as well', async () => {
       const snapshot = fromSeat(SEATS.P2, battleSnapshot(ROOM_ID, { isPaused: true }));
       await receive({ ...snapshot, opponent: { ...away(), seat: SEATS.P1 } });
@@ -257,6 +293,8 @@ describe('Presence', () => {
       expect(announcement()).toBe(PRESENCE_TEXT.away('Grace'));
       expect(timer()).toBe(PRESENCE_TEXT.freesSeat('Grace', '2:00'));
       expect(banner().querySelector('button')).toBeNull();
+      // Placement keeps the full banner (ADR-0110): only the battle needs the height.
+      expect(banner().classList).not.toContain('is-compact');
     });
 
     it('counts down on the waiting screen too, which shows rules negotiation until #27', async () => {
@@ -300,5 +338,6 @@ describe('Presence', () => {
     expect(announcement()).toBe(PRESENCE_TEXT.away('Grace'));
     expect(timer()).toBeUndefined();
     expect(banner().querySelector('button')).toBeNull();
+    expect(banner().classList).not.toContain('is-compact');
   });
 });

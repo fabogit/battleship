@@ -50,6 +50,14 @@ h2 {
 .status,
 .afk {
   display: grid;
+}
+
+/* Spaced by margins between parts that have content, so the AFK warnings' empty live region takes no gap (#54, F2). */
+.status > * + :not(:empty) {
+  margin-top: 0.25rem;
+}
+
+.afk {
   gap: 0.25rem;
 }
 
@@ -128,8 +136,8 @@ h2 {
   color: var(--color-error);
 }
 
-/* Short screens, under 40rem (640px) tall: tighter spacing, so that "Fire" is in view without a scroll at 320 × 568. */
-@media (height < 40rem) {
+/* Short screens, under 42rem (672px) tall: tighter spacing, so that "Fire" is in view without a scroll at 320 × 568. */
+@media (height < 42rem) {
   :host,
   .boards {
     gap: 0.5rem;
@@ -137,6 +145,19 @@ h2 {
 
   h1 {
     font-size: 1.25rem;
+  }
+
+  /*
+   * With a wide system font (DejaVu Sans, as on Linux) "Time left: 0:30, paused" would wrap under the heading at 320px,
+   * and "Enemy waters" onto two lines in its half of the toggle: 28px and 8px more above "Fire" (ADR-0110).
+   */
+  .heading {
+    column-gap: 0.5rem;
+  }
+
+  .heading [role='timer'],
+  .toggle button {
+    font-size: 0.875rem;
   }
 }
 
@@ -161,8 +182,21 @@ h2 {
 }
 
 /*
+ * Short narrow screens held upright (ADR-0110): the cells shrink when the viewport is too short for the board, the lines
+ * above it and "Fire" (17.5rem, 280px), and the presence banner while it says the opponent is away
+ * (--presence-block-size, from the room page), never below 1.5rem (24px). A phone held upright is width-bound without
+ * the banner; in landscape (#38) the board keeps its cells.
+ */
+@media (height < 42rem) and (width < 52rem) and (orientation: portrait) {
+  .boards app-board-grid {
+    --board-cell-max: clamp(1.5rem, (100dvh - 17.5rem - var(--presence-block-size, 0rem)) / 10, 3rem);
+  }
+}
+
+/*
  * Wide screens: both boards side by side, so the toggle has nothing to do. Cells shrink below 3rem (48px) when the
- * viewport is too short for both boards, the lines above them and "Fire" (25rem, 400px), never below 1.5rem (24px).
+ * viewport is too short for both boards, the lines above them and "Fire" (25rem, 400px), and the presence banner while
+ * it says the opponent is away (ADR-0110), never below 1.5rem (24px).
  */
 @media (width >= 52rem) {
   .toggle {
@@ -174,6 +208,6 @@ h2 {
   }
 
   .boards app-board-grid {
-    --board-cell-max: clamp(1.5rem, (100dvh - 25rem) / 10, 3rem);
+    --board-cell-max: clamp(1.5rem, (100dvh - 25rem - var(--presence-block-size, 0rem)) / 10, 3rem);
   }
 }
