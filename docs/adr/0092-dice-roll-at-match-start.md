@@ -16,7 +16,7 @@ The dice roll of [ADR-0002](0002-who-starts.md) happens in `startBattle`, the on
 
 ## Consequences
 
-- The protocol does not change: `DICE_ROLLED` and its payload have been in protocol version 3 since M1, and `currentTurn` could already be either seat. A client that ignores the event (the current one, until #31) still sees who starts from `STATE`.
+- The protocol does not change: `DICE_ROLLED` and its payload have been in the contract since M1, and `currentTurn` could already be either seat. A client that ignores the event (the current one, until #31) still sees who starts from `STATE`.
 - Either player may fire first now, in production and in the browser journeys, whose server rolls with crypto randomness; the journeys already find the shooter from the turn heading ([Development: End-to-end journeys](../development.md#end-to-end-journeys)). The server tests roll with the seeded registry: `ROOM_SEED` makes `P1` start a server's first match, which is what `playToVictory` assumes by default, and the Postman replay expects `DICE_ROLLED` with that roll on both seats ([ADR-0068](0068-postman-replay-test.md)).
 - `DICE_ROLLED` goes to the sockets in the room when the match starts: a player who is away gets none, and learns who starts from the snapshot when they come back ([ADR-0094](0094-dice-roll-on-reconnect.md)).
 

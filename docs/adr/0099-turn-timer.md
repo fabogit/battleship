@@ -43,6 +43,7 @@ The rest is decided here:
 
 - Added on 2026-10-31 for the turn timer ([#30](https://github.com/fabogit/battleship/issues/30)).
 - Spec: [Server: Turns](../server.md#turns) · [Server: Disconnection & pause](../server.md#disconnection--pause-in_progress) · [Protocol: Snapshot](../protocol.md#snapshot)
+- Implements: [ADR-0009](0009-afk.md) (AFK)
 - Amends: [ADR-0093](0093-dice-animation.md) (`turnTimerStartsAt` replaces `firstTurnStartsAt`) · [ADR-0074](0074-pause.md) (the frozen time) · [ADR-0065](0065-clock-and-room-timers.md) (a `TURN` kind)
 - Related: [ADR-0100](0100-timeout-actions.md) (timeout actions) · [ADR-0101](0101-afk-forfeit.md) (AFK) · [ADR-0090](0090-placement-timer.md) (placement timer) · [ADR-0094](0094-dice-roll-on-reconnect.md) (reconnect)
 - Issues: [#30](https://github.com/fabogit/battleship/issues/30) · [#31](https://github.com/fabogit/battleship/issues/31) (timers UI)
