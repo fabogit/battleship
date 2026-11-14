@@ -65,7 +65,10 @@ export const ERROR_CODES = {
    * (ADR-0046).
    */
   NOT_ALLOWED: 'NOT_ALLOWED',
-  /** `UPDATE_RULES` with rules that fail `validateRules` (salvo and extra turn both on, ADR-0010). */
+  /**
+   * `UPDATE_RULES` with rules that fail `validateRules`: salvo and extra turn both on (ADR-0010), or salvo on its own
+   * until #32 (ADR-0085).
+   */
   INVALID_RULES: 'INVALID_RULES',
   /** `CONFIRM_RULES` for a version other than the current one (ADR-0004). */
   STALE_RULES: 'STALE_RULES',
@@ -73,7 +76,10 @@ export const ERROR_CODES = {
   INVALID_PLACEMENT: 'INVALID_PLACEMENT',
   /** `UPDATE_PLACEMENT` while the sender's fleet is confirmed; `UNLOCK_PLACEMENT` first. */
   PLACEMENT_LOCKED: 'PLACEMENT_LOCKED',
-  /** Targets that break `validateTargets` for this turn: count, bounds, repeats or cells already shot. */
+  /**
+   * Targets that break `validateTargets` for this turn: the count, repeats or cells already shot. An off-board
+   * coordinate never gets here: the payload guard refuses it as `INVALID_PAYLOAD`.
+   */
   INVALID_TARGETS: 'INVALID_TARGETS',
   /**
    * The server failed while running a command's room logic, before storing anything: the room keeps its state, and the
@@ -148,9 +154,12 @@ export interface JoinRoomPayload {
   readonly nickname: string;
 }
 
-/** `UPDATE_RULES`: replaces the room's rules, bumps `rulesVersion` and clears both confirmations (ADR-0003). */
+/**
+ * `UPDATE_RULES`: replaces the room's rules; when they differ from the current ones, it bumps `rulesVersion` and clears
+ * both confirmations (ADR-0003, ADR-0082). The rules already in place change nothing.
+ */
 export interface UpdateRulesPayload {
-  /** The complete new rules; the salvo/extra-turn exclusivity is checked by `validateRules` (`INVALID_RULES`). */
+  /** The complete new rules; whether they can be played is checked by `validateRules` (`INVALID_RULES`). */
   readonly rules: GameRules;
 }
 
@@ -234,7 +243,11 @@ export interface ClientToServerEvents {
   SURRENDER: (payload: EmptyPayload, ack: Ack<AckResponse>) => void;
   /** Picks what happens after `GAME_OVER`. */
   REMATCH_CHOICE: (payload: RematchChoicePayload, ack: Ack<AckResponse>) => void;
-  /** Frees the sender's seat in any phase; in `IN_PROGRESS` it ends the match as `SURRENDER`. */
+  /**
+   * Frees the sender's seat before the match (`WAITING_FOR_OPPONENT`, `RULES_NEGOTIATION`, `PLACEMENT`). The contract
+   * also has it end an `IN_PROGRESS` match as `SURRENDER` (#35) and be the `LEAVE` choice at `GAME_OVER` (#36); until
+   * those land, both phases refuse it with `NOT_ALLOWED` (ADR-0046).
+   */
   LEAVE_ROOM: (payload: EmptyPayload, ack: Ack<AckResponse>) => void;
 }
 
@@ -320,7 +333,10 @@ export interface BattleSnapshot {
   readonly shotsAllowed: number;
   /** The receiver's draft from `UPDATE_TARGETS`; empty when it is not their turn. */
   readonly myDraftTargets: readonly Coordinate[];
-  /** Time left in the current turn; `null` before the first turn starts, while the dice animation plays. */
+  /**
+   * Time left in the current turn; `null` before the first turn starts, while the dice animation plays. While paused it
+   * is the frozen time left, which does not go down until the resume.
+   */
   readonly turnRemainingMs: number | null;
   /**
    * Whether the turn timer is frozen: set when a player disconnects, cleared when both are back, switched by
@@ -348,7 +364,7 @@ export interface GameOverSnapshot {
   readonly outgoingShots: readonly ShotResult[];
   /** The opponent's whole fleet, revealed now that the match is over; `outgoingShots` landed on it. */
   readonly opponentShips: readonly PlacedShip[];
-  /** Each player's pick so far; `null` until they choose. */
+  /** Each player's pick so far; `null` until they choose. Always `null` until the rematch flow lands (#36). */
   readonly rematch: PerPlayer<RematchChoice | null>;
 }
 
@@ -367,7 +383,7 @@ export interface PlayerStateSnapshot {
   readonly opponent: PlayerView | null;
   /** The current rules; during negotiation, the latest proposal. */
   readonly rules: GameRules;
-  /** Bumped by every `UPDATE_RULES`; `CONFIRM_RULES` quotes it (ADR-0004). */
+  /** Bumped by every `UPDATE_RULES` that changes the rules; `CONFIRM_RULES` quotes it (ADR-0004). */
   readonly rulesVersion: number;
   /** Whether each player has confirmed `rulesVersion`; `false` for an empty seat. */
   readonly hasConfirmedRules: PerPlayer<boolean>;

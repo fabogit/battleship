@@ -278,8 +278,8 @@ export function randomTargets(
  * @param battle The battle before the turn; `currentTurn` is the shooter.
  * @param draft The shooter's draft targets, as the room stored them; any list is safe.
  * @param count How many targets the turn fires, normally `shotsAllowed(battle, rules)`.
- * @param rng Source of the random targets; drawn from even when the draft fills the turn, so the draws after it do not
- * depend on the draft.
+ * @param rng Source of the random targets; drawn from even when the draft fills the turn. The same draft and seed give
+ * the same draws, after it too.
  * @returns `count` coordinates, the kept draft targets first.
  * @throws `RangeError` when `count` is not an integer from 0 to the number of unshot cells.
  * @example

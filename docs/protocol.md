@@ -20,10 +20,18 @@ export interface SessionCredentials {
 
 The `handshake` plugin checks it in a Socket.io middleware, before the socket connects ([ADR-0061](adr/0061-handshake-checks.md)):
 
-- `protocolVersion` is checked first, by strict equality with `PROTOCOL_VERSION`: any other value, a string or a missing `auth` included, is `PROTOCOL_MISMATCH`. When `auth` has no `protocolVersion`, the server reads a `protocolVersion` query parameter instead, which must equal the decimal form (`?protocolVersion=6`): tools such as Postman cannot send `auth` ([ADR-0062](adr/0062-protocol-version-query.md)). The app always sends `auth`.
+- `protocolVersion` is checked first, by strict equality with `PROTOCOL_VERSION`: any other value, a string included, is `PROTOCOL_MISMATCH`. When `auth` has no `protocolVersion`, or there is no `auth` at all, the server reads a `protocolVersion` query parameter instead, which must equal the decimal form (`?protocolVersion=6`): tools such as Postman cannot send `auth` ([ADR-0062](adr/0062-protocol-version-query.md)). Without either, the handshake is `PROTOCOL_MISMATCH`. The app always sends `auth`.
 - `session`, when present, then goes through `parseSessionCredentials` and is looked up: its room must be open and one of its seats must hold the `playerSecret`. A malformed session is `SESSION_INVALID`, like an unknown or expired one. A session is never read from the query.
 - A refusal is a `connect_error` whose `message` is the error code; the connection never opens and Socket.io does not retry it. A check that throws refuses the connection with `SERVER_ERROR` and changes nothing ([ADR-0104](adr/0104-room-failure-containment.md)).
 - A valid session binds the socket to its seat; any other socket on that seat gets `SESSION_REPLACED` and a server disconnect, and the new socket gets `STATE` at once ([ADR-0063](adr/0063-session-rebinding.md), [Sessions & reconnection](server.md#sessions--reconnection)).
+
+`PROTOCOL_VERSION` is 6. Each version since the first ([ADR-0017](adr/0017-protocol-versioning.md); the list is also the constant's JSDoc in `packages/core/src/constants.ts`):
+
+- **2:** the game-over snapshot carries both final boards ([ADR-0064](adr/0064-game-over-snapshot-boards.md)).
+- **3:** `JOIN_ROOM` opens rules negotiation instead of placement ([ADR-0084](adr/0084-protocol-version-3.md)).
+- **4:** a room the server closes tells the sockets still in it with `ROOM_CLOSED` ([ADR-0097](adr/0097-room-closed-notice.md)).
+- **5:** a server failure refuses a command with `SERVER_ERROR`, or closes its room with the `ROOM_CLOSED` reason `SERVER_ERROR` ([ADR-0105](adr/0105-server-error-on-the-wire.md)).
+- **6:** a room whose players do not agree on the rules in time closes with the `ROOM_CLOSED` reason `NEGOTIATION_TTL` ([ADR-0103](adr/0103-negotiation-ttl-on-the-wire.md)).
 
 ## Client → server
 
@@ -32,7 +40,7 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 - A command sent without an ack callback is ignored: not applied, not answered.
 - A refused command gets only its ack. An accepted one gets its ack, then any effect (`SHOT_RESOLVED`) and then `STATE` reach both players ([ADR-0047](adr/0047-reply-order.md)).
 - The commands after `JOIN_ROOM` come from the socket that created or joined the room; from any other socket they are `NOT_ALLOWED` ([ADR-0045](adr/0045-socket-seat-binding.md)). A socket that reconnects with its stored `session` gets its seat back at the [handshake](#handshake); without one it has no seat.
-- `SURRENDER` and `REMATCH_CHOICE` pass their guard, then are `NOT_ALLOWED` until their room logic lands ([ADR-0046](adr/0046-commands-ahead-of-room-logic.md)). So is `LEAVE_ROOM` in `IN_PROGRESS` (surrender, #35) and `GAME_OVER` (rematch, #36); before the match it frees the seat ([Server: Leaving](server.md#leaving)).
+- `SURRENDER` and `REMATCH_CHOICE` pass their guard, then are `NOT_ALLOWED` until their room logic lands. So is `LEAVE_ROOM` in `IN_PROGRESS` (surrender, #35) and `GAME_OVER` (rematch, #36); before the match it frees the seat ([Server: Leaving](server.md#leaving)). The table below gives the contract those issues implement; the refusals today are `notYetSupported` and `leaveRoom` in the server's sources (`plugins/room-handlers.ts`, `room/presence.ts`), and [ADR-0046](adr/0046-commands-ahead-of-room-logic.md) records why they answer at all.
 - `JOIN_ROOM` takes the free seat: `P2`, or `P1` when the creator left before the match ([ADR-0073](adr/0073-room-lifecycle-with-forfeits.md)), so a client reads its seat from `STATE` (`me.seat`).
 - `JOIN_ROOM` moves the room to `RULES_NEGOTIATION`. `UPDATE_RULES` acks the `rulesVersion` of the rules in force after it: a new one when the rules changed, the same one when they did not. `CONFIRM_RULES` quotes the version it accepts, and any other than the current one is `STALE_RULES`. Both confirmations of the current version start `PLACEMENT` ([ADR-0082](adr/0082-rules-negotiation-commands.md), [Server: Rules negotiation](server.md#rules-negotiation)); without them, the room closes `NEGOTIATION_TTL_MS` after the join with `ROOM_CLOSED` ([ADR-0102](adr/0102-negotiation-ttl.md)).
 - `JOIN_ROOM` outside `WAITING_FOR_OPPONENT` finds both seats taken, so it is `ROOM_FULL`, never `WRONG_PHASE` ([Server: Room creation & joining](server.md#room-creation--joining)).
@@ -49,9 +57,9 @@ All commands use Socket.io acknowledgements: `ack({ ok: true, ...data } | { ok: 
 | `UPDATE_TARGETS`    | `{ targets: Coordinate[] }`  | —                              | `IN_PROGRESS`, own turn                                                   |
 | `FIRE`              | `{ targets: Coordinate[] }`  | —                              | `IN_PROGRESS`, own turn                                                   |
 | `SET_PAUSED`        | `{ isPaused: boolean }`      | —                              | `IN_PROGRESS`, opponent disconnected                                      |
-| `SURRENDER`         | `{}`                         | —                              | `IN_PROGRESS`                                                             |
-| `REMATCH_CHOICE`    | `{ choice: RematchChoice }`  | —                              | `GAME_OVER`                                                               |
-| `LEAVE_ROOM`        | `{}`                         | —                              | any                                                                       |
+| `SURRENDER`         | `{}`                         | —                              | `IN_PROGRESS` (#35; `NOT_ALLOWED` until then)                             |
+| `REMATCH_CHOICE`    | `{ choice: RematchChoice }`  | —                              | `GAME_OVER` (#36; `NOT_ALLOWED` until then)                               |
+| `LEAVE_ROOM`        | `{}`                         | —                              | any; today only before the match (`NOT_ALLOWED` after it until #35, #36)  |
 | `ECHO`              | any                          | `{ payload, protocolVersion }` | any; the smoke check (ADR-0048), no guard; only the rate limit refuses it |
 
 `ECHO` is permanent ([ADR-0048](adr/0048-echo-smoke-check.md)): after every deploy, `pnpm --filter @battleship/server echo <url>` connects with the handshake `auth`, sends it and expects its ack, so the check covers the origin policy, the transport, the handshake and one event round trip without opening a room (a `CREATE_ROOM` would hold a place under `MAX_ROOMS` until the creator's seat is forfeited, `DISCONNECT_FORFEIT_MS` after the check disconnects). It is not a command: the client never sends it, and `emitWithAck` refuses it at compile time. The Postman collection keeps its `ECHO` requests ([Local tooling](development.md#local-tooling)).
@@ -86,7 +94,7 @@ Code names these events through `SERVER_EVENTS` (`SERVER_EVENTS.STATE`), which `
 | `SERVER_SHUTDOWN`  | `{}`                                                     | Server restarting; the match is lost                                                                                                                                                                                                              |
 | `ROOM_CLOSED`      | `{ roomId: string, reason: RoomClosedReason }`           | The server closed the receiver's room and freed its seat; the socket stays connected, in no room                                                                                                                                                  |
 
-`ROOM_CLOSED` goes to every socket still bound to a room the server removes, before the binding goes. `reason` is one of `ROOM_CLOSED_REASONS`: `WAITING_TTL` (nobody joined within `WAITING_TTL_MS`), `NEGOTIATION_TTL` (the players did not both confirm the rules within `NEGOTIATION_TTL_MS` of the join; version 6, [ADR-0103](adr/0103-negotiation-ttl-on-the-wire.md)), `GAME_OVER_TTL` (`GAME_OVER_TTL_MS` after the match) or `SERVER_ERROR` (the server failed while running the room, after a change was stored, so the match is lost; version 5, [ADR-0105](adr/0105-server-error-on-the-wire.md)). A room closed because nobody is left in it has nobody to tell. Added in protocol version 4 ([ADR-0097](adr/0097-room-closed-notice.md), [Server: Room lifecycle](server.md#room-lifecycle)).
+`ROOM_CLOSED` goes to every socket still bound to a room the server removes, right after the server drops that socket's binding. `reason` is one of `ROOM_CLOSED_REASONS`: `WAITING_TTL` (nobody joined within `WAITING_TTL_MS`), `NEGOTIATION_TTL` (the players did not both confirm the rules within `NEGOTIATION_TTL_MS` of the join; version 6, [ADR-0103](adr/0103-negotiation-ttl-on-the-wire.md)), `GAME_OVER_TTL` (`GAME_OVER_TTL_MS` after the match) or `SERVER_ERROR` (the server failed while running the room, after a change was stored, so the match is lost; version 5, [ADR-0105](adr/0105-server-error-on-the-wire.md)). A room closed because nobody is left in it has nobody to tell. Added in protocol version 4 ([ADR-0097](adr/0097-room-closed-notice.md), [Server: Room lifecycle](server.md#room-lifecycle)).
 
 ## Snapshot
 
@@ -129,7 +137,7 @@ export interface GameOverSnapshot {
   readonly incomingShots: readonly ShotResult[]; // the winning shot included
   readonly outgoingShots: readonly ShotResult[];
   readonly opponentShips: readonly PlacedShip[]; // revealed
-  readonly rematch: PerPlayer<RematchChoice | null>;
+  readonly rematch: PerPlayer<RematchChoice | null>; // both null until the rematch flow lands (#36)
 }
 
 export interface PlayerStateSnapshot {
@@ -139,7 +147,7 @@ export interface PlayerStateSnapshot {
   readonly opponent: PlayerView | null;
   readonly rules: GameRules;
   readonly rulesVersion: number;
-  readonly hasConfirmedRules: PerPlayer<boolean>;
+  readonly hasConfirmedRules: PerPlayer<boolean>; // both false while waiting, both true from PLACEMENT on
   readonly placement: PlacementSnapshot | null; // PLACEMENT only
   readonly battle: BattleSnapshot | null; // IN_PROGRESS only
   readonly gameOver: GameOverSnapshot | null; // GAME_OVER only
@@ -163,7 +171,7 @@ Timers are sent as **remaining milliseconds** (not absolute timestamps) to avoid
 | `SESSION_INVALID`   | Handshake `session` malformed, unknown or expired                                                                                                                                                                                                                                                                                                                        |
 | `WRONG_PHASE`       | A command outside the phases listed for it, except `JOIN_ROOM` (`ROOM_FULL`)                                                                                                                                                                                                                                                                                             |
 | `NOT_YOUR_TURN`     | `UPDATE_TARGETS` or `FIRE` during the opponent's turn                                                                                                                                                                                                                                                                                                                    |
-| `NOT_ALLOWED`       | A command the sender may not send now: `SET_PAUSED` while the opponent is connected, a seat command from a socket without a seat, joining the room the socket already sits in, and every command whose room logic has not landed yet ([ADR-0046](adr/0046-commands-ahead-of-room-logic.md))                                                                              |
+| `NOT_ALLOWED`       | A command the sender may not send now: `SET_PAUSED` while the opponent is connected, a seat command from a socket without a seat, joining the room the socket already sits in, and every command whose room logic has not landed yet: `SURRENDER`, `REMATCH_CHOICE`, and `LEAVE_ROOM` in `IN_PROGRESS` and `GAME_OVER` ([Client → server](#client--server))              |
 | `INVALID_RULES`     | `UPDATE_RULES` failing `validateRules`: salvo with extra turn on hit, or salvo at all until #32                                                                                                                                                                                                                                                                          |
 | `STALE_RULES`       | `CONFIRM_RULES` for a version other than the current one                                                                                                                                                                                                                                                                                                                 |
 | `INVALID_PLACEMENT` | `UPDATE_PLACEMENT` or `CONFIRM_PLACEMENT` with a layout that breaks the [placement rules](domain.md#placement)                                                                                                                                                                                                                                                           |
