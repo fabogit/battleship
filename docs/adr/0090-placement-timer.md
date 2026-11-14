@@ -38,8 +38,9 @@ Details in [Server: Placement](../server.md#placement) (#28).
 ## Links
 
 - Added on 2026-10-29 for the placement timer ([#28](https://github.com/fabogit/battleship/issues/28)).
+- Amended on 2026-11-14 for the M3 review ([#54](https://github.com/fabogit/battleship/issues/54), F14): since [#29](https://github.com/fabogit/battleship/issues/29) `startBattle` rolls the dice for the first turn instead of giving it to `P1`, the change the decision announced ([ADR-0092](0092-dice-roll-at-match-start.md)).
 - Spec: [Server: Placement](../server.md#placement) · [Server: Room lifecycle](../server.md#room-lifecycle) · [Protocol: Snapshot](../protocol.md#snapshot)
 - Implements: [ADR-0006](0006-placement-completion.md) (placement completion)
-- Amends: [ADR-0065](0065-clock-and-room-timers.md) (a `PLACEMENT` kind, reviewed after every accepted command) · [ADR-0037](0037-room-transition-shape.md) (timers are not effects)
+- Amends: [ADR-0065](0065-clock-and-room-timers.md) (a `PLACEMENT` kind, reviewed after every accepted command) · [ADR-0037](0037-room-transition-shape.md) (timers are not effects) · [ADR-0038](0038-snapshot-projection.md) (`startCountdownMs` from the stored end of the countdown)
 - Related: [ADR-0091](0091-fleet-completion-at-the-deadline.md) (fleet completion) · [ADR-0072](0072-seat-presence.md) (seat presence) · [ADR-0073](0073-room-lifecycle-with-forfeits.md) (freed seats) · [ADR-0074](0074-pause.md) (pause)
 - Issues: [#28](https://github.com/fabogit/battleship/issues/28) · [#29](https://github.com/fabogit/battleship/issues/29) (dice roll) · [#31](https://github.com/fabogit/battleship/issues/31) (timers UI)

@@ -11,7 +11,7 @@ A private space for exactly two players, shared via link (`/r/<roomId>`). It out
 _Avoid_: lobby (for the room itself), game
 
 **Seat**:
-One of the two public positions in a room: `P1` for the creator, `P2` for the joiner. A player keeps their seat until they leave or forfeit it; a joiner takes whichever seat is free.
+One of the two public positions in a room: `P1` for the creator, `P2` for the joiner. A player keeps their seat until they leave or forfeit it, or until the room expires or fails; a joiner takes whichever seat is free.
 _Avoid_: host, slot
 
 **Away**:
@@ -29,6 +29,14 @@ _Avoid_: expired room (for this case)
 **Expired room**:
 A room removed because a TTL ran out: the waiting TTL, `WAITING_TTL_MS` after it started waiting with nobody joining, the negotiation TTL, `NEGOTIATION_TTL_MS` after a join with the rules not confirmed by both, or the game-over TTL, `GAME_OVER_TTL_MS` after the match ("Room expired" in the logs). A player still in it gets `ROOM_CLOSED` with the reason. The UI calls both a closed room ("This room has closed").
 _Avoid_: closed room (in server code and logs)
+
+**Failed room**:
+A room removed because the server failed while handling it: a transition, a room timer or a presence update threw after a change was stored ("Room failed" in the logs). Its timers stop, and a player still in it gets `ROOM_CLOSED` with the reason `SERVER_ERROR` and loses the seat. The UI calls it a closed room too.
+_Avoid_: crashed room, expired room (for this case)
+
+**Room timer**:
+One of a room's server-side timers (`RoomTimers`), at most one per kind: the placement end, the turn timer, a seat's forfeit, and the waiting, negotiation and game-over TTLs. The server sets them again from the room's stored state after every change.
+_Avoid_: scheduler, timeout (for the timer itself)
 
 **Nickname**:
 The name a player chooses before creating or joining a room; trimmed, non-empty, at most `NICKNAME_MAX_LENGTH` characters, rendered as text only.
@@ -68,12 +76,15 @@ The settings of a room that both players agree on before placement: extra turn o
 _Avoid_: settings, options
 
 **Rules version**:
-A counter the server increments on every rules edit; a rules confirmation names the version it confirms.
+A counter the server increments on every rules edit that changes the rules; an edit to the rules already in place changes nothing. A rules confirmation names the version it confirms.
 _Avoid_: rules hash
 
 **Confirmation**:
-A player's agreement to the current rules version, or to their own fleet. Any rules edit clears both rules confirmations; a confirmed fleet stays locked until the player unlocks it.
+A player's agreement to the current rules version, or to their own fleet. Any rules edit that changes the rules clears both rules confirmations; a confirmed fleet stays locked until the player unlocks it.
 _Avoid_: ready
+
+**Stale confirmation**:
+A `CONFIRM_RULES` that names a rules version other than the current one, because the rules changed after the player saw them; it is refused with `STALE_RULES` and confirms nothing.
 
 **Salvo mode**:
 The rule (`isSalvoModeEnabled`) under which a turn fires as many targets as the shot allowance; standard mode is a salvo of size 1.
@@ -104,6 +115,10 @@ _Avoid_: tray, palette
 The ship the next tap on the placement board puts or moves, with that cell as its start; "Rotate" and "Remove" act on it. It stays selected after it lands.
 _Avoid_: active ship, ship in hand
 
+**Placement deadline**:
+The end of placement, `PLACEMENT_TIME_LIMIT_MS` after both players confirmed the rules. Auto-completion runs there unless both fleets were confirmed and the start countdown ended it first.
+_Avoid_: placement timeout
+
 **Start countdown**:
 The delay of `min(START_COUNTDOWN_MS, time to deadline)` that runs once both fleets are confirmed; an unlock cancels it.
 
@@ -114,6 +129,10 @@ _Avoid_: auto placement
 **Dice roll**:
 The server-side d6 roll for each player, ties re-rolled, that decides who starts; it is repeated every match.
 _Avoid_: coin toss
+
+**Starter**:
+The seat the dice roll picks to fire first in a match: the higher die of the last round.
+_Avoid_: first player, host
 
 **Dice animation**:
 The `DICE_ANIMATION_MS` after the dice roll while the clients show it. It is already the starter's turn; the first turn's timer starts at its end.
@@ -133,8 +152,16 @@ The opponent's board as a player knows it (fog-of-war): their own shots, the shi
 _Avoid_: enemy board, radar
 
 **Board toggle**:
-The pair of buttons, "My fleet" and "Enemy waters", that picks the one board a narrow screen shows during battle. It follows the turn by itself, after holding the board the last shot landed on; a wide screen shows both boards and no toggle.
+The pair of buttons, "My fleet" and "Enemy waters", that picks the one board a narrow screen shows during battle. It follows the turn by itself, after the shot hold; a board picked by hand stays in front only until the next shot or turn brings its board forward. A wide screen shows both boards and no toggle.
 _Avoid_: tabs, switcher
+
+**Shot hold**:
+The `SHOT_HOLD_MS` (1.5 s) after a `SHOT_RESOLVED` during which a narrow screen keeps the board the shot landed on in front, so both players see where it fell, before the next turn's board comes forward.
+_Avoid_: shot delay
+
+**Compact banner**:
+The presence banner as it shows during the match: one row with "Grace is disconnected.", the forfeit countdown and "Pause" / "Resume", so the boards and "Fire" stay in view. The other phases show the full banner.
+_Avoid_: mini banner, toast
 
 **Cell name**:
 How the UI names a cell: the row letter (`A`–`J`, top to bottom) followed by the column number (`1`–`10`, left to right), e.g. `B7` for `{ x: 6, y: 1 }`. The protocol always uses zero-based coordinates.
@@ -148,12 +175,20 @@ _Avoid_: aim, crosshair
 The number of targets a turn fires (`shotsAllowed`): 1 in standard mode; in salvo mode, `min(shooter's surviving ships, opponent's unshot cells)`.
 _Avoid_: shot count
 
+**Turn timer**:
+The `turnTimeLimitSeconds` a turn lasts. It starts at the end of the dice animation and again with every turn, an extra turn after a hit included, and freezes with its time left while the match is paused. When it runs out, the timeout action plays the turn.
+_Avoid_: shot clock
+
+**Low time**:
+The end of a countdown, where the client warns that it is running out: its last `LOW_TIME_MS` (10 seconds), or its last third when it is shorter than 30 seconds. It applies to the turn timer and the placement deadline.
+_Avoid_: hurry-up
+
 **Auto shot**:
 A shot the server fires for a player when the turn times out under `AUTO_RANDOM_SHOT`: the draft's valid targets, the rest uniformly random among unshot cells. It is resolved and sent like a fired shot.
 _Avoid_: AI shot
 
 **AFK**:
-A turn that ended on its timer instead of a `FIRE`. Every one increments the player's AFK counter; the player's own `FIRE` resets it, a draft does not.
+A turn that ended on its timer instead of a `FIRE`. Every one increments the player's AFK counter; the player's own `FIRE` resets it, a draft does not. The timeout that brings the counter to `MAX_CONSECUTIVE_AFK_TURNS` (3) ends the match instead of playing the turn (a forfeit, or abandoned when both are AFK).
 _Avoid_: idle, inactive
 
 **Pause**:

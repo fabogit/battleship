@@ -202,7 +202,8 @@ function parseShipPlacement(value: unknown): ShipPlacement | null {
 }
 
 /**
- * Checks the shape of a rules object. The salvo/extra-turn exclusivity is `validateRules`'s job (`INVALID_RULES`).
+ * Checks the shape of a rules object. Whether the rules can be played (salvo with extra turn, salvo before #32) is
+ * `validateRules`'s job (`INVALID_RULES`).
  * @param value The untrusted value.
  * @returns A new `GameRules`, or `null`.
  */
