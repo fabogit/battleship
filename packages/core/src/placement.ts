@@ -92,7 +92,8 @@ export function toPlacedShip(placement: ShipPlacement): PlacedShip {
  * `rules.areAdjacentShipsAllowed` is false, no ships touching, diagonally included. Lengths are right by construction,
  * because coordinates are derived. The payload shape (exact properties, known enums, an on-board integer `start`, at
  * most 5 entries) is the job of the `UPDATE_PLACEMENT` guard, which runs first (ADR-0031); this function repeats none
- * of it but still handles any `ShipPlacement`, so the client can call it too.
+ * of it but still handles any `ShipPlacement` with a known `type`, so the client can call it too. An unknown `type` is
+ * not caught here: it derives a ship with no cells, which `validateFleet` would count; the guard refuses it first.
  * @param ships The draft, in any order.
  * @param rules The room's rules; only `areAdjacentShipsAllowed` matters.
  * @returns The derived ships in input order, or the first rule broken and the ship that broke it.

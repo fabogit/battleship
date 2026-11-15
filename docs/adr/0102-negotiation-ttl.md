@@ -27,7 +27,7 @@ The value has to be long enough for two friends to agree on four rules, some of 
 
 ## Consequences
 
-- The room timers are now `PLACEMENT`, `TURN`, `DISCONNECT_FORFEIT`, `WAITING_FOR_OPPONENT`, `RULES_NEGOTIATION` and `GAME_OVER`. Every phase has a timer while both players stay connected, so no pair of sockets can hold a room's place for longer than its phases' bounds.
+- The room timers are now `PLACEMENT`, `TURN`, `DISCONNECT_FORFEIT`, `WAITING_FOR_OPPONENT`, `RULES_NEGOTIATION` and `GAME_OVER`. Every phase has a timer while both players stay connected. In `IN_PROGRESS` it bounds only a match nobody plays, within `5 × turnTimeLimitSeconds` ([ADR-0101](0101-afk-forfeit.md)); a match that is played has no bound on its length (#133).
 - What [Roadmap: Open risks](../roadmap.md#open-risks) still carries: a client that creates or joins its rooms again holds places through new entries. Each entry is bounded now, so it must act every 10 minutes per room, as for the waiting TTL.
 - A server test that keeps a room in negotiation must stay within `NEGOTIATION_TTL_MS`; the game-over TTL test now advances only that far.
 - The browser journeys skip it on the e2e server's clock (`negotiation-ttl.spec.ts`), which also closes every room left from earlier journeys.
@@ -35,6 +35,7 @@ The value has to be long enough for two friends to agree on four rules, some of 
 ## Links
 
 - Added on 2026-11-01 for bounding rules negotiation ([#128](https://github.com/fabogit/battleship/issues/128)).
+- Amended on 2026-11-14 for the M3 review ([#54](https://github.com/fabogit/battleship/issues/54), F5): the first Consequence said that no pair of sockets could hold a room's place for longer than its phases' bounds. That holds before the match, not in `IN_PROGRESS`: the AFK counter counts consecutive timeouts only, so a client that plays both seats can hold a room for about 20 hours at 120 s turns (two timeouts and one shot, repeated), and a seat that drops and comes back before its forfeit keeps the match paused. Reworded; the bound on a played match is [#133](https://github.com/fabogit/battleship/issues/133) ([Roadmap: Open risks](../roadmap.md#open-risks)).
 - Spec: [Server: Room lifecycle](../server.md#room-lifecycle) · [Server: Rules negotiation](../server.md#rules-negotiation) · [Domain: Constants](../domain.md#constants)
 - Amends: [ADR-0065](0065-clock-and-room-timers.md) (a `RULES_NEGOTIATION` kind) · [ADR-0082](0082-rules-negotiation-commands.md) (a negotiation ends without agreement)
 - Related: [ADR-0096](0096-waiting-ttl.md) (waiting TTL) · [ADR-0103](0103-negotiation-ttl-on-the-wire.md) (the reason on the wire) · [ADR-0072](0072-seat-presence.md) (forfeit) · [ADR-0083](0083-rules-kept-when-a-seat-is-freed.md) (a freed seat) · [ADR-0090](0090-placement-timer.md) (races at a deadline) · [ADR-0104](0104-room-failure-containment.md) (the task is contained)

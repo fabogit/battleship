@@ -179,7 +179,7 @@ export interface GameOverRoom extends RoomBase {
   readonly battle: Battle;
   /** The seat that won; `null` only when the reason is `ABANDONED`. */
   readonly winner: Seat | null;
-  /** How the match ended; surrender (#35) adds its reason when it lands. */
+  /** How the match ended; the wire's `SURRENDER` reason joins `GameOverRoomReason` when surrender lands (#35). */
   readonly reason: GameOverRoomReason;
 }
 

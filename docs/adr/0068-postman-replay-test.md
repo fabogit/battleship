@@ -26,6 +26,7 @@ date: 2026-10-13
 
 - Added on 2026-10-13 for server hardening ([#24](https://github.com/fabogit/battleship/issues/24)), from the M1 review ([#52](https://github.com/fabogit/battleship/issues/52)).
 - Amended on 2026-10-15 ([#23](https://github.com/fabogit/battleship/issues/23)): a step can also close a request's connection, as Postman's Disconnect button does, so `SET_PAUSED` meets an opponent who is away.
+- Amended on 2026-11-14 for the M3 review ([#54](https://github.com/fabogit/battleship/issues/54)): two step kinds joined the replay: `waitMs` moves the clock, as a person waits for a countdown to run out ([#28](https://github.com/fabogit/battleship/issues/28)), and `receives` checks a server event an open connection got, with its payload, as `DICE_ROLLED` on both seats ([#29](https://github.com/fabogit/battleship/issues/29), [ADR-0092](0092-dice-roll-at-match-start.md)). Neither sends anything.
 - Spec: [Development: Local tooling](../development.md#local-tooling)
 - Related: [ADR-0028](0028-local-tooling.md) (the Postman collection)
 - Issues: [#24](https://github.com/fabogit/battleship/issues/24), [#52](https://github.com/fabogit/battleship/issues/52), [#22](https://github.com/fabogit/battleship/issues/22) (handshake messages)

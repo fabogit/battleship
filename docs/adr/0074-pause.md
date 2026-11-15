@@ -22,6 +22,7 @@ Pause freezes the turn timer and nothing else ([ADR-0008](0008-disconnection-in-
 
 - Added on 2026-10-15 for disconnection rules ([#23](https://github.com/fabogit/battleship/issues/23)); the client's pause control is [ADR-0077](0077-opponent-presence-banner.md) (#25).
 - Amended on 2026-10-31 ([#30](https://github.com/fabogit/battleship/issues/30)): the turn timer freezes and restarts as `turnTimerStartsAt` and `turnTimeLeftMs` rather than a stopped and restarted deadline ([ADR-0099](0099-turn-timer.md)), and an absent player's turns count as AFK once the match is resumed ([ADR-0101](0101-afk-forfeit.md)).
+- Amended on 2026-11-14 for the M3 review ([#54](https://github.com/fabogit/battleship/issues/54)): the turn timer is enforced since [#30](https://github.com/fabogit/battleship/issues/30), so "not enforced yet" in the decision no longer holds: a pause freezes it and a resume runs the time left ([ADR-0099](0099-turn-timer.md)).
 - Spec: [Server: Disconnection & pause](../server.md#disconnection--pause-in_progress)
 - Implements: [ADR-0008](0008-disconnection-in-battle.md) (disconnection in battle)
 - Related: [ADR-0072](0072-seat-presence.md) (seat presence) · [ADR-0065](0065-clock-and-room-timers.md) (room timers)

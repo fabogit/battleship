@@ -30,6 +30,7 @@ Details in [Development: End-to-end journeys](../development.md#end-to-end-journ
 
 - Added on 2026-10-29 for the end-to-end suite ([#120](https://github.com/fabogit/battleship/issues/120)).
 - Amended on 2026-11-01 ([#31](https://github.com/fabogit/battleship/issues/31)): `timers.spec.ts` checks the dice and the ticking countdowns without `page.clock`, which would also hold Angular's rendering and Socket.io's timers; the dice within their 3 seconds of real time, the countdowns with a few seconds of slack after a reload ([Development: End-to-end journeys](../development.md#end-to-end-journeys)).
+- Amended on 2026-11-14 for the M3 review ([#54](https://github.com/fabogit/battleship/issues/54), F12): a run now opens 20 rooms, but at most 9 at once, and the peak of rooms open at once is what counts against `MAX_ROOMS` (50): `--repeat-each` 3 peaked at 9 too ([Development: End-to-end journeys](../development.md#end-to-end-journeys)).
 - Spec: [Development: End-to-end journeys](../development.md#end-to-end-journeys) · [Server: Testability](../server.md#testability)
 - Related: [ADR-0065](0065-clock-and-room-timers.md) (the `Clock` seam), [ADR-0066](0066-rate-limit-and-message-size.md) (rate limit), [ADR-0022](0022-workspace-type-resolution.md) (`@battleship/source`, now also on the server's `exports`)
 - Issues: [#120](https://github.com/fabogit/battleship/issues/120), [#28](https://github.com/fabogit/battleship/issues/28), [#30](https://github.com/fabogit/battleship/issues/30)

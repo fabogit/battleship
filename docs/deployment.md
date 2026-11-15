@@ -82,7 +82,7 @@ Set in **Settings → Variables and Secrets**, as plain text, in **both** the Pr
   ```bash
   pnpm --version && pnpm install --frozen-lockfile --filter @battleship/server... && pnpm --filter @battleship/server... build
   ```
-  (`...` selects the package plus its workspace dependencies, so the server build never installs Angular: the log shows `Scope: 2 of 4 workspace projects`.) Render's image ships `pnpm` and honours `packageManager` (the log prints `11.21.0`); `corepack enable` fails there because `/usr/bin` is read-only. Node comes from `.nvmrc`.
+  (`...` selects the package plus its workspace dependencies, so the server build never installs Angular: the log's `Scope:` line counts 2 projects, the server and core, out of every project in the workspace, root included; `2 of 5 workspace projects` since `packages/e2e`.) Render's image ships `pnpm` and honours `packageManager` (the log prints `11.21.0`); `corepack enable` fails there because `/usr/bin` is read-only. Node comes from `.nvmrc`.
 - **Start command:** `node packages/server/dist/index.js`
 - **Service settings:** region Frankfurt; health check path `/health` (its request logs are silenced below `warn` unless `LOG_LEVEL` is `debug` or `trace`, since Render polls it every few seconds); auto-deploy from `main`; build filters limited to `packages/server/**`, `packages/core/**` and the root workspace files, so client-only commits do not restart the server and drop live matches.
 - **Environment:** see [Environment variables › Render](#render-service-battleship-server). A missing or malformed value fails the startup, with an error that points to `packages/server/.env.example` for local runs.

@@ -34,5 +34,6 @@ The workspace had no version and no tag: the four `package.json` files said `0.0
 
 ## Links
 
+- Amended on 2026-11-14 for the M3 review ([#54](https://github.com/fabogit/battleship/issues/54), F15): the end-to-end package (`packages/e2e`, [#122](https://github.com/fabogit/battleship/pull/122)) makes five `package.json` files: the root and the four packages carry the same number, and the release step bumps all five ([Development: Versions](../development.md#versions)).
 - Spec: [Development: Versions](../development.md#versions) · [Roadmap › Review & consolidation](../roadmap.md#review--consolidation)
 - Related: [ADR-0017](0017-protocol-versioning.md) (protocol versioning)

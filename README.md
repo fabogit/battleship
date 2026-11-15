@@ -9,7 +9,7 @@ Real-time 1v1 Battleship in the browser: create a private room, share the link a
 | Client (Cloudflare Pages) | <https://battleship-ac7.pages.dev>                                                                              |
 | Server (Render)           | <https://battleship-server-jumc.onrender.com> ([`/health`](https://battleship-server-jumc.onrender.com/health)) |
 
-The server runs on Render's free tier and sleeps when idle: the first visit waits about 25 s while it wakes up. Since milestone M1, two players can play a full match with the default rules, on phones and on desktop: create a room, share its link, place the fleets and fire until one fleet is sunk. Since M2, a match survives a reload or a dropped connection: the seat is kept for 3 minutes, the match pauses while a player is away, and the page says when the opponent is away, when the server restarts and why a seat was lost. A player can also leave a room before the match, and share its link with a QR code. Timers and rules negotiation come with M3, salvo, surrender and rematch with M4 (see the [roadmap](docs/roadmap.md)).
+The server runs on Render's free tier and sleeps when idle: the first visit waits about 25 s while it wakes up. Since milestone M1, two players can play a full match with the default rules, on phones and on desktop: create a room, share its link, place the fleets and fire until one fleet is sunk. Since M2, a match survives a reload or a dropped connection: the seat is kept for 3 minutes, the match pauses while a player is away, and the page says when the opponent is away, when the server restarts and why a seat was lost. A player can also leave a room before the match, and share its link with a QR code. Since M3, the players agree on the rules before placing (extra turn on hit, ships touching, turn time, what a timed-out turn does), placement has a 60-second deadline and a start countdown, the dice decide who starts, and every turn has a timer: a player who lets three turns in a row run out loses. Salvo, surrender and rematch come with M4 (see the [roadmap](docs/roadmap.md)).
 
 ## Prerequisites
 
@@ -43,18 +43,18 @@ The browser journeys run apart, in their own CI job `e2e`: `pnpm e2e` plays them
 
 ## Docs
 
-| Document                           | Contents                                                                                                              |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| [Overview](docs/overview.md)       | Product scope, the good-faith principle, technical constraints                                                        |
-| [Development](docs/development.md) | Monorepo layout, how `@battleship/core` is resolved, code conventions, local tooling, end-to-end journeys             |
-| [Deployment](docs/deployment.md)   | Render facts that shape the design, environment variables, backend and frontend deploys                               |
-| [Domain](docs/domain.md)           | Constants, domain types, rules, randomness, placement, shot engine                                                    |
-| [Server](docs/server.md)           | Room state machine, transition rules, room logic, plugins, socket handlers, sessions, hardening, logging, testability |
-| [Protocol](docs/protocol.md)       | Handshake, Socket.io events, payload validation, the snapshot, error codes                                            |
-| [Client](docs/client.md)           | Reactive model, board and interaction, routes and lobby flow, connection states, layout, cold-start handling          |
-| [Roadmap](docs/roadmap.md)         | Milestones, review & consolidation, open risks                                                                        |
-| [Decisions](docs/adr/README.md)    | One file per architecture decision, ADR-0001 onwards                                                                  |
-| [Glossary](GLOSSARY.md)            | Domain terms and the words to avoid                                                                                   |
+| Document                           | Contents                                                                                                                         |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| [Overview](docs/overview.md)       | Product scope, the good-faith principle, technical constraints                                                                   |
+| [Development](docs/development.md) | Monorepo layout, how `@battleship/core` is resolved, code conventions, local tooling, end-to-end journeys                        |
+| [Deployment](docs/deployment.md)   | Render facts that shape the design, environment variables, backend and frontend deploys                                          |
+| [Domain](docs/domain.md)           | Constants, domain types, rules, randomness, placement, shot engine                                                               |
+| [Server](docs/server.md)           | Room state machine, transition rules, room logic, plugins, socket handlers, sessions, hardening, logging, testability            |
+| [Protocol](docs/protocol.md)       | Handshake, Socket.io events, payload validation, the snapshot, error codes                                                       |
+| [Client](docs/client.md)           | Reactive model, board and interaction, routes and lobby flow, rules screen, dice, connection states, layout, cold-start handling |
+| [Roadmap](docs/roadmap.md)         | Milestones, review & consolidation, open risks                                                                                   |
+| [Decisions](docs/adr/README.md)    | One file per architecture decision, ADR-0001 onwards                                                                             |
+| [Glossary](GLOSSARY.md)            | Domain terms and the words to avoid                                                                                              |
 
 ## How work is tracked
 

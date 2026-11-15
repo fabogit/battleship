@@ -5,7 +5,8 @@ description: |-
   1. **Connect**: the `SERVER_SHUTDOWN` listener is armed on connect. The URL carries the collection variable
      `protocolVersion` as a query parameter, since Postman cannot send the handshake `auth` (ADR-0062).
   2. Send the saved `hello` message: `ECHO` with an ack.
-  3. The ack must be `{ "ok": true, "payload": { "hello": "postman" }, "protocolVersion": 2 }`.
+  3. The ack must be `{ "ok": true, "payload": { "hello": "postman" }, "protocolVersion": … }`, with the server's
+     `PROTOCOL_VERSION` (the collection variable `protocolVersion` while they agree).
 
   Stop the server with Ctrl+C while connected: `SERVER_SHUTDOWN` arrives, then the server disconnects.
 url: '{{baseUrl}}?protocolVersion={{protocolVersion}}'
