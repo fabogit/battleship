@@ -19,7 +19,7 @@ Players are assumed to be cooperating to play a match. The room is **symmetric**
 - **State lifecycle:** ephemeral, in-memory only. No database.
 - **Network topology:** server-authoritative WebSockets. The server holds the full game state; each client only receives its own fleet and the shot history (fog-of-war).
 - **Stack:**
-  - Package manager: `pnpm` workspaces, pinned by the root `packageManager` field. Node.js 24: `.nvmrc` and the root `engines` range (enforced on install by `engineStrict`), plus an exact `NODE_VERSION` on Pages ([Frontend (Cloudflare Pages)](deployment.md#frontend-cloudflare-pages)).
+  - Package manager: `pnpm` workspaces, pinned by the root `packageManager` field. Node.js 26 LTS: the major in `.nvmrc` and the root `engines` range (enforced on install by `engineStrict`), plus an exact `NODE_VERSION` on Pages ([Frontend (Cloudflare Pages)](deployment.md#frontend-cloudflare-pages), [ADR-0111](adr/0111-node-26-lts-runtime.md)).
   - All packages are ESM (`"type": "module"`).
   - Shared domain core: pure TypeScript, zero runtime dependencies (`packages/core`).
   - Backend: Fastify + Socket.io (`packages/server`) on Render Free.
