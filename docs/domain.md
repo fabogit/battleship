@@ -171,7 +171,7 @@ export function createCryptoRng(): Rng; // production
 
 - **Injection:** placement, dice and auto shots take an `Rng`; nothing in core or in the server's room logic calls `Math.random()`. The server and the client create one `createCryptoRng()` each; tests pass `createSeededRng(seed)`.
 - **Seeded generator:** sfc32 (128-bit state, period ≥ 2^32). The seed is an integer from 0 to 2^32 − 1, used as in PractRand: `a = 0`, `b = seed`, `c = 0`, counter `1`, then 12 outputs discarded. The same seed gives the same sequence on every platform; a test pins the first outputs of seeds `0` and `42`. Any other seed (negative, fractional, too large, `NaN`) throws a `RangeError`.
-- **Production generator:** `globalThis.crypto.getRandomValues`, one 32-bit word per draw, available in browsers and Node 24 without imports. `createCryptoRng()` throws if the platform lacks it. Core declares the one method it needs instead of loading DOM or Node types.
+- **Production generator:** `globalThis.crypto.getRandomValues`, one 32-bit word per draw, available in browsers and in the Node runtime without imports. `createCryptoRng()` throws if the platform lacks it. Core declares the one method it needs instead of loading DOM or Node types.
 - **`nextInt(maxExclusive)`:** rejection sampling over 32-bit words. With `limit = 2^32 − (2^32 mod maxExclusive)`, words `≥ limit` are redrawn and the rest return `word mod maxExclusive`, so every result is equally likely. `maxExclusive` must be an integer from 1 to 2^32, otherwise `RangeError`.
 - **`pick(items)`:** `items[nextInt(items.length)]`; throws a `RangeError` on an empty array.
 - **`shuffle(items)`:** Fisher–Yates on a copy. Each permutation is equally likely and the input is never mutated.

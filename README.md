@@ -13,7 +13,7 @@ The server runs on Render's free tier and sleeps when idle: the first visit wait
 
 ## Prerequisites
 
-- **Node.js 24**, as pinned in [`.nvmrc`](.nvmrc); the root `engines` field asks for `>=24.15.0` and the install fails outside that range.
+- **Node.js 26** (the LTS line), as pinned in [`.nvmrc`](.nvmrc); the root `engines` field asks for `>=26.13.0 <27.0.0` and the install fails outside that range ([ADR-0111](docs/adr/0111-node-26-lts-runtime.md)).
 - **pnpm 11**, pinned by `packageManager` in [`package.json`](package.json). With `corepack enable`, the `pnpm` command runs exactly that version.
 
 ## Quick start

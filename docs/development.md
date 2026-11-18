@@ -13,7 +13,7 @@ battleship/
 ├── .husky/                        # pre-commit hook: lint-staged, prettier --write on the staged files (D44)
 ├── .git-blame-ignore-revs         # Formatting-only commits, skipped by git blame
 ├── .editorconfig
-├── .nvmrc                         # 24
+├── .nvmrc                         # Node major (26)
 ├── skills-lock.json               # Agent skills for coding assistants (`npx skills`): source and hash of each; the
 │                                  # installed copies (.agents/, .claude/skills/) are gitignored and restored from it
 ├── .github/workflows/ci.yml       # ci: install → format:check → typecheck → lint → test → build, required on main;
