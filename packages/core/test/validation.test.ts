@@ -295,6 +295,11 @@ describe('CONFIRM_RULES', () => {
     expect(parse(CLIENT_EVENTS.CONFIRM_RULES, { rulesVersion: Number.MAX_SAFE_INTEGER })).not.toBeNull();
   });
 
+  it('reads -0, as JSON.parse gives it for a hand-written "-0", as 0', () => {
+    const parsed = PAYLOAD_PARSERS.CONFIRM_RULES(JSON.parse('{ "rulesVersion": -0 }'));
+    expect(Object.is(parsed?.rulesVersion, 0)).toBe(true);
+  });
+
   it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1, '3', null, [3]])(
     'refuses rulesVersion %j',
     (rulesVersion) => {
@@ -403,6 +408,22 @@ describe.each([CLIENT_EVENTS.UPDATE_TARGETS, CLIENT_EVENTS.FIRE] as const)('%s',
 
   it.each([null, { x: 0, y: 0 }, '0,0'])('refuses targets that are not an array: %j', (value) => {
     expect(parse(event, { targets: value })).toBeNull();
+  });
+});
+
+describe('-0 in a coordinate', () => {
+  it.each([CLIENT_EVENTS.UPDATE_TARGETS, CLIENT_EVENTS.FIRE])('reads it as 0 in a %s target', (event) => {
+    const target = PAYLOAD_PARSERS[event](JSON.parse('{ "targets": [{ "x": -0, "y": -0 }] }'))?.targets[0];
+    expect(Object.is(target?.x, 0) && Object.is(target?.y, 0)).toBe(true);
+  });
+
+  it('reads it as 0 in a ship start', () => {
+    const payload: unknown = JSON.parse(
+      '{ "ships": [{ "type": "CARRIER", "start": { "x": -0, "y": 2 }, "orientation": "HORIZONTAL" }] }',
+    );
+    const start = PAYLOAD_PARSERS.UPDATE_PLACEMENT(payload)?.ships[0]?.start;
+    expect(Object.is(start?.x, 0)).toBe(true);
+    expect(start?.y).toBe(2);
   });
 });
 

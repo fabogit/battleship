@@ -117,6 +117,16 @@ function isTurnTimeLimit(value: unknown): value is TurnTimeLimitSeconds {
 }
 
 /**
+ * Normalizes a number that passed a guard's integer check: `-0`, which `JSON.parse` reads from a hand-written `-0` and
+ * which `>= 0` lets through, becomes `0`, so room logic and the snapshots never hold it (ADR-0031).
+ * @param value A number already checked.
+ * @returns `0` for `-0`, the value itself otherwise.
+ */
+function withoutNegativeZero(value: number): number {
+  return value === 0 ? 0 : value;
+}
+
+/**
  * Checks one coordinate axis.
  * @param value The untrusted value.
  * @returns Whether the value is an integer from 0 to `BOARD_SIZE − 1`.
@@ -169,7 +179,7 @@ export function parseNickname(value: unknown): string | null {
 /**
  * Checks a board cell.
  * @param value The untrusted value.
- * @returns A new `{ x, y }` with both axes on the board, or `null`.
+ * @returns A new `{ x, y }` with both axes on the board, `-0` read as `0`, or `null`.
  */
 function parseCoordinate(value: unknown): Coordinate | null {
   const fields = withExactKeys(value, ['x', 'y']);
@@ -178,7 +188,7 @@ function parseCoordinate(value: unknown): Coordinate | null {
   }
   const x = fields['x'];
   const y = fields['y'];
-  return isBoardIndex(x) && isBoardIndex(y) ? { x, y } : null;
+  return isBoardIndex(x) && isBoardIndex(y) ? { x: withoutNegativeZero(x), y: withoutNegativeZero(y) } : null;
 }
 
 /**
@@ -202,7 +212,7 @@ function parseShipPlacement(value: unknown): ShipPlacement | null {
 }
 
 /**
- * Checks the shape of a rules object. Whether the rules can be played (salvo with extra turn, salvo before #32) is
+ * Checks the shape of a rules object. Whether the rules can be played (salvo with extra turn on hit) is
  * `validateRules`'s job (`INVALID_RULES`).
  * @param value The untrusted value.
  * @returns A new `GameRules`, or `null`.
@@ -290,7 +300,7 @@ export const PAYLOAD_PARSERS: { readonly [E in CommandEvent]: PayloadParser<Comm
   CONFIRM_RULES: (value) => {
     const rulesVersion = withExactKeys(value, ['rulesVersion'])?.['rulesVersion'];
     return typeof rulesVersion === 'number' && Number.isSafeInteger(rulesVersion) && rulesVersion >= 0
-      ? { rulesVersion }
+      ? { rulesVersion: withoutNegativeZero(rulesVersion) }
       : null;
   },
   UPDATE_PLACEMENT: (value) => {

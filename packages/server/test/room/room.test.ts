@@ -20,11 +20,14 @@ import {
   SERVER_EVENTS,
   SHIP_TYPES,
   SHOT_OUTCOMES,
+  shotsAllowed,
   START_COUNTDOWN_MS,
   TARGET_VIOLATIONS,
   TIMEOUT_ACTIONS,
+  toCellIndex,
   toPlacedShip,
   validateFleet,
+  type Battle,
   type Coordinate,
   type GameRules,
   type RoomPhase,
@@ -56,6 +59,7 @@ import {
 import {
   apply,
   battleRoom,
+  battleRoomWith,
   cellsOf,
   deepFreeze,
   expectAccepted,
@@ -67,6 +71,7 @@ import {
   placeAndConfirm,
   placementRoom,
   ROOM_ID,
+  SALVO_RULES,
   waitingRoom,
 } from './fixtures.js';
 
@@ -113,7 +118,7 @@ describe('createRoom', () => {
   });
 });
 
-/** Rules every test edits to: every field changed but salvo, which is refused until #32 (ADR-0085). */
+/** Rules every test edits to: every field changed but salvo, which extra turn on hit excludes (ADR-0010). */
 const EDITED_RULES: GameRules = {
   isExtraTurnOnHitEnabled: true,
   areAdjacentShipsAllowed: true,
@@ -186,12 +191,13 @@ describe('rules negotiation', () => {
     });
   });
 
-  // ADR-0085: the shot engine throws on salvo until #32, so no room may agree on it.
-  it('refuses salvo alone with INVALID_RULES and SALVO_NOT_IMPLEMENTED until #32', () => {
-    expect(updateRules(negotiationRoom(), SEATS.P1, { ...DEFAULT_RULES, isSalvoModeEnabled: true })).toEqual({
-      ok: false,
-      error: ERROR_CODES.INVALID_RULES,
-      violation: RULES_VIOLATIONS.SALVO_NOT_IMPLEMENTED,
+  // ADR-0112: #32 lifted ADR-0085's refusal, so salvo on its own is an edit like any other.
+  it('accepts salvo alone as an edit, which bumps rulesVersion and clears both confirmations', () => {
+    const confirmed = expectAccepted(confirmRules(negotiationRoom(), SEATS.P2, 0)).state;
+    expect(expectAccepted(updateRules(confirmed, SEATS.P1, SALVO_RULES)).state).toMatchObject({
+      rules: SALVO_RULES,
+      rulesVersion: 1,
+      hasConfirmedRules: { P1: false, P2: false },
     });
   });
 
@@ -683,6 +689,182 @@ describe('battle', () => {
       { type: SERVER_EVENTS.SHOT_RESOLVED, payload: { shooter: SEATS.P1, results: [expected] } },
     ]);
     expect(result.state).toMatchObject({ phase: ROOM_PHASES.IN_PROGRESS, battle: { currentTurn: SEATS.P2 } });
+  });
+});
+
+describe('salvo (ADR-0112, ADR-0113, ADR-0114)', () => {
+  /** Five distinct cells, none of them shot in a fresh match. */
+  const FIVE_CELLS: readonly Coordinate[] = [cell(0, 9), cell(1, 9), cell(2, 9), cell(3, 9), cell(4, 9)];
+
+  /** The first turn of a salvo match: the room, who fires, the other seat, and when the turn's time runs out. */
+  function salvoTurn(): { state: BattleRoom; seat: Seat; opponent: Seat; endsAt: number } {
+    const state = battleRoomWith(SALVO_RULES);
+    const seat = state.battle.currentTurn;
+    return { state, seat, opponent: otherSeat(seat), endsAt: turnTimerEndsAt(state) };
+  }
+
+  /** Sends `UPDATE_TARGETS` or `FIRE` from a seat. */
+  function target(
+    state: RoomState,
+    type: typeof CLIENT_EVENTS.UPDATE_TARGETS | typeof CLIENT_EVENTS.FIRE,
+    seat: Seat,
+    targets: readonly Coordinate[],
+  ) {
+    return applyCommand(state, { type, seat, payload: { targets: [...targets] } }, NOW);
+  }
+
+  /** The room with the first `count` ships of `seat`'s own fleet sunk, as the opponent's earlier shots would have. */
+  function withSunkShips(state: BattleRoom, seat: Seat, count: number): BattleRoom {
+    const board = state.battle.boards[seat];
+    const shots = cellsOf(board.ships.slice(0, count)).map((coordinate): ShotResult => ({
+      coordinate,
+      outcome: SHOT_OUTCOMES.HIT,
+    }));
+    return { ...state, battle: { ...state.battle, boards: { ...state.battle.boards, [seat]: { ...board, shots } } } };
+  }
+
+  /**
+   * The room with every cell of `seat`'s board shot but `unshot`: hits on its fleet, misses elsewhere.
+   * @param unshot Cells left, at least one of them a ship cell so the match goes on.
+   */
+  function withBoardShotBut(state: BattleRoom, seat: Seat, unshot: readonly Coordinate[]): BattleRoom {
+    const board = state.battle.boards[seat];
+    const shipCells = new Set(cellsOf(board.ships).map(toCellIndex));
+    const left = new Set(unshot.map(toCellIndex));
+    const shots = Array.from({ length: 100 }, (_, index) => cell(index % 10, Math.floor(index / 10)))
+      .filter((coordinate) => !left.has(toCellIndex(coordinate)))
+      .map((coordinate): ShotResult => ({
+        coordinate,
+        outcome: shipCells.has(toCellIndex(coordinate)) ? SHOT_OUTCOMES.HIT : SHOT_OUTCOMES.MISS,
+      }));
+    const battle: Battle = { ...state.battle, boards: { ...state.battle.boards, [seat]: { ...board, shots } } };
+    return { ...state, battle };
+  }
+
+  it('starts a match negotiated with salvo, the shooter allowed one target per ship', () => {
+    const { state } = salvoTurn();
+    expect(state.rules).toEqual(SALVO_RULES);
+    expect(shotsAllowed(state.battle, state.rules)).toBe(5);
+  });
+
+  it('stores every partial draft and a full one, in the order sent', () => {
+    const { state, seat } = salvoTurn();
+    for (let count = 0; count <= FIVE_CELLS.length; count++) {
+      const draft = FIVE_CELLS.slice(0, count).reverse();
+      const result = expectAccepted(target(state, CLIENT_EVENTS.UPDATE_TARGETS, seat, draft));
+      expect(result.state).toMatchObject({ draftTargets: draft });
+      expect(result.effects).toEqual([]);
+    }
+  });
+
+  it('refuses a draft above the allowance with WRONG_TARGET_COUNT, the allowance shrinking with the ships', () => {
+    const { state, seat } = salvoTurn();
+    const sixCells = [...FIVE_CELLS, cell(5, 9)];
+    expect(target(state, CLIENT_EVENTS.UPDATE_TARGETS, seat, sixCells)).toEqual({
+      ok: false,
+      error: ERROR_CODES.INVALID_TARGETS,
+      violation: TARGET_VIOLATIONS.WRONG_TARGET_COUNT,
+    });
+    const fourShips = withSunkShips(state, seat, 1);
+    expect(shotsAllowed(fourShips.battle, fourShips.rules)).toBe(4);
+    expect(target(fourShips, CLIENT_EVENTS.UPDATE_TARGETS, seat, FIVE_CELLS)).toEqual({
+      ok: false,
+      error: ERROR_CODES.INVALID_TARGETS,
+      violation: TARGET_VIOLATIONS.WRONG_TARGET_COUNT,
+    });
+    expectAccepted(target(fourShips, CLIENT_EVENTS.UPDATE_TARGETS, seat, FIVE_CELLS.slice(0, 4)));
+  });
+
+  it.each([CLIENT_EVENTS.UPDATE_TARGETS, CLIENT_EVENTS.FIRE])(
+    'refuses a cell twice in %s with DUPLICATE_TARGET',
+    (type) => {
+      const { state, seat } = salvoTurn();
+      const twice = [cell(0, 9), cell(1, 9), cell(2, 9), cell(0, 9), cell(4, 9)];
+      expect(target(state, type, seat, twice)).toEqual({
+        ok: false,
+        error: ERROR_CODES.INVALID_TARGETS,
+        violation: TARGET_VIOLATIONS.DUPLICATE_TARGET,
+      });
+    },
+  );
+
+  it.each([
+    ['too few', FIVE_CELLS.slice(0, 4)],
+    ['too many', [...FIVE_CELLS, cell(5, 9)]],
+  ])('refuses a FIRE with %s targets with WRONG_TARGET_COUNT, keeping the draft', (_name, targets) => {
+    const { state, seat } = salvoTurn();
+    const drafted = apply(state, { type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload: { targets: [cell(0, 9)] } });
+    expect(target(drafted, CLIENT_EVENTS.FIRE, seat, targets)).toEqual({
+      ok: false,
+      error: ERROR_CODES.INVALID_TARGETS,
+      violation: TARGET_VIOLATIONS.WRONG_TARGET_COUNT,
+    });
+  });
+
+  it('fires a full salvo: one SHOT_RESOLVED with every result in firing order, and the turn passes', () => {
+    const { state, seat, opponent } = salvoTurn();
+    const shipCell = cellsOf(state.battle.boards[opponent].ships)[0] ?? cell(0, 0);
+    const targets = [...FIVE_CELLS.filter((c) => toCellIndex(c) !== toCellIndex(shipCell)).slice(0, 4), shipCell];
+    const result = expectAccepted(target(state, CLIENT_EVENTS.FIRE, seat, targets));
+    expect(result.effects).toHaveLength(1);
+    expect(result.effects[0]).toMatchObject({ type: SERVER_EVENTS.SHOT_RESOLVED, payload: { shooter: seat } });
+    const results = result.effects[0]?.payload.results ?? [];
+    expect(results.map((shot) => shot.coordinate)).toEqual(targets);
+    expect(results.at(-1)?.outcome).toBe(SHOT_OUTCOMES.HIT);
+    expect(result.state).toMatchObject({ battle: { currentTurn: opponent }, draftTargets: [] });
+  });
+
+  it('fires a partial draft at the timeout: the kept targets in draft order, then random ones, in one SHOT_RESOLVED', () => {
+    const { state, seat, opponent, endsAt } = salvoTurn();
+    const draft = [cell(3, 9), cell(1, 9)];
+    const drafted = apply(state, { type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload: { targets: draft } });
+    const timedOut = timeOutTurn(drafted as BattleRoom, endsAt, createSeededRng(1));
+    const filled = randomTargets(state.battle, 3, createSeededRng(1), draft);
+    expect(timedOut?.effects).toHaveLength(1);
+    expect(timedOut?.effects[0]).toMatchObject({ type: SERVER_EVENTS.SHOT_RESOLVED, payload: { shooter: seat } });
+    expect(timedOut?.effects[0]?.payload.results.map((shot) => shot.coordinate)).toEqual([...draft, ...filled]);
+    expect(timedOut?.state).toMatchObject({
+      phase: ROOM_PHASES.IN_PROGRESS,
+      battle: { currentTurn: opponent },
+      draftTargets: [],
+      afkCount: { [seat]: 1 },
+    });
+  });
+
+  it('discards a partial draft at the timeout under PASS_TURN, firing nothing', () => {
+    const { state, seat, opponent, endsAt } = salvoTurn();
+    const passing = { ...state, rules: { ...SALVO_RULES, timeoutAction: TIMEOUT_ACTIONS.PASS_TURN } };
+    const drafted = apply(passing, {
+      type: CLIENT_EVENTS.UPDATE_TARGETS,
+      seat,
+      payload: { targets: FIVE_CELLS.slice(0, 3) },
+    });
+    const timedOut = timeOutTurn(drafted as BattleRoom, endsAt, createSeededRng(1));
+    expect(timedOut?.effects).toEqual([]);
+    expect(timedOut?.state).toMatchObject({ battle: { currentTurn: opponent }, draftTargets: [] });
+    expect((timedOut?.state as BattleRoom).battle.boards[opponent].shots).toEqual([]);
+  });
+
+  // The cap keeps autoShotTargets from throwing a RangeError, which would close the room with SERVER_ERROR (ADR-0104).
+  it("caps an auto shot by the opponent's unshot cells near the end, and the shooter wins with it", () => {
+    const { state, seat, opponent, endsAt } = salvoTurn();
+    const lastShipCell = cellsOf(state.battle.boards[opponent].ships).at(-1) ?? cell(0, 0);
+    const water =
+      FIVE_CELLS.find((c) => !cellsOf(state.battle.boards[opponent].ships).some((s) => s.x === c.x && s.y === c.y)) ??
+      cell(0, 0);
+    const nearlyOver = withBoardShotBut(withSunkShips(state, seat, 2), opponent, [lastShipCell, water]);
+    expect(shotsAllowed(nearlyOver.battle, nearlyOver.rules)).toBe(2);
+    const drafted = apply(nearlyOver, { type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload: { targets: [water] } });
+    const timedOut = timeOutTurn(drafted as BattleRoom, endsAt, createSeededRng(1));
+    expect(timedOut?.effects[0]?.payload.results).toEqual([
+      { coordinate: water, outcome: SHOT_OUTCOMES.MISS },
+      expect.objectContaining({ coordinate: lastShipCell, outcome: SHOT_OUTCOMES.SUNK }),
+    ]);
+    expect(timedOut?.state).toMatchObject({
+      phase: ROOM_PHASES.GAME_OVER,
+      winner: seat,
+      reason: GAME_OVER_REASONS.FLEET_DESTROYED,
+    });
   });
 });
 

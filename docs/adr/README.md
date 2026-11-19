@@ -88,7 +88,7 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0082](0082-rules-negotiation-commands.md)          | Rules negotiation commands                   | Accepted, 2026-10-29   |
 | [ADR-0083](0083-rules-kept-when-a-seat-is-freed.md)     | Rules kept when a seat is freed              | Accepted, 2026-10-29   |
 | [ADR-0084](0084-protocol-version-3.md)                  | Protocol version 3 for rules negotiation     | Accepted, 2026-10-29   |
-| [ADR-0085](0085-salvo-refused-until-implemented.md)     | Salvo refused until it is implemented        | Accepted, 2026-10-29   |
+| [ADR-0085](0085-salvo-refused-until-implemented.md)     | Salvo refused until it is implemented        | Superseded by ADR-0112 |
 | [ADR-0086](0086-rules-edits-sent-at-once.md)            | Rules edits sent at once                     | Accepted, 2026-10-29   |
 | [ADR-0087](0087-rules-controls-as-native-inputs.md)     | Rules controls as native inputs              | Accepted, 2026-10-29   |
 | [ADR-0088](0088-rules-change-notices.md)                | Rules change notices                         | Accepted, 2026-10-29   |
@@ -115,6 +115,9 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0109](0109-afk-warning.md)                         | AFK warning and the automatic shot           | Accepted, 2026-11-01   |
 | [ADR-0110](0110-compact-presence-banner.md)             | Compact presence banner in the battle        | Accepted, 2026-11-09   |
 | [ADR-0111](0111-node-26-lts-runtime.md)                 | Node 26 LTS as the runtime                   | Accepted, 2026-11-18   |
+| [ADR-0112](0112-salvo-shot-allowance.md)                | Salvo shot allowance                         | Accepted, 2026-11-19   |
+| [ADR-0113](0113-every-salvo-target-resolves.md)         | Every target of a salvo resolves             | Accepted, 2026-11-19   |
+| [ADR-0114](0114-salvo-time-budget.md)                   | Salvo time budget                            | Accepted, 2026-11-19   |
 | [ADR-0116](0116-surrender-keeps-the-seat.md)            | Surrender keeps the seat                     | Accepted, 2026-11-19   |
 | [ADR-0117](0117-leave-guard.md)                         | Leave guard                                  | Accepted, 2026-11-19   |
 | [ADR-0118](0118-protocol-version-7.md)                  | Protocol version 7 for surrender             | Accepted, 2026-11-19   |

@@ -4,7 +4,7 @@ acknowledgement: true
 args:
   - content: |-
       {
-        "rulesVersion": 1
+        "rulesVersion": 2
       }
     contentType: json
 order: 1600

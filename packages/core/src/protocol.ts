@@ -66,8 +66,7 @@ export const ERROR_CODES = {
    */
   NOT_ALLOWED: 'NOT_ALLOWED',
   /**
-   * `UPDATE_RULES` with rules that fail `validateRules`: salvo and extra turn both on (ADR-0010), or salvo on its own
-   * until #32 (ADR-0085).
+   * `UPDATE_RULES` with rules that fail `validateRules`: salvo and extra turn both on (ADR-0010).
    */
   INVALID_RULES: 'INVALID_RULES',
   /** `CONFIRM_RULES` for a version other than the current one (ADR-0004). */

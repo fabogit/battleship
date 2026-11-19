@@ -150,9 +150,8 @@ export type RoomClosedReason = (typeof ROOM_CLOSED_REASONS)[keyof typeof ROOM_CL
 
 - `DEFAULT_RULES`: no extra turn on hit, adjacency not allowed, 30 s turns, no salvo, `AUTO_RANDOM_SHOT`.
 - `validateRules(rules)`: checks whether a match can be played with a well-formed `GameRules`. It returns `{ ok: true }` or `{ ok: false, reason }`, the first of `RULES_VIOLATIONS` that applies; the server logs the reason and never sends it, as with the placement and target violations.
-  - `SALVO_WITH_EXTRA_TURN`: salvo and extra turn on hit are exclusive ([ADR-0010](adr/0010-salvo-vs-extra-turn.md)).
-  - `SALVO_NOT_IMPLEMENTED`: salvo at all, until the shot engine supports it with #32, which drops this violation ([ADR-0085](adr/0085-salvo-refused-until-implemented.md)). Extra turn on hit is allowed.
-  - The client does not offer what `validateRules` refuses: the rules screen has no salvo control until #34 ([Client: Rules screen](client.md#rules-screen)); the server still rejects it with `INVALID_RULES`. Field types and enum membership are checked earlier by the `UPDATE_RULES` guard (`INVALID_PAYLOAD`, [Payload validation](protocol.md#payload-validation)).
+  - `SALVO_WITH_EXTRA_TURN`: salvo and extra turn on hit are exclusive ([ADR-0010](adr/0010-salvo-vs-extra-turn.md)). Salvo on its own and extra turn on hit on its own are both playable; #32 dropped the refusal of salvo, `SALVO_NOT_IMPLEMENTED` ([ADR-0112](adr/0112-salvo-shot-allowance.md)).
+  - The rules screen has no salvo control until #34 ([Client: Rules screen](client.md#rules-screen)); the server accepts salvo from any client that sends it. Field types and enum membership are checked earlier by the `UPDATE_RULES` guard (`INVALID_PAYLOAD`, [Payload validation](protocol.md#payload-validation)).
 
 ## Randomness
 
@@ -223,7 +222,7 @@ export function completeFleet(draft: readonly ShipPlacement[], rules: GameRules,
 
 ## Shot engine
 
-Decisions: [ADR-0002](adr/0002-who-starts.md) (who starts), [ADR-0033](adr/0033-turn-resolution.md) (turn resolution), [ADR-0034](adr/0034-shot-history.md) (shot history).
+Decisions: [ADR-0002](adr/0002-who-starts.md) (who starts), [ADR-0033](adr/0033-turn-resolution.md) (turn resolution), [ADR-0034](adr/0034-shot-history.md) (shot history), [ADR-0112](adr/0112-salvo-shot-allowance.md) (salvo shot allowance), [ADR-0113](adr/0113-every-salvo-target-resolves.md) (salvo resolution).
 
 ```typescript
 export interface Board {
@@ -250,6 +249,7 @@ export type TurnResolution =
   | { readonly ok: false; readonly reason: TargetViolation; readonly targetIndex: number | null };
 
 export function shotsAllowed(battle: Battle, rules: GameRules): number;
+export function countSurvivingShips(board: Board): number;
 export function validateTargets(targets: readonly Coordinate[], shots: readonly ShotResult[], count: number): TargetValidation;
 export function resolveTurn(battle: Battle, targets: readonly Coordinate[], rules: GameRules): TurnResolution;
 export function randomTargets(battle: Battle, count: number, rng: Rng, excluded?: readonly Coordinate[]): Coordinate[];
@@ -260,7 +260,10 @@ export function rollDice(rng: Rng): DiceRolledPayload; // the protocol's DICE_RO
 - **Who starts** (`rollDice`): a d6 per seat, `P1`'s die drawn first, both rolled again while they show the same face; the seat with the higher face in the last round fires first. It returns every round, the ties first, and the `starter`, as `DICE_ROLLED` carries them ([Server: Placement](server.md#placement), [ADR-0092](adr/0092-dice-roll-at-match-start.md)). Two draws per round, so the same seed gives the same rounds; it ends after one round five times in six.
 - **Unified model:** every turn fires a list of targets. Standard mode is a salvo of size 1.
 - **State:** a `Battle` holds each seat's own `Board` (its fleet and the opponent's shots at it) and `currentTurn`, the seat that fires next. The shots on a board are the snapshot's lists as they are: the owner's `incomingShots`, the opponent's `outgoingShots`. Hits and sinks are derived from the shot coordinates and the fleet, never from the stored outcomes.
-- **Shots allowed per turn** (`shotsAllowed`): standard → `1`; salvo → `min(shooter's surviving ships, opponent's unshot cells)`. Salvo lands with [#32](https://github.com/fabogit/battleship/issues/32): until then `shotsAllowed`, and so `resolveTurn`, throw when `isSalvoModeEnabled` is true. The signature already takes the `Battle` salvo needs.
+- **Shots allowed per turn** (`shotsAllowed`, [ADR-0112](adr/0112-salvo-shot-allowance.md)): standard → `1`; salvo → `min(shooter's surviving ships, opponent's unshot cells)`.
+  - The shooter is `battle.currentTurn`: the ships come from the shooter's own board, the unshot cells from the opponent's. The count depends on the battle only, so both seats' snapshots carry the shooter's allowance ([Protocol: Snapshot](protocol.md#snapshot)).
+  - It shrinks as the shooter's ships sink (5 → 4 → … → 1). The unshot cells cap it near the end, so the count never exceeds what `randomTargets` can draw: without the cap, an auto shot would throw a `RangeError` and the room would close with `SERVER_ERROR`. While the match goes on both counts are at least 1.
+- **Surviving ships** (`countSurvivingShips`): the ships of a board's fleet with at least one cell not shot, from `0` to the fleet's size. A ship is sunk when every one of its cells is among the board's shots; that one rule (the internal `isShipSunk`) gives the `SUNK` results, the winner and the salvo allowance.
 - **Target constraints** (`validateTargets`), checked in this order, the first broken one reported:
   - **Count** (`WRONG_TARGET_COUNT`): exactly `shotsAllowed` targets. `targetIndex` is `null`.
   - Then per target, in input order:
@@ -269,11 +272,11 @@ export function rollDice(rng: Rng): DiceRolledPayload; // the protocol's DICE_RO
     - **Never previously targeted** (`ALREADY_TARGETED`): no cell already in the board's shots, hit or miss.
   - It needs only the shots, not the fleet, so the client can run it on its `outgoingShots` before firing.
 - **Boundary with the payload guards:** the `FIRE` guard runs first and answers `INVALID_PAYLOAD` for whatever no turn could accept: a malformed or extra property, a non-integer or off-board coordinate, no target, more than `FLEET.length` targets ([Payload validation](protocol.md#payload-validation), [ADR-0031](adr/0031-payload-guard-strictness.md)). The constraints above depend on the turn and belong to the engine; the server maps a rejection to `INVALID_TARGETS` and logs the reason, which the client never sees. The engine still checks the bounds itself, so any caller is safe.
-- **Resolution** (`resolveTurn`): validates the targets against `battle.currentTurn`'s opponent board, then resolves them in input order, each target seeing the hits of the ones before it. A target on no ship is `MISS`; on a ship is `HIT`, or `SUNK` when it leaves the ship with no intact cell, and a `SUNK` result carries the whole `PlacedShip` in `sunkShip`. Victory is checked once, after the last target: `winner` is the shooter when every ship of the opponent's fleet is sunk (`FLEET_DESTROYED`), `null` otherwise. The results go to `SHOT_RESOLVED` as they are, and are appended to the opponent's board.
+- **Resolution** (`resolveTurn`): validates the targets against `battle.currentTurn`'s opponent board, then resolves them in input order, each target seeing the hits of the ones before it. A target on no ship is `MISS`; on a ship is `HIT`, or `SUNK` when it leaves the ship with no intact cell, and a `SUNK` result carries the whole `PlacedShip` in `sunkShip`. Two targets on one ship in one salvo give `HIT` then `SUNK`. Every target resolves, even after one has sunk the last ship (the rest can only miss), so there is one result per target. Victory is checked once, after the last target: `winner` is the shooter when every ship of the opponent's fleet is sunk (`FLEET_DESTROYED`), `null` otherwise ([ADR-0113](adr/0113-every-salvo-target-resolves.md)). The results go to `SHOT_RESOLVED` as they are, and are appended to the opponent's board.
 - **Next turn**, set in the returned `battle.currentTurn`:
-  - `isExtraTurnOnHitEnabled` (standard mode only): any `HIT`/`SUNK`, including from an auto shot, gives the same player another turn with a fresh timer.
+  - `isExtraTurnOnHitEnabled` (standard mode only): any `HIT`/`SUNK`, including from an auto shot, gives the same player another turn with a fresh timer. A salvo turn never earns one, whatever the flag says.
   - Otherwise the turn passes to the opponent.
   - When the turn has a winner there is no next turn, and `currentTurn` stays the shooter's.
 - **Purity:** every function returns new values and never mutates its input; the new `Battle` shares the board the turn did not touch. A rejected turn leaves the battle as it was.
 - **Auto shots** (`randomTargets`): `count` distinct cells of the opponent's board that were never shot, uniformly random (every set of cells, in every order, equally likely; no hunting AI). The unshot cells are listed row by row and shuffled with the injected `Rng` ([Randomness](#randomness)), so the same battle and seed give the same targets. `excluded` leaves more cells out besides the shot ones. `count` is normally `shotsAllowed`; anything but an integer from 0 to the number of cells left throws a `RangeError`.
-- **Timed-out turns** (`autoShotTargets`, the `AUTO_RANDOM_SHOT` timeout action, [ADR-0100](adr/0100-timeout-actions.md)): the draft's targets that are still valid (on the board, never shot, not repeated), in draft order and up to `count`, then `randomTargets` for the rest, with the kept cells excluded. The result passes `resolveTurn` when `count` is `shotsAllowed`.
+- **Timed-out turns** (`autoShotTargets`, the `AUTO_RANDOM_SHOT` timeout action, [ADR-0100](adr/0100-timeout-actions.md)): the draft's targets that are still valid (on the board, never shot, not repeated), in draft order and up to `count`, then `randomTargets` for the rest, with the kept cells excluded. The result passes `resolveTurn` when `count` is `shotsAllowed`. In salvo a partial draft is kept and filled up to the allowance.
