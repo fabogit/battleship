@@ -19,7 +19,7 @@ A seat no connection is bound to: its player closed the tab, lost the network or
 _Avoid_: offline, absent
 
 **Leave**:
-A player freeing their own seat before the match with `LEAVE_ROOM` ("Leave room"): the seat is free for someone else at once, and the room closes when nobody is left. Once the match has started, leaving is a surrender (#35) or a rematch choice (#36).
+A player freeing their own seat before the match with `LEAVE_ROOM` ("Leave room"): the seat is free for someone else at once, and the room closes when nobody is left. During the match, leaving is a surrender, which keeps the seat; at game over, it is a rematch choice (#36).
 _Avoid_: quit, exit, kick
 
 **Closed room**:
@@ -200,7 +200,7 @@ Losing by absence. In a match it ends the match: `AFK_FORFEIT` when a player rea
 _Avoid_: walkover
 
 **Surrender**:
-A player's own decision to end a match in progress, through `SURRENDER` or `LEAVE_ROOM`.
+A player's own decision to end a match in progress, through `SURRENDER` or `LEAVE_ROOM`: the other player wins, and both keep their seats ([ADR-0116](docs/adr/0116-surrender-keeps-the-seat.md)).
 _Avoid_: resign, concede, quit
 
 **Abandoned**:

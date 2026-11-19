@@ -28,7 +28,7 @@ Every phase ends deployed and playable on the production URLs.
 4. **Variants & end-game**
    - Salvo (draft targets, shot allowance).
    - Extra turn on hit is already in: the engine since #80, the rules toggle since #121, and the board held in view for it since #139. What is left for M4 is its journey, wording and AFK edge cases (see #33).
-   - Surrender; rematch flow.
+   - Surrender (#35): `SURRENDER`, and `LEAVE_ROOM` during the match, end it with both seats kept; the battle view asks first, and so does leaving the room page during the match (protocol version 7, ADR-0116–0118). Rematch flow (#36).
 5. **Polish**
    - i18n (IT/EN), mobile layout refinement, accessibility pass, animations (dice, shots).
 
