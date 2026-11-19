@@ -165,6 +165,38 @@ describe('RulesStore', () => {
       expect(socket.emitWithAck).not.toHaveBeenCalled();
     });
 
+    it('excludes extra turn on hit while salvo is on, and salvo while extra turn on hit is on (ADR-0119)', () => {
+      createStore();
+      expect(store.excludedRule()).toBeNull();
+
+      receive({ rules: { ...DEFAULT_RULES, isSalvoModeEnabled: true }, rulesVersion: 1 });
+      expect(store.excludedRule()).toBe('isExtraTurnOnHitEnabled');
+
+      receive({ rules: { ...DEFAULT_RULES, isExtraTurnOnHitEnabled: true }, rulesVersion: 2 });
+      expect(store.excludedRule()).toBe('isSalvoModeEnabled');
+    });
+
+    it.each([
+      [{ isSalvoModeEnabled: true }, 'isExtraTurnOnHitEnabled'],
+      [{ isExtraTurnOnHitEnabled: true }, 'isSalvoModeEnabled'],
+    ] as const)('sends nothing for the excluded rule, and never turns the other one off (%o)', (on, excluded) => {
+      createStore({ rules: { ...DEFAULT_RULES, ...on } });
+
+      store.change(excluded, true);
+
+      expect(socket.emitWithAck).not.toHaveBeenCalled();
+      expect(store.rules()).toEqual({ ...DEFAULT_RULES, ...on });
+    });
+
+    it('follows the rules on screen: the player turning salvo on excludes extra turn on hit before the ack', () => {
+      createStore();
+      holdNextReply();
+
+      store.change('isSalvoModeEnabled', true);
+
+      expect(store.excludedRule()).toBe('isExtraTurnOnHitEnabled');
+    });
+
     it('keeps the change while its ack is on its way, over an older snapshot', () => {
       createStore();
       holdNextReply();

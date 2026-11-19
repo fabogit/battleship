@@ -43,6 +43,16 @@ legend {
   cursor: pointer;
 }
 
+/* The switch's name, and under it, while the other exclusive rule is on, why it is inactive (ADR-0119). */
+.name {
+  display: grid;
+}
+
+.hint {
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+}
+
 /* A native checkbox drawn as a switch: 3rem by 1.75rem (48 by 28px), the knob on the right when on. */
 .switch input {
   flex: none;
@@ -73,6 +83,15 @@ legend {
 .switch input:checked {
   border-color: var(--color-focus);
   background: var(--color-focus);
+}
+
+.switch input[aria-disabled='true'] {
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.switch:has(input[aria-disabled='true']) {
+  cursor: not-allowed;
 }
 
 .switch input:checked::before {

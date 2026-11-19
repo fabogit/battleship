@@ -1,12 +1,15 @@
 import { ERROR_CODES, TIMEOUT_ACTIONS, type GameRules, type TimeoutAction } from '@battleship/core';
 
 import { TRANSPORT_ERRORS } from '../../core/game-socket';
-import { RULES_EDITORS, RULES_NOTICE_KINDS, type RulesCommandError, type RulesNotice } from './rules-store';
+import {
+  RULES_EDITORS,
+  RULES_NOTICE_KINDS,
+  type ExclusiveRule,
+  type RulesCommandError,
+  type RulesNotice,
+} from './rules-store';
 
-/**
- * How the notice words one changed rule, after who changed it: one phrase per rule, salvo included, since another
- * client may offer what this one does not.
- */
+/** How the notice words one changed rule, after who changed it: one phrase per rule. */
 export type RuleChangeWords = {
   readonly [K in keyof GameRules]: (value: GameRules[K]) => string;
 };
@@ -26,6 +29,13 @@ export interface RulesText {
   readonly legend: string;
   /** The switch for `isExtraTurnOnHitEnabled`. */
   readonly extraTurn: string;
+  /** The switch for `isSalvoModeEnabled`. */
+  readonly salvo: string;
+  /**
+   * Under an exclusive switch while the other one is on, by the rule it sets: why it is inactive (ADR-0119). Shown,
+   * and read as the switch's description.
+   */
+  readonly excluded: Readonly<Record<ExclusiveRule, string>>;
   /** The switch for `areAdjacentShipsAllowed`. */
   readonly adjacentShips: string;
   /** The legend of the turn time limit options. */
@@ -109,6 +119,11 @@ export const RULES_TEXT: RulesText = {
     `Agree on the rules with ${nickname}. The match starts when you have both confirmed them; if you have not within ${String(minutes)} minutes, the room closes.`,
   legend: 'Rules',
   extraTurn: 'Extra turn on hit',
+  salvo: 'Salvo: a shot per ship afloat',
+  excluded: {
+    isExtraTurnOnHitEnabled: 'Not with salvo. Turn salvo off first.',
+    isSalvoModeEnabled: 'Not with extra turn on hit. Turn it off first.',
+  },
   adjacentShips: 'Ships may touch',
   turnTimeLimit: 'Time per turn',
   seconds: (seconds) => `${String(seconds)} s`,
