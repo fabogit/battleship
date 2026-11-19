@@ -5,9 +5,11 @@
  * carries both final boards (ADR-0064). 3: `JOIN_ROOM` opens rules negotiation instead of placement (ADR-0084). 4: a room
  * the server closes tells the sockets still in it with `ROOM_CLOSED` (ADR-0097). 5: a server failure refuses a command
  * with `SERVER_ERROR`, or closes its room with the `ROOM_CLOSED` reason `SERVER_ERROR` (ADR-0105). 6: a room whose
- * players do not agree on the rules in time closes with the `ROOM_CLOSED` reason `NEGOTIATION_TTL` (ADR-0103).
+ * players do not agree on the rules in time closes with the `ROOM_CLOSED` reason `NEGOTIATION_TTL` (ADR-0103). 7:
+ * `SURRENDER`, and `LEAVE_ROOM` during the match, end it with the reason `SURRENDER` instead of `NOT_ALLOWED`
+ * (ADR-0118).
  */
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** Side length of the square board, in cells. */
 export const BOARD_SIZE = 10;
