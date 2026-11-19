@@ -239,14 +239,18 @@ export interface ClientToServerEvents {
   FIRE: (payload: TargetsPayload, ack: Ack<AckResponse>) => void;
   /** Pauses or resumes `IN_PROGRESS`; only the connected player, while the opponent is disconnected (`NOT_ALLOWED`). */
   SET_PAUSED: (payload: SetPausedPayload, ack: Ack<AckResponse>) => void;
-  /** Ends an `IN_PROGRESS` match with reason `SURRENDER`. */
+  /**
+   * Ends an `IN_PROGRESS` match with reason `SURRENDER`, the other seat winning; from either seat, on any turn, paused
+   * or not. Both seats stay seated (ADR-0116). `WRONG_PHASE` in any other phase.
+   */
   SURRENDER: (payload: EmptyPayload, ack: Ack<AckResponse>) => void;
   /** Picks what happens after `GAME_OVER`. */
   REMATCH_CHOICE: (payload: RematchChoicePayload, ack: Ack<AckResponse>) => void;
   /**
-   * Frees the sender's seat before the match (`WAITING_FOR_OPPONENT`, `RULES_NEGOTIATION`, `PLACEMENT`). The contract
-   * also has it end an `IN_PROGRESS` match as `SURRENDER` (#35) and be the `LEAVE` choice at `GAME_OVER` (#36); until
-   * those land, both phases refuse it with `NOT_ALLOWED` (ADR-0046).
+   * Frees the sender's seat before the match (`WAITING_FOR_OPPONENT`, `RULES_NEGOTIATION`, `PLACEMENT`); the leaver gets
+   * the ack and nothing more. In `IN_PROGRESS` it is a surrender: the match ends with reason `SURRENDER` as after
+   * `SURRENDER`, and the seat stays, so the leaver gets the game-over `STATE` too (ADR-0116). The contract also has it be
+   * the `LEAVE` choice at `GAME_OVER` (#36); until that lands, `GAME_OVER` refuses it with `NOT_ALLOWED` (ADR-0046).
    */
   LEAVE_ROOM: (payload: EmptyPayload, ack: Ack<AckResponse>) => void;
 }

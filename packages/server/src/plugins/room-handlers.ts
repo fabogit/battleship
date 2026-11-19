@@ -29,7 +29,7 @@ import type { Socket } from 'socket.io';
 import type { Clock } from '../clock.js';
 import type { RoomManager } from '../room/room-manager.js';
 import { ROOM_TIMER_KINDS, RoomTimers, type RoomTimerKind } from '../room/room-timers.js';
-import type { RejectedTransition, RoomState, SeatCommand, SeatCommandEvent } from '../room/room.js';
+import type { RejectedTransition, RoomEffect, RoomState, SeatCommand, SeatCommandEvent } from '../room/room.js';
 import { projectSnapshot } from '../room/snapshot.js';
 import type { GameServer, GameSocket } from './socket-io.js';
 
@@ -528,6 +528,34 @@ function listenToCommands(
   };
 
   /**
+   * Sends what follows an accepted change to a seated player's room, after its ack (ADR-0047): the effects to every
+   * socket of the room, then the timer review and each seated socket's `STATE`.
+   * @param roomId The room that stored the change.
+   * @param before The room before it, to log a change of phase.
+   * @param state The room after it.
+   * @param effects What goes out before `STATE`, in order.
+   * @param at The time of the command, for the remaining times.
+   */
+  const announce = (
+    roomId: string,
+    before: RoomState | undefined,
+    state: RoomState,
+    effects: readonly RoomEffect[],
+    at: number,
+  ): void => {
+    for (const effect of effects) {
+      io.to(roomId).emit(effect.type, effect.payload);
+    }
+    if (state.phase !== before?.phase) {
+      log.info({ roomId, phase: state.phase }, 'Room phase changed');
+    }
+    // A confirmation or an unlock moves the end of placement without changing the phase; the end of a match stops the
+    // turn timer and the forfeit clock and starts the game-over TTL.
+    reviewTimers(roomId);
+    sendState(io, state, at);
+  };
+
+  /**
    * Runs a seated player's command against their room: ack, effects to both players, then `STATE` to each.
    * @template T The data an accepted command's ack carries besides `ok`.
    * @param event The command, for the log.
@@ -555,22 +583,16 @@ function listenToCommands(
     }
     settle(event, binding.roomId, reply, () => {
       reply({ ok: true, ...ackData(result.state) });
-      for (const effect of result.effects) {
-        io.to(binding.roomId).emit(effect.type, effect.payload);
-      }
-      if (result.state.phase !== before?.phase) {
-        log.info({ roomId: binding.roomId, phase: result.state.phase }, 'Room phase changed');
-      }
-      // A confirmation or an unlock moves the end of placement without changing the phase.
-      reviewTimers(binding.roomId);
-      sendState(io, result.state, at);
+      announce(binding.roomId, before, result.state, result.effects, at);
     });
   };
 
   /**
-   * Frees the sender's seat (`LEAVE_ROOM`, docs/server.md#leaving): every socket bound to it loses it, since the
-   * secret that could bring it back is gone. The ack comes first, then the other player gets `STATE`; the leaver gets
-   * none. A room nobody is left in closes.
+   * Leaves the sender's room (`LEAVE_ROOM`, docs/server.md#leaving). Before the match the seat is freed: every socket
+   * bound to it loses it, since the secret that could bring it back is gone, the ack comes first, then the other
+   * player gets `STATE` and the leaver none, and a room nobody is left in closes. During the match it is a surrender
+   * (ADR-0116), handled as `SURRENDER` is: the seat stays, so its sockets keep their binding and their place in the
+   * Socket.io room, and after the ack both seats get the game-over `STATE`.
    * @param reply The ack.
    */
   const leave = (reply: (response: AckResponse) => void): void => {
@@ -580,16 +602,25 @@ function listenToCommands(
       return;
     }
     const { roomId, seat } = binding;
+    const at = now();
     const before = rooms.get(roomId);
     const result = tryTransition(CLIENT_EVENTS.LEAVE_ROOM, roomId, () => rooms.leave(roomId, seat));
     if (!result.ok) {
       refuse(CLIENT_EVENTS.LEAVE_ROOM, reply, result);
       return;
     }
+    const { state } = result;
+    if (state?.phase === ROOM_PHASES.GAME_OVER) {
+      settle(CLIENT_EVENTS.LEAVE_ROOM, roomId, reply, () => {
+        reply({ ok: true });
+        announce(roomId, before, state, [], at);
+      });
+      return;
+    }
     settle(CLIENT_EVENTS.LEAVE_ROOM, roomId, reply, () => {
       unbindSeat(roomId, seat);
       reply({ ok: true });
-      settleFreedSeat(roomId, before, result.state, CLIENT_EVENTS.LEAVE_ROOM);
+      settleFreedSeat(roomId, before, state, CLIENT_EVENTS.LEAVE_ROOM);
     });
   };
 
@@ -702,7 +733,15 @@ function listenToCommands(
         NO_ACK_DATA,
       );
     },
-    SURRENDER: notYetSupported(CLIENT_EVENTS.SURRENDER),
+    SURRENDER: (payload, reply) => {
+      // Either seat may give up, on its turn or not, paused or not (ADR-0116).
+      dispatch(
+        CLIENT_EVENTS.SURRENDER,
+        reply,
+        (seat) => ({ type: CLIENT_EVENTS.SURRENDER, seat, payload }),
+        NO_ACK_DATA,
+      );
+    },
     REMATCH_CHOICE: notYetSupported(CLIENT_EVENTS.REMATCH_CHOICE),
     LEAVE_ROOM: (_payload, reply) => {
       leave(reply);

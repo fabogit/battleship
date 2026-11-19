@@ -317,11 +317,12 @@ export class RoomManager {
   }
 
   /**
-   * Frees a seated player's seat (`LEAVE_ROOM`), removing the room when nobody is left in it.
+   * Leaves a seated player's room (`LEAVE_ROOM`): before the match the seat is freed, and the room removed when nobody
+   * is left in it; during the match the seat stays and the match ends as a surrender (ADR-0116).
    * @param roomId The sender's room, as the caller bound it to the socket.
    * @param seat The sender's seat.
-   * @returns The room after the seat was freed (`null` once removed), `NOT_ALLOWED` once the match has started, or
-   * `ROOM_NOT_FOUND` when the room is gone.
+   * @returns The waiting room after the seat was freed (`null` once removed), the room in `GAME_OVER` after a
+   * surrender, `NOT_ALLOWED` in `GAME_OVER`, or `ROOM_NOT_FOUND` when the room is gone.
    */
   leave(roomId: string, seat: Seat): LeftRoom | RejectedTransition {
     const room = this.#rooms.get(roomId);

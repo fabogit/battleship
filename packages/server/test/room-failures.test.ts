@@ -26,6 +26,7 @@ import {
   seatedPlayers,
   send,
   start,
+  startedMatch,
   stop,
   type Player,
   type SeatedPlayers,
@@ -299,6 +300,20 @@ describe('a failure after a command stored its change', () => {
     // The player left behind gets the room back in `WAITING_FOR_OPPONENT`, then the notice.
     expect((await failing.p1.inbox.state()).phase).toBe(ROOM_PHASES.WAITING_FOR_OPPONENT);
     await expectClosed(failing.roomId, [failing.p1]);
+    expectLoggedFailure('Room failed', { roomId: failing.roomId, event: CLIENT_EVENTS.LEAVE_ROOM });
+    await expectToPlay(other);
+  });
+
+  it('closes the room LEAVE_ROOM ended the match in when its timer review throws', async () => {
+    await startLogged();
+    const failing = await startedMatch();
+    const other = await placingPlayers();
+    vi.spyOn(rooms, 'placementEndsAt').mockImplementationOnce(fault);
+
+    expect(await send(failing.p1, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: true });
+
+    // The leaver kept its seat (ADR-0116), so the notice reaches both players.
+    await expectClosed(failing.roomId, [failing.p1, failing.p2]);
     expectLoggedFailure('Room failed', { roomId: failing.roomId, event: CLIENT_EVENTS.LEAVE_ROOM });
     await expectToPlay(other);
   });

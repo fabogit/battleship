@@ -4,16 +4,19 @@ import {
   createPlayerSecret,
   createSeededRng,
   DEFAULT_RULES,
+  DICE_ANIMATION_MS,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
   GAME_OVER_REASONS,
   GAME_OVER_TTL_MS,
   generateRoomId,
   MAX_ROOMS,
+  otherSeat,
   parseSessionCredentials,
   PLACEMENT_TIME_LIMIT_MS,
   PROTOCOL_VERSION,
   REMATCH_CHOICES,
+  ROOM_CLOSED_REASONS,
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
@@ -21,6 +24,7 @@ import {
   START_COUNTDOWN_MS,
   type CommandEvent,
   type CommandPayload,
+  type Coordinate,
   type PlayerStateSnapshot,
   type SessionCredentials,
 } from '@battleship/core';
@@ -39,6 +43,7 @@ import {
   P1_FLEET_SEED,
   P2_FLEET_SEED,
   placedFleet,
+  placeFleets,
   placements,
   placingPlayers,
   player,
@@ -61,7 +66,6 @@ import {
 
 /** Commands whose room logic lands later; refused with `NOT_ALLOWED` after their guard (ADR-0046). */
 const NOT_YET_SUPPORTED: readonly { [E in CommandEvent]: readonly [E, CommandPayload<E>] }[CommandEvent][] = [
-  [CLIENT_EVENTS.SURRENDER, {}],
   [CLIENT_EVENTS.REMATCH_CHOICE, { choice: REMATCH_CHOICES.LEAVE }],
 ];
 
@@ -134,6 +138,42 @@ async function skipToState(
       return snapshot;
     }
   }
+}
+
+/**
+ * Proves that nothing is left in either player's inbox after the match ended. P1's probe moves its socket out of the
+ * room, which leaves its seat away, so P2 gets that `STATE` before its own probe.
+ */
+async function expectBothDone(p1: Player, p2: Player): Promise<void> {
+  await expectNothingPending(p1);
+  expect((await p2.inbox.state()).opponent).toMatchObject({ isConnected: false });
+  await expectNothingPending(p2);
+}
+
+/**
+ * Plays a started match up to P1's winning shot without reading the inboxes: P1 hits every cell of P2's fleet but the
+ * last, P2 fires at water in between, so P1 is to fire the shot that sinks the last ship. The clock moves `TURN_MS`
+ * per round, and once more before that shot.
+ * @returns The cell that sinks the last ship.
+ */
+async function playToLastShip(p1: Player, p2: Player): Promise<Coordinate> {
+  const p1Targets = placedFleet(P2_FLEET_SEED).flatMap((ship) => ship.coordinates);
+  const p2Targets = waterOf(placedFleet(P1_FLEET_SEED));
+  const last = p1Targets.pop();
+  if (last === undefined) {
+    expect.fail('no fleet');
+  }
+  for (const [turn, target] of p1Targets.entries()) {
+    clock.advance(TURN_MS);
+    const water = p2Targets[turn];
+    if (water === undefined) {
+      expect.fail('no water left');
+    }
+    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [target] })).toEqual({ ok: true });
+    expect(await send(p2, CLIENT_EVENTS.FIRE, { targets: [water] })).toEqual({ ok: true });
+  }
+  clock.advance(TURN_MS);
+  return last;
 }
 
 describe('a match between two real clients', () => {
@@ -912,6 +952,160 @@ describe('disconnect forfeit', () => {
   });
 });
 
+describe('SURRENDER (ADR-0116)', () => {
+  it.each([SEATS.P1, SEATS.P2])(
+    'from %s, on either turn, ends the match: the ack, then the game-over STATE to both seats, which stay',
+    async (loser) => {
+      await start();
+      const { p1, p2, roomId } = await startedMatch();
+      const players = { P1: p1, P2: p2 };
+      // The dice gave P1 the first turn, so P2 surrenders on the opponent's turn, and before the turn timer started.
+      await sendOnTimeline(players[loser], CLIENT_EVENTS.SURRENDER, {});
+      expect(await players[loser].inbox.ack()).toEqual({ ok: true });
+      for (const seat of Object.values(SEATS)) {
+        expect(await players[seat].inbox.state()).toMatchObject({
+          phase: ROOM_PHASES.GAME_OVER,
+          me: { seat, isConnected: true },
+          opponent: { isConnected: true, forfeitRemainingMs: null },
+          gameOver: { winner: otherSeat(loser), reason: GAME_OVER_REASONS.SURRENDER },
+        });
+      }
+      expect(rooms.get(roomId)).toMatchObject({ players: { P1: { nickname: 'Alice' }, P2: { nickname: 'Bob' } } });
+      // Still seated: a second surrender finds the match over, not a socket without a seat.
+      expect(await send(players[loser], CLIENT_EVENTS.SURRENDER, {})).toEqual({
+        ok: false,
+        error: ERROR_CODES.WRONG_PHASE,
+      });
+      // The turn timer that would have started after the dice animation stays stopped, and the game-over TTL runs.
+      clock.advance(GAME_OVER_TTL_MS - 1);
+      expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.GAME_OVER);
+      clock.advance(1);
+      for (const { inbox } of [p1, p2]) {
+        expect(await inbox.roomClosed()).toEqual({ roomId, reason: ROOM_CLOSED_REASONS.GAME_OVER_TTL });
+      }
+    },
+  );
+
+  it('is refused with NOT_ALLOWED without a seat, and with WRONG_PHASE before the match', async () => {
+    await start();
+    expect(await send(await player(), CLIENT_EVENTS.SURRENDER, {})).toEqual({
+      ok: false,
+      error: ERROR_CODES.NOT_ALLOWED,
+    });
+    const { p1, p2 } = await seatedPlayers();
+    expect(await send(p1, CLIENT_EVENTS.SURRENDER, {})).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
+    await agreeOnRules(p1, p2);
+    expect(await send(p2, CLIENT_EVENTS.SURRENDER, {})).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
+  });
+
+  it('from both seats at once ends the match once: the second is WRONG_PHASE, and each player gets one STATE', async () => {
+    await start();
+    const { p1, p2 } = await startedMatch();
+    const acks = await Promise.all([send(p1, CLIENT_EVENTS.SURRENDER, {}), send(p2, CLIENT_EVENTS.SURRENDER, {})]);
+    expect(acks).toContainEqual({ ok: true });
+    expect(acks).toContainEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
+    const loser = (acks[0] as { readonly ok: boolean }).ok ? SEATS.P1 : SEATS.P2;
+    for (const { inbox } of [p1, p2]) {
+      expect((await inbox.state()).gameOver).toMatchObject({
+        winner: otherSeat(loser),
+        reason: GAME_OVER_REASONS.SURRENDER,
+      });
+    }
+    await expectBothDone(p1, p2);
+  });
+
+  // The server runs a command to its end before it reads the next one, so two commands in flight are handled one
+  // after the other; each order is pinned here.
+  it.each([
+    ['FIRE', GAME_OVER_REASONS.FLEET_DESTROYED],
+    ['SURRENDER', GAME_OVER_REASONS.SURRENDER],
+  ] as const)(
+    'against the FIRE that sinks the last ship: %s, handled first, ends the match, the other is WRONG_PHASE',
+    async (first, reason) => {
+      await start();
+      const { p1, p2, roomId } = await startedMatch();
+      const last = await playToLastShip(p1, p2);
+      const fire = (): Promise<unknown> => send(p1, CLIENT_EVENTS.FIRE, { targets: [last] });
+      const surrender = (): Promise<unknown> => send(p2, CLIENT_EVENTS.SURRENDER, {});
+      const [winning, losing] = first === 'FIRE' ? [fire, surrender] : [surrender, fire];
+      expect(await winning()).toEqual({ ok: true });
+      expect(await losing()).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
+      for (const { inbox } of [p1, p2]) {
+        const over = await skipToState(inbox, (snapshot) => snapshot.phase === ROOM_PHASES.GAME_OVER);
+        expect(over.gameOver).toMatchObject({ winner: SEATS.P1, reason });
+      }
+      await expectBothDone(p1, p2);
+      expect(rooms.get(roomId)).toMatchObject({ phase: ROOM_PHASES.GAME_OVER, reason });
+    },
+  );
+
+  it('just before the turn times out stops the turn timer: no auto shot, and no second STATE', async () => {
+    await start();
+    const { p1, p2, roomId } = await startedMatch();
+    clock.advance(DICE_ANIMATION_MS);
+    for (const { inbox } of [p1, p2]) {
+      expect((await inbox.state()).battle?.turnRemainingMs).toBe(DEFAULT_RULES.turnTimeLimitSeconds * 1_000);
+    }
+    clock.advance(DEFAULT_RULES.turnTimeLimitSeconds * 1_000 - 1);
+    expect(await send(p1, CLIENT_EVENTS.SURRENDER, {})).toEqual({ ok: true });
+    for (const { inbox } of [p1, p2]) {
+      expect((await inbox.state()).gameOver).toMatchObject({ winner: SEATS.P2, reason: GAME_OVER_REASONS.SURRENDER });
+    }
+    // Past the turn's end, and long enough for any timeout the timer would have run, but short of the game-over TTL.
+    clock.advance(GAME_OVER_TTL_MS - 1);
+    expect(rooms.get(roomId)).toMatchObject({
+      phase: ROOM_PHASES.GAME_OVER,
+      reason: GAME_OVER_REASONS.SURRENDER,
+      battle: { boards: { P1: { shots: [] }, P2: { shots: [] } } },
+    });
+    await expectBothDone(p1, p2);
+  });
+
+  it('while paused with the opponent away gives the absent opponent the win, and the forfeit never runs', async () => {
+    await start();
+    const { p1, p2, roomId, sessions } = await startedMatch();
+    p2.socket.close();
+    expect((await p1.inbox.state()).battle?.isPaused).toBe(true);
+    clock.advance(DISCONNECT_FORFEIT_MS - 1);
+    // The first turn's timer started frozen at the end of the dice animation (ADR-0093); the forfeit is 1 ms away.
+    expect((await p1.inbox.state()).battle?.isPaused).toBe(true);
+    expect(rooms.nextForfeit(roomId)?.at).toBe(clock.now() + 1);
+
+    await sendOnTimeline(p1, CLIENT_EVENTS.SURRENDER, {});
+    expect(await p1.inbox.ack()).toEqual({ ok: true });
+    expect(await p1.inbox.state()).toMatchObject({
+      phase: ROOM_PHASES.GAME_OVER,
+      opponent: { seat: SEATS.P2, isConnected: false, forfeitRemainingMs: null },
+      gameOver: { winner: SEATS.P2, reason: GAME_OVER_REASONS.SURRENDER },
+    });
+    // The forfeit's deadline passes: the seat stays away in GAME_OVER, and nothing is sent.
+    clock.advance(1);
+    expect(rooms.get(roomId)).toMatchObject({ phase: ROOM_PHASES.GAME_OVER, reason: GAME_OVER_REASONS.SURRENDER });
+    expect(rooms.get(roomId)?.disconnectedAt.P2).not.toBeNull();
+
+    // The winner comes back to the result.
+    const back = await player(sessions.P2);
+    expect((await back.inbox.state()).gameOver).toMatchObject({
+      winner: SEATS.P2,
+      reason: GAME_OVER_REASONS.SURRENDER,
+    });
+    expect((await p1.inbox.state()).opponent).toMatchObject({ isConnected: true });
+    await expectNothingPending(p1);
+  });
+
+  it('from a socket that moved on to another room is answered by that room, never the match it left', async () => {
+    await start();
+    const { p1, p2, roomId } = await startedMatch();
+    const created = (await send(p1, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Alice' })) as { roomId: string };
+    expect((await p1.inbox.state()).roomId).toBe(created.roomId);
+    expect((await p2.inbox.state()).opponent).toMatchObject({ isConnected: false });
+
+    expect(await send(p1, CLIENT_EVENTS.SURRENDER, {})).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.IN_PROGRESS);
+    await expectNothingPending(p2);
+  });
+});
+
 describe('LEAVE_ROOM', () => {
   it('frees the seat at once before the match: the other player waits again, and the session is gone', async () => {
     await start();
@@ -952,14 +1146,53 @@ describe('LEAVE_ROOM', () => {
     await expectNothingPending(alice);
   });
 
-  it('is refused with NOT_ALLOWED without a seat, during the match and at game over', async () => {
+  it('ends the match as a surrender during it: after the ack the leaver, still seated, gets the game-over STATE', async () => {
+    await start();
+    const { p1, p2, roomId } = await startedMatch();
+    await sendOnTimeline(p1, CLIENT_EVENTS.LEAVE_ROOM, {});
+    expect(await p1.inbox.ack()).toEqual({ ok: true });
+    for (const [{ inbox }, seat] of [
+      [p1, SEATS.P1],
+      [p2, SEATS.P2],
+    ] as const) {
+      expect(await inbox.state()).toMatchObject({
+        phase: ROOM_PHASES.GAME_OVER,
+        me: { seat, isConnected: true },
+        opponent: { isConnected: true },
+        gameOver: { winner: SEATS.P2, reason: GAME_OVER_REASONS.SURRENDER },
+      });
+    }
+    // The seat stays (ADR-0116): the leaver's socket is still bound to it and in the room, so the game-over TTL that the
+    // surrender started reaches it too.
+    expect(rooms.get(roomId)).toMatchObject({ players: { P1: { nickname: 'Alice' }, P2: { nickname: 'Bob' } } });
+    expect(await send(p1, CLIENT_EVENTS.SURRENDER, {})).toEqual({ ok: false, error: ERROR_CODES.WRONG_PHASE });
+    clock.advance(GAME_OVER_TTL_MS);
+    for (const { inbox } of [p1, p2]) {
+      expect(await inbox.roomClosed()).toEqual({ roomId, reason: ROOM_CLOSED_REASONS.GAME_OVER_TTL });
+    }
+  });
+
+  it('surrenders when it was sent from placement as the match started', async () => {
+    await start();
+    const { p1, p2, roomId } = await placingPlayers();
+    await placeFleets(p1, p2);
+    // P2's screen has not shown the match yet: its "Leave room" reaches a room in IN_PROGRESS.
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.IN_PROGRESS);
+    expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: true });
+    for (const { inbox } of [p1, p2]) {
+      const over = await skipToState(inbox, (snapshot) => snapshot.phase === ROOM_PHASES.GAME_OVER);
+      expect(over.gameOver).toMatchObject({ winner: SEATS.P1, reason: GAME_OVER_REASONS.SURRENDER });
+    }
+    await expectBothDone(p1, p2);
+  });
+
+  it('is refused with NOT_ALLOWED without a seat and at game over', async () => {
     await start();
     expect(await send(await player(), CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({
       ok: false,
       error: ERROR_CODES.NOT_ALLOWED,
     });
     const { p1, p2, roomId } = await startedMatch();
-    expect(await send(p1, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
     await playToVictory(p1, p2);
     expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.GAME_OVER);
