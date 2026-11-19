@@ -1,5 +1,12 @@
 import { DestroyRef, Service, computed, inject, signal } from '@angular/core';
-import { CLIENT_EVENTS, SERVER_EVENTS, type Coordinate, type ErrorCode, type ShotResult } from '@battleship/core';
+import {
+  CLIENT_EVENTS,
+  SERVER_EVENTS,
+  type Coordinate,
+  type ErrorCode,
+  type Seat,
+  type ShotResult,
+} from '@battleship/core';
 
 import { GameSocketService, type TransportError } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
@@ -22,6 +29,14 @@ export const BATTLE_FEEDBACK = {
 /** One of the `BATTLE_FEEDBACK` kinds. */
 export type BattleFeedbackKind = (typeof BATTLE_FEEDBACK)[keyof typeof BATTLE_FEEDBACK];
 
+/** How full a salvo draft is, for the counter near "Fire" and the tap's message (ADR-0121). */
+export interface TargetCount {
+  /** The targets in the draft. */
+  readonly picked: number;
+  /** The turn's shot allowance. */
+  readonly allowed: number;
+}
+
 /** What the last battle action or fired turn was, with what its message needs. */
 export type BattleFeedback =
   | {
@@ -29,6 +44,8 @@ export type BattleFeedback =
       readonly kind: typeof BATTLE_FEEDBACK.TARGETED | typeof BATTLE_FEEDBACK.UNTARGETED;
       /** The cell. */
       readonly coordinate: Coordinate;
+      /** How full the draft is after the tap, in salvo mode; `null` in standard mode, which has no counter. */
+      readonly count: TargetCount | null;
     }
   | {
       /** A tap was refused. */
@@ -52,10 +69,23 @@ export type BattleFeedback =
        * after `SHOT_RESOLVED`, which then counts one more timeout for the shooter, and kept from there.
        */
       readonly isAutomatic: boolean;
+      /**
+       * Whether the shooter fires again: an extra turn on a hit (ADR-0120). Decided by the same `STATE`, which names
+       * the shooter as `currentTurn` again, the turn #139's board hold follows; `false` at game over.
+       */
+      readonly keepsTurn: boolean;
+      /**
+       * In salvo mode, the next shooter's allowance from the same `STATE`: after a salvo the turn always passes, so it
+       * is the allowance of the player whose fleet the turn fired at (ADR-0112, ADR-0121). `null` in standard mode and
+       * at game over.
+       */
+      readonly nextShotsAllowed: number | null;
     };
 
 /** A fired turn between its `SHOT_RESOLVED` and the `STATE` that tells whether it was automatic (ADR-0109). */
 interface PendingShot {
+  /** Who fired it. */
+  readonly shooter: Seat;
   /** Whether the receiver fired it. */
   readonly isMine: boolean;
   /** One result per target, in firing order. */
@@ -97,8 +127,13 @@ export class BattleStore {
 
   /** Whether the current turn is the player's. */
   readonly isMyTurn = this.gameState.isMyTurn;
-  /** How many targets the turn fires; 1 until salvo mode lands (#32), 0 outside battle. */
+  /**
+   * How many targets the turn fires, for the shooter of the turn as both seats see it: 1 in standard mode, one per
+   * surviving ship of the shooter's in salvo mode (ADR-0112); 0 outside battle.
+   */
   readonly shotsAllowed = computed(() => this.battle()?.shotsAllowed ?? 0);
+  /** Whether the agreed rules play salvo mode, which shows a target counter (ADR-0121). */
+  readonly isSalvo = computed(() => this.gameState.snapshot()?.rules.isSalvoModeEnabled === true);
 
   /**
    * Set by every tap and by the first `STATE` after a `SHOT_RESOLVED`, cleared by `SHOT_RESOLVED`, for the live
@@ -157,27 +192,30 @@ export class BattleStore {
       const isMine = shooter === this.gameState.snapshot()?.me.seat;
       const afkCount = this.battle()?.afkCount;
       const afkCountBefore = afkCount === undefined ? 0 : isMine ? afkCount.me : afkCount.opponent;
-      this.pendingShot = { isMine, results, afkCountBefore };
+      this.pendingShot = { shooter, isMine, results, afkCountBefore };
       // Zoneless change detection renders between the two packets: worded now, a timed-out shot would first read as
       // fired by hand.
       this.feedbackSignal.set(null);
     });
     // Only the first STATE after the shot decides: a later timeout under "Pass the turn" sends no SHOT_RESOLVED, and
     // must not turn the shot already announced into an automatic one. A GAME_OVER STATE has no count, so the shot
-    // that ends the match reads as fired by hand.
+    // that ends the match reads as fired by hand. The same STATE tells whether the shooter fires again, and the next
+    // salvo allowance.
     const stopDeciding = this.socket.on(SERVER_EVENTS.STATE, (snapshot) => {
       const shot = this.pendingShot;
       if (shot === null) {
         return;
       }
       this.pendingShot = null;
-      const afkCount = snapshot.battle?.afkCount;
-      const afkCountAfter = afkCount === undefined ? 0 : shot.isMine ? afkCount.me : afkCount.opponent;
+      const battle = snapshot.battle;
+      const afkCountAfter = battle === null ? 0 : shot.isMine ? battle.afkCount.me : battle.afkCount.opponent;
       this.feedbackSignal.set({
         kind: BATTLE_FEEDBACK.FIRED,
         isMine: shot.isMine,
         results: shot.results,
         isAutomatic: afkCountAfter > shot.afkCountBefore,
+        keepsTurn: battle?.currentTurn === shot.shooter,
+        nextShotsAllowed: battle !== null && snapshot.rules.isSalvoModeEnabled ? battle.shotsAllowed : null,
       });
     });
     inject(DestroyRef).onDestroy(() => {
@@ -207,7 +245,8 @@ export class BattleStore {
       return;
     }
     const kind = change.isTargeted ? BATTLE_FEEDBACK.TARGETED : BATTLE_FEEDBACK.UNTARGETED;
-    this.sync.update(change.draft, { kind, coordinate });
+    const count = this.isSalvo() ? { picked: change.draft.length, allowed: battle.shotsAllowed } : null;
+    this.sync.update(change.draft, { kind, coordinate, count });
   }
 
   /** True from sending `SURRENDER` until its ack; read through `isSurrendering`. */

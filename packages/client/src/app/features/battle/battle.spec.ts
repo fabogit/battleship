@@ -16,9 +16,11 @@ import {
   otherSeat,
   toPlacedShip,
   type BattleSnapshot,
+  type Coordinate,
   type GameOverSnapshot,
   type PlayerStateSnapshot,
   type Seat,
+  type ShotResult,
 } from '@battleship/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -35,8 +37,8 @@ import { COUNTDOWN_TICK_MS, GameStateService } from '../../core/game-state';
 import { CELL_STATES } from '../../shared/board-grid/board-cells';
 import { PREFERS_REDUCED_MOTION } from '../../shared/reduced-motion';
 import { BATTLE_BOARDS, Battle, SHOT_HOLD_MS } from './battle';
-import { SURRENDER_PROMPTS } from './battle-store';
-import { BATTLE_TEXT } from './battle.text';
+import { BATTLE_FEEDBACK, SURRENDER_PROMPTS, type BattleFeedback } from './battle-store';
+import { BATTLE_TEXT, battleFeedbackMessage } from './battle.text';
 import { createRoomId } from '../../../testing/session-fixtures';
 
 const ROOM_ID = createRoomId(0);
@@ -257,7 +259,7 @@ describe('Battle', () => {
 
       expect(enemyCell('B7').getAttribute('aria-label')).toBe('B7, target');
       expect(text('#fire-hint')).toBe(BATTLE_TEXT.aimingAt('B7'));
-      expect(text('.feedback')).toBe(BATTLE_TEXT.targeted('B7'));
+      expect(text('.feedback')).toBe(BATTLE_TEXT.targeted('B7', null));
       expect(fire?.getAttribute('aria-disabled')).toBeNull();
 
       await tap(fire);
@@ -511,6 +513,146 @@ describe('Battle', () => {
         expect(text('.feedback')).toBe(BATTLE_TEXT.myShot('E1', SHOT_OUTCOMES.SUNK, 'carrier', 'Grace'));
       },
     );
+  });
+
+  describe('in salvo mode (ADR-0121)', () => {
+    const SALVO = { ...DEFAULT_RULES, isSalvoModeEnabled: true } as const;
+
+    /**
+     * Delivers a battle snapshot of a salvo match and lets the view render it.
+     * @param battle Fields of the `IN_PROGRESS` part to override.
+     * @param rules Rules to override in the salvo rules.
+     */
+    async function receiveSalvo(
+      battle: Partial<BattleSnapshot> = {},
+      rules: Partial<typeof DEFAULT_RULES> = {},
+    ): Promise<void> {
+      socket.fire(SERVER_EVENTS.STATE, {
+        ...battleSnapshot(ROOM_ID, { myShips: [MY_DESTROYER], shotsAllowed: 5, ...battle }),
+        rules: { ...SALVO, ...rules },
+      });
+      await fixture.whenStable();
+    }
+
+    it('counts the targets under "Fire", in its description, and announces the count with each tap', async () => {
+      await receiveSalvo();
+      const fire = button(BATTLE_TEXT.fire);
+      expect(fire?.getAttribute('aria-describedby')).toBe('fire-hint');
+      expect(text('#fire-hint')).toBe(BATTLE_TEXT.salvoAiming('0 of 5 targets', ''));
+      expect(text('#fire-hint')).toBe('0 of 5 targets: tap a cell to aim.');
+
+      await tap(enemyCell('B7'));
+      await tap(enemyCell('C3'));
+
+      expect(text('#fire-hint')).toBe('2 of 5 targets: B7, C3.');
+      expect(text('.feedback')).toBe('Aiming at C3: 2 of 5 targets.');
+      expect(fire?.getAttribute('aria-disabled')).toBe('true');
+    });
+
+    it('enables "Fire" at the allowance and fires every target', async () => {
+      await receiveSalvo({ shotsAllowed: 2 });
+
+      await tap(enemyCell('B7'));
+      await tap(enemyCell('C3'));
+      await tap(button(BATTLE_TEXT.fire));
+
+      expect(socket.emitWithAck).toHaveBeenLastCalledWith(CLIENT_EVENTS.FIRE, {
+        targets: [
+          { x: 6, y: 1 },
+          { x: 2, y: 2 },
+        ],
+      });
+    });
+
+    it.each(RECEIVER_SEATS)('says how many cells the turn fires, for either player, as %s', async (seat) => {
+      socket.fire(SERVER_EVENTS.STATE, { ...battleFrom(seat, { currentTurn: seat, shotsAllowed: 5 }), rules: SALVO });
+      await fixture.whenStable();
+      expect(text('.status [aria-live]')).toBe('Aim at 5 cells in Enemy waters, then fire.');
+
+      socket.fire(SERVER_EVENTS.STATE, {
+        ...battleFrom(seat, { currentTurn: otherSeat(seat), shotsAllowed: 4 }),
+        rules: SALVO,
+      });
+      await fixture.whenStable();
+      expect(text('.status [aria-live]')).toBe('Wait for Grace to fire 4 shots.');
+    });
+
+    it('words a turn of one target as in standard mode, the counter staying', async () => {
+      await receiveSalvo({ shotsAllowed: 1 });
+      expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.myTurnHint);
+      expect(text('#fire-hint')).toBe('0 of 1 target: tap a cell to aim.');
+
+      await receiveSalvo({ currentTurn: SEATS.P2, shotsAllowed: 1 });
+      expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.opponentTurnHint('Grace'));
+    });
+
+    it('shows no counter in standard mode', () => {
+      expect(text('#fire-hint')).toBe(BATTLE_TEXT.pickTarget);
+    });
+
+    it('announces a fired salvo in one message, with the allowance it leaves the player', async () => {
+      await receiveSalvo({ currentTurn: SEATS.P2, shotsAllowed: 5 });
+      const results: ShotResult[] = [
+        { coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT },
+        { coordinate: { x: 1, y: 0 }, outcome: SHOT_OUTCOMES.SUNK, sunkShip: MY_DESTROYER },
+        { coordinate: { x: 9, y: 9 }, outcome: SHOT_OUTCOMES.MISS },
+      ];
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P2, results });
+      await receiveSalvo({ currentTurn: SEATS.P1, shotsAllowed: 4, incomingShots: results });
+
+      expect(text('.feedback')).toBe(
+        "Grace fired 3 shots: hits on A1 and A2, a miss on J10. Grace's shots sank your destroyer. You now fire 4 shots per turn.",
+      );
+    });
+
+    describe('when time runs low', () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+
+      it('says that random shots fill the rest of the draft, only while the turn fires more than one', () => {
+        socket.fire(SERVER_EVENTS.STATE, {
+          ...battleSnapshot(ROOM_ID, { shotsAllowed: 3, turnRemainingMs: 5_000 }),
+          rules: SALVO,
+        });
+        fixture.detectChanges();
+        expect(text('.status [aria-live]')).toBe('Fire now, or random shots fill the rest.');
+
+        socket.fire(SERVER_EVENTS.STATE, {
+          ...battleSnapshot(ROOM_ID, { shotsAllowed: 1, turnRemainingMs: 5_000 }),
+          rules: SALVO,
+        });
+        fixture.detectChanges();
+        expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.myTimeLow.AUTO_RANDOM_SHOT);
+
+        socket.fire(SERVER_EVENTS.STATE, {
+          ...battleSnapshot(ROOM_ID, { shotsAllowed: 3, turnRemainingMs: 5_000 }),
+          rules: { ...SALVO, timeoutAction: TIMEOUT_ACTIONS.PASS_TURN },
+        });
+        fixture.detectChanges();
+        expect(text('.status [aria-live]')).toBe(BATTLE_TEXT.myTimeLow.PASS_TURN);
+      });
+    });
+  });
+
+  describe('an extra turn on a hit (ADR-0120)', () => {
+    it.each(RECEIVER_SEATS)('says the shooter fires again, for either player, as %s', async (seat) => {
+      const hit = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }];
+      socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: seat }));
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results: hit });
+      socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: seat, outgoingShots: hit }));
+      await fixture.whenStable();
+      expect(text('.feedback')).toBe('You fired at A1: hit! Fire again.');
+
+      socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: otherSeat(seat), outgoingShots: hit }));
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: otherSeat(seat), results: hit });
+      socket.fire(
+        SERVER_EVENTS.STATE,
+        battleFrom(seat, { currentTurn: otherSeat(seat), outgoingShots: hit, incomingShots: hit }),
+      );
+      await fixture.whenStable();
+      expect(text('.feedback')).toBe('Grace fired at A1: hit. Grace fires again.');
+    });
   });
 
   describe('at game over', () => {
@@ -1017,5 +1159,119 @@ describe('Battle', () => {
         expect(text('.feedback')).toBe(BATTLE_TEXT.myShot('A1', SHOT_OUTCOMES.MISS, null, 'Grace'));
       });
     });
+  });
+});
+
+describe('battleFeedbackMessage (ADR-0121)', () => {
+  const at = (x: number, y: number): Coordinate => ({ x, y });
+  const destroyer = toPlacedShip({ type: SHIP_TYPES.DESTROYER, start: at(1, 0), orientation: ORIENTATIONS.HORIZONTAL });
+  const cruiser = toPlacedShip({ type: SHIP_TYPES.CRUISER, start: at(0, 3), orientation: ORIENTATIONS.HORIZONTAL });
+  const miss = (coordinate: Coordinate): ShotResult => ({ coordinate, outcome: SHOT_OUTCOMES.MISS });
+  const hit = (coordinate: Coordinate): ShotResult => ({ coordinate, outcome: SHOT_OUTCOMES.HIT });
+  const sink = (coordinate: Coordinate, sunkShip = destroyer): ShotResult => ({
+    coordinate,
+    outcome: SHOT_OUTCOMES.SUNK,
+    sunkShip,
+  });
+  const fired = (
+    results: readonly ShotResult[],
+    options: Partial<Omit<Extract<BattleFeedback, { kind: 'fired' }>, 'kind' | 'results'>> = {},
+  ): BattleFeedback => ({
+    kind: BATTLE_FEEDBACK.FIRED,
+    results,
+    isMine: true,
+    isAutomatic: false,
+    keepsTurn: false,
+    nextShotsAllowed: null,
+    ...options,
+  });
+  const word = (feedback: BattleFeedback): string => battleFeedbackMessage(feedback, 'Grace');
+  const FIVE = [miss(at(0, 0)), hit(at(1, 0)), sink(at(2, 0)), miss(at(3, 0)), miss(at(4, 0))];
+
+  it.each<[string, BattleFeedback, string]>([
+    ['a tap in standard mode', { kind: 'targeted', coordinate: at(6, 1), count: null }, 'Aiming at B7.'],
+    [
+      'a tap in salvo mode',
+      { kind: 'targeted', coordinate: at(6, 1), count: { picked: 2, allowed: 5 } },
+      'Aiming at B7: 2 of 5 targets.',
+    ],
+    [
+      'a target taken out in salvo mode',
+      { kind: 'untargeted', coordinate: at(6, 1), count: { picked: 0, allowed: 1 } },
+      'B7 is no longer a target: 0 of 1 target.',
+    ],
+    ['my single shot', fired([miss(at(6, 1))]), 'You fired at B7: miss.'],
+    [
+      'my automatic single shot',
+      fired([miss(at(6, 1))], { isAutomatic: true }),
+      'Your time ran out: a shot was fired for you at B7, miss.',
+    ],
+    [
+      "the opponent's automatic single shot that sinks",
+      fired([sink(at(1, 0))], { isMine: false, isAutomatic: true }),
+      "Grace's time ran out: a shot fired for them at A2 sank your destroyer.",
+    ],
+    ['my hit that keeps the turn', fired([hit(at(6, 1))], { keepsTurn: true }), 'You fired at B7: hit! Fire again.'],
+    [
+      'my sinking shot that keeps the turn',
+      fired([sink(at(1, 0))], { keepsTurn: true }),
+      "You fired at A2 and sank Grace's destroyer! Fire again.",
+    ],
+    [
+      "the opponent's hit that keeps their turn",
+      fired([hit(at(0, 0))], { isMine: false, keepsTurn: true }),
+      'Grace fired at A1: hit. Grace fires again.',
+    ],
+    [
+      'my automatic hit that keeps the turn',
+      fired([hit(at(6, 1))], { isAutomatic: true, keepsTurn: true }),
+      'Your time ran out: a shot was fired for you at B7, hit! Fire again.',
+    ],
+    [
+      'my salvo that sinks a ship',
+      fired(FIVE, { nextShotsAllowed: 4 }),
+      "You fired 5 shots: hits on A2 and A3, misses on A1, A4 and A5. Your shots sank Grace's destroyer! Grace now fires 4 shots per turn.",
+    ],
+    [
+      "the opponent's salvo that sinks two ships",
+      fired([sink(at(1, 0)), sink(at(2, 3), cruiser), miss(at(9, 9))], { isMine: false, nextShotsAllowed: 3 }),
+      "Grace fired 3 shots: hits on A2 and D3, a miss on J10. Grace's shots sank your destroyer and cruiser. You now fire 3 shots per turn.",
+    ],
+    [
+      "the opponent's salvo that sinks nothing",
+      fired([hit(at(0, 0)), miss(at(9, 9))], { isMine: false, nextShotsAllowed: 5 }),
+      'Grace fired 2 shots: a hit on A1, a miss on J10.',
+    ],
+    [
+      'my automatic salvo, all misses',
+      fired([miss(at(0, 0)), miss(at(9, 9))], { isAutomatic: true, nextShotsAllowed: 5 }),
+      'Your time ran out, so your 2 shots were fired for you: misses on A1 and J10.',
+    ],
+    [
+      "the opponent's automatic salvo",
+      fired([hit(at(0, 0)), miss(at(9, 9))], { isMine: false, isAutomatic: true, nextShotsAllowed: 5 }),
+      "Grace's time ran out, so their 2 shots were fired for them: a hit on A1, a miss on J10.",
+    ],
+    [
+      'the salvo that wins the match: the GAME_OVER STATE leaves no allowance, and reads as fired by hand',
+      fired(FIVE),
+      "You fired 5 shots: hits on A2 and A3, misses on A1, A4 and A5. Your shots sank Grace's destroyer!",
+    ],
+    [
+      'a salvo turn of one target, which sinks a ship',
+      fired([sink(at(1, 0))], { isMine: false, nextShotsAllowed: 1 }),
+      'Grace fired at A2 and sank your destroyer. You now fire 1 shot per turn.',
+    ],
+    [
+      'a sinking shot in standard mode, with no allowance to tell',
+      fired([sink(at(1, 0))]),
+      "You fired at A2 and sank Grace's destroyer!",
+    ],
+  ])('words %s', (_case, feedback, message) => {
+    expect(word(feedback)).toBe(message);
+  });
+
+  it('says nothing about the allowance after a salvo that sinks nothing', () => {
+    expect(word(fired([hit(at(0, 0)), miss(at(9, 9))], { nextShotsAllowed: 5 }))).not.toContain('per turn');
   });
 });
