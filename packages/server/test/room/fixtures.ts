@@ -7,6 +7,7 @@ import {
   generateRoomId,
   ROOM_PHASES,
   SEATS,
+  type GameRules,
   type PlacedShip,
   type Seat,
   type ShipPlacement,
@@ -109,6 +110,20 @@ export function endPlacementNow(state: RoomState, seed = 0): BattleRoom {
 /** A room in battle with fleets from seeds 1 (P1) and 2 (P2), started by the end of the start countdown. */
 export function battleRoom(): BattleRoom {
   return endPlacementNow(placeAndConfirm(placeAndConfirm(placementRoom(), SEATS.P1, fleet(1)), SEATS.P2, fleet(2)));
+}
+
+/** `DEFAULT_RULES` with salvo mode on (ADR-0112). */
+export const SALVO_RULES: GameRules = { ...DEFAULT_RULES, isSalvoModeEnabled: true };
+
+/**
+ * A room in battle like `battleRoom()`, under rules `P1` proposed with `UPDATE_RULES` and both players confirmed.
+ * @param rules Rules `validateRules` accepts, other than `DEFAULT_RULES`.
+ */
+export function battleRoomWith(rules: GameRules): BattleRoom {
+  const edited = apply(negotiationRoom(), { type: CLIENT_EVENTS.UPDATE_RULES, seat: SEATS.P1, payload: { rules } });
+  expect(edited).toMatchObject({ rules, rulesVersion: 1 });
+  const placement = agreeOnRules(edited as NegotiationRoom);
+  return endPlacementNow(placeAndConfirm(placeAndConfirm(placement, SEATS.P1, fleet(1)), SEATS.P2, fleet(2)));
 }
 
 /** Every cell of a fleet. */

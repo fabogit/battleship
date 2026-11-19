@@ -7,10 +7,13 @@ description: |-
   1. `CREATE_ROOM` (P1): the ack is `{ "ok": true, "roomId": "…", "playerSecret": "…" }`, then a `STATE` in `WAITING_FOR_OPPONENT`.
      Copy `roomId` into the collection variable `roomId`.
   2. `JOIN_ROOM` (P2): both get a `STATE` in `RULES_NEGOTIATION`, with `rules`, `rulesVersion` and `hasConfirmedRules`.
-  3. `UPDATE_RULES` (P1): the ack carries the new `rulesVersion` (1), and both confirmations are cleared.
-     `CONFIRM_RULES — stale` (P2) still quotes version 0: `STALE_RULES`. `CONFIRM_RULES` from each seat quotes 1;
-     the second one starts placement (`PLACEMENT`) with the agreed rules. Edit a `CONFIRM_RULES` message to match
-     the current `rulesVersion` when you edit the rules more than once.
+  3. `UPDATE_RULES — salvo` (P2): either player may edit; the ack carries the new `rulesVersion` (1), and both
+     confirmations are cleared. Salvo mode is accepted since #32: each turn fires one target per ship the shooter has
+     left. `UPDATE_RULES` (P1) then puts in the saved rules, salvo off: version 2. `CONFIRM_RULES — stale` (P2) still
+     quotes version 0: `STALE_RULES`. `CONFIRM_RULES` from each seat quotes 2; the second one starts placement
+     (`PLACEMENT`) with the agreed rules. Edit a `CONFIRM_RULES` message to match the current `rulesVersion` when you
+     edit the rules another number of times. To play with salvo, skip P1's `UPDATE_RULES`, confirm version 1, and
+     make every `UPDATE_TARGETS` and `FIRE` carry the snapshot's `shotsAllowed` targets (5 at first).
   4. `UPDATE_PLACEMENT` and `CONFIRM_PLACEMENT` from each seat; `UNLOCK_PLACEMENT` reverts a confirmed fleet.
      The second confirmation starts a 5-second countdown (`startCountdownMs`); an unlock cancels it. When it runs
      out, both get `DICE_ROLLED` (a d6 per seat, ties rolled again: every round in `rolls`, and the `starter`), then
