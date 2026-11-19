@@ -35,6 +35,7 @@ import { COUNTDOWN_TICK_MS, GameStateService } from '../../core/game-state';
 import { CELL_STATES } from '../../shared/board-grid/board-cells';
 import { PREFERS_REDUCED_MOTION } from '../../shared/reduced-motion';
 import { BATTLE_BOARDS, Battle, SHOT_HOLD_MS } from './battle';
+import { SURRENDER_PROMPTS } from './battle-store';
 import { BATTLE_TEXT } from './battle.text';
 import { createRoomId } from '../../../testing/session-fixtures';
 
@@ -155,6 +156,50 @@ function pressed(label: string): string | null | undefined {
  */
 function text(selector: string): string | undefined {
   return view().querySelector(selector)?.textContent.trim();
+}
+
+/** @returns The surrender dialog, which is always in the view. */
+function surrenderDialog(): HTMLDialogElement {
+  const dialog = view().querySelector('dialog');
+  if (dialog === null) {
+    throw new Error('No dialog');
+  }
+  return dialog;
+}
+
+/** @returns "Surrender" at the foot of the view, or `null` at game over. */
+function surrenderButton(): HTMLButtonElement | null {
+  return view().querySelector('.surrender button');
+}
+
+/** @returns The dialog's confirm button. */
+function confirmButton(): HTMLButtonElement | null {
+  return surrenderDialog().querySelector('button.primary');
+}
+
+/** Presses Esc in the open dialog: a `cancel` event, then the close a listener did not prevent, as browsers do. */
+async function pressEscape(): Promise<void> {
+  const dialog = surrenderDialog();
+  const cancel = new Event('cancel', { cancelable: true });
+  dialog.dispatchEvent(cancel);
+  if (!cancel.defaultPrevented) {
+    dialog.close();
+  }
+  await fixture.whenStable();
+}
+
+/**
+ * An ack that arrives only when the test says so.
+ * @returns The promise to hand `emitWithAck`, and its resolver.
+ */
+function pendingAck(): { readonly ack: Promise<{ ok: true }>; readonly resolve: () => void } {
+  let resolve = (): void => undefined;
+  const ack = new Promise<{ ok: true }>((done) => {
+    resolve = () => {
+      done({ ok: true });
+    };
+  });
+  return { ack, resolve };
 }
 
 beforeEach(async () => {
@@ -493,8 +538,9 @@ describe('Battle', () => {
       expect(myCells).toContain('A1, hit');
       expect(myCells).toContain('A2, ship');
 
-      const actions = Array.from(view().querySelectorAll('button:not([role="grid"] button)')).map((element) =>
-        element.textContent.trim(),
+      // The surrender dialog is closed, and its buttons are not counted; "Surrender" itself is gone.
+      const actions = Array.from(view().querySelectorAll('button:not([role="grid"] button, dialog button)')).map(
+        (element) => element.textContent.trim(),
       );
       expect(actions).toEqual([BATTLE_TEXT.myFleet, BATTLE_TEXT.enemyWaters]);
       expect(view().querySelector('a')?.textContent).toBe(BATTLE_TEXT.newMatch);
@@ -568,6 +614,177 @@ describe('Battle', () => {
       );
       expect(myCells).toContain('B1, miss');
       expect(myCells).toContain('A1, ship');
+    });
+  });
+
+  describe('the surrender control (ADR-0116)', () => {
+    it('sits at the foot of the view, after "Fire" and the messages, and asks in a closed dialog first', () => {
+      const control = view().querySelector('.surrender');
+      expect(surrenderButton()?.textContent.trim()).toBe(BATTLE_TEXT.surrender);
+      expect(control?.closest('.board, .fire')).toBeNull();
+      expect(
+        view()
+          .querySelector('.fire')
+          ?.compareDocumentPosition(control ?? view()),
+      ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      expect(control?.previousElementSibling?.classList.contains('error')).toBe(true);
+      expect(surrenderDialog().open).toBe(false);
+    });
+
+    it('opens a modal dialog naming the opponent, with "Keep playing" focused first, and sends nothing yet', async () => {
+      await tap(surrenderButton() ?? undefined);
+
+      const dialog = surrenderDialog();
+      const prompt = BATTLE_TEXT.surrenderPrompts[SURRENDER_PROMPTS.SURRENDER];
+      expect(dialog.open).toBe(true);
+      expect(view().querySelector(`#${dialog.getAttribute('aria-labelledby') ?? ''}`)?.textContent).toBe(
+        prompt.heading,
+      );
+      expect(view().querySelector(`#${dialog.getAttribute('aria-describedby') ?? ''}`)?.textContent).toBe(
+        prompt.intro('Grace'),
+      );
+      expect(button(BATTLE_TEXT.keepPlaying)?.hasAttribute('autofocus')).toBe(true);
+      expect(confirmButton()?.textContent.trim()).toBe(prompt.confirm);
+      expect(socket.emitWithAck).not.toHaveBeenCalledWith(CLIENT_EVENTS.SURRENDER, {});
+    });
+
+    it.each([
+      ['"Keep playing"', () => tap(button(BATTLE_TEXT.keepPlaying))],
+      ['Esc', pressEscape],
+    ])('closes on %s without sending, focus back on "Surrender"', async (_how, close) => {
+      await tap(surrenderButton() ?? undefined);
+
+      await close();
+
+      expect(surrenderDialog().open).toBe(false);
+      expect(document.activeElement).toBe(surrenderButton());
+      expect(socket.emitWithAck).not.toHaveBeenCalledWith(CLIENT_EVENTS.SURRENDER, {});
+    });
+
+    it('sends SURRENDER once however often confirm is clicked, holds Esc while it waits, then closes', async () => {
+      const { ack, resolve } = pendingAck();
+      socket.emitWithAck.mockReturnValue(ack);
+      await tap(surrenderButton() ?? undefined);
+
+      const confirm = confirmButton();
+      await tap(confirm ?? undefined);
+      await tap(confirm ?? undefined);
+      await pressEscape();
+
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.SURRENDER, {});
+      expect(confirm?.textContent.trim()).toBe(BATTLE_TEXT.surrendering);
+      expect(confirm?.getAttribute('aria-disabled')).toBe('true');
+      expect(surrenderDialog().open).toBe(true);
+
+      resolve();
+      await vi.waitFor(() => {
+        expect(surrenderDialog().open).toBe(false);
+      });
+      expect(confirm?.getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('shows a refusal on the page once the dialog closes: the match ended first', async () => {
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: ERROR_CODES.WRONG_PHASE });
+      await tap(surrenderButton() ?? undefined);
+
+      await tap(confirmButton() ?? undefined);
+
+      await vi.waitFor(() => {
+        expect(surrenderDialog().open).toBe(false);
+      });
+      expect(text('.error[role="alert"]')).toBe(BATTLE_TEXT.errors.WRONG_PHASE);
+    });
+
+    it('closes by itself when the match ends while it is open, and focus goes to the heading', async () => {
+      await tap(surrenderButton() ?? undefined);
+
+      await receiveGameOver();
+
+      expect(surrenderDialog().open).toBe(false);
+      expect(surrenderButton()).toBeNull();
+      expect(document.activeElement).toBe(view().querySelector('h1'));
+    });
+
+    it('moves focus from "Surrender" to the heading when the match ends, and leaves focus elsewhere alone', async () => {
+      surrenderButton()?.focus();
+      await receiveGameOver();
+      expect(document.activeElement).toBe(view().querySelector('h1'));
+
+      TestBed.inject(GameStateService).clear();
+      await receive();
+      const toggle = button(BATTLE_TEXT.myFleet);
+      toggle?.focus();
+      await receiveGameOver();
+      expect(document.activeElement).toBe(toggle);
+    });
+  });
+
+  describe('confirmLeave, for the leave guard (ADR-0117)', () => {
+    it('asks with the leave words and resolves false on "Keep playing"', async () => {
+      const answer = fixture.componentInstance.confirmLeave();
+
+      // Rendered before the dialog opens, so it is announced with the leave words: no `whenStable` first.
+      const prompt = BATTLE_TEXT.surrenderPrompts[SURRENDER_PROMPTS.LEAVE];
+      expect(surrenderDialog().open).toBe(true);
+      expect(text('dialog h2')).toBe(prompt.heading);
+      expect(text('dialog p')).toBe(prompt.intro('Grace'));
+      expect(confirmButton()?.textContent.trim()).toBe(prompt.confirm);
+
+      await tap(button(BATTLE_TEXT.keepPlaying));
+      await expect(answer).resolves.toBe(false);
+      expect(socket.emitWithAck).not.toHaveBeenCalledWith(CLIENT_EVENTS.SURRENDER, {});
+    });
+
+    it('resolves true only once the ack of SURRENDER arrives', async () => {
+      const { ack, resolve } = pendingAck();
+      socket.emitWithAck.mockReturnValue(ack);
+      let isSettled = false;
+      const answer = fixture.componentInstance.confirmLeave().then((isConfirmed) => {
+        isSettled = true;
+        return isConfirmed;
+      });
+      await fixture.whenStable();
+
+      await tap(confirmButton() ?? undefined);
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.SURRENDER, {});
+      expect(isSettled).toBe(false);
+
+      resolve();
+      await expect(answer).resolves.toBe(true);
+    });
+
+    it.each([
+      ['refused because the match just ended', { ok: false, error: ERROR_CODES.WRONG_PHASE }],
+      ['not sent while offline', { ok: false, error: TRANSPORT_ERRORS.NOT_CONNECTED }],
+      ['not answered in time', { ok: false, error: TRANSPORT_ERRORS.NO_ACK }],
+    ] as const)('resolves true after a surrender %s: the disconnect forfeit covers it', async (_case, result) => {
+      socket.emitWithAck.mockResolvedValue(result);
+      const answer = fixture.componentInstance.confirmLeave();
+      await fixture.whenStable();
+
+      await tap(confirmButton() ?? undefined);
+
+      await expect(answer).resolves.toBe(true);
+    });
+
+    it('resolves false when the match ends before the player answers, who then sees the result', async () => {
+      const answer = fixture.componentInstance.confirmLeave();
+      await fixture.whenStable();
+
+      await receiveGameOver();
+
+      await expect(answer).resolves.toBe(false);
+      expect(text('h1')).toBe(BATTLE_TEXT.wonHeading);
+    });
+
+    it('resolves false at once while the dialog is open already, and at game over', async () => {
+      await tap(surrenderButton() ?? undefined);
+      await expect(fixture.componentInstance.confirmLeave()).resolves.toBe(false);
+      expect(text('dialog h2')).toBe(BATTLE_TEXT.surrenderPrompts[SURRENDER_PROMPTS.SURRENDER].heading);
+
+      await receiveGameOver();
+      await expect(fixture.componentInstance.confirmLeave()).resolves.toBe(false);
+      expect(surrenderDialog().open).toBe(false);
     });
   });
 

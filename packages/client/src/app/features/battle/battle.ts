@@ -1,4 +1,16 @@
-import { Component, DestroyRef, computed, inject, linkedSignal, signal } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  DestroyRef,
+  computed,
+  effect,
+  inject,
+  linkedSignal,
+  signal,
+  untracked,
+  viewChild,
+  type ElementRef,
+} from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { MAX_CONSECUTIVE_AFK_TURNS, ROOM_PHASES, SERVER_EVENTS } from '@battleship/core';
 
@@ -9,7 +21,7 @@ import { BoardGrid } from '../../shared/board-grid/board-grid';
 import { formatCoordinate } from '../../shared/board-grid/coordinates';
 import { formatCountdown, isLowTime } from '../../shared/countdown';
 import { Die } from '../../shared/die/die';
-import { BattleStore } from './battle-store';
+import { BattleStore, SURRENDER_PROMPTS, type SurrenderPrompt } from './battle-store';
 import { BATTLE_TEXT, battleErrorMessage, battleFeedbackMessage } from './battle.text';
 import { DiceAnimation } from './dice-animation';
 
@@ -75,6 +87,8 @@ interface TurnFocus extends BoardFocus {
  * out in a row are counted for both players (ADR-0109). On a narrow screen a toggle shows one board at a time and
  * brings forward the one the turn needs, after showing where the last shot landed; a wide screen shows both side by
  * side. At game over the page names the winner and the reason, and "Enemy waters" reveals the opponent's whole fleet.
+ * While the match is on, "Surrender" at the foot of the page asks in a dialog before giving it up (ADR-0116); the same
+ * dialog asks before the room page is left during the match (ADR-0117).
  */
 @Component({
   selector: 'app-battle',
@@ -90,6 +104,8 @@ export class Battle {
   protected readonly gameState = inject(GameStateService);
   /** The dice roll for the first turn, as it plays. */
   private readonly dice = inject(DiceAnimation);
+  /** Renders the dialog's words before it opens, so it is announced with them. */
+  private readonly changeDetector = inject(ChangeDetectorRef);
 
   /** The words of the view. */
   protected readonly text = BATTLE_TEXT;
@@ -264,8 +280,42 @@ export class Battle {
   /** The board shown on a narrow screen: the focused one, until the player toggles to the other one. */
   protected readonly shownBoard = linkedSignal<BattleBoard>(() => this.focusedBoard().board);
 
-  /** Holds the board each fired turn lands on; stops with the view. */
+  /** The heading, which takes focus when the match ends under the surrender control. */
+  private readonly headingElement = viewChild.required<ElementRef<HTMLHeadingElement>>('headingElement');
+  /** "Surrender", which gets focus back when its dialog closes during the match; absent at game over. */
+  private readonly surrenderButton = viewChild<ElementRef<HTMLButtonElement>>('surrenderButton');
+  /** The dialog that asks before a surrender, from "Surrender" or from the leave guard. */
+  private readonly surrenderDialog = viewChild.required<ElementRef<HTMLDialogElement>>('surrenderDialog');
+  /** What opened the surrender dialog, which picks its words; kept after it closes, so they do not change as it goes. */
+  private readonly surrenderPrompt = signal<SurrenderPrompt>(SURRENDER_PROMPTS.SURRENDER);
+  /** The words of the surrender dialog. */
+  protected readonly surrenderText = computed(() => this.text.surrenderPrompts[this.surrenderPrompt()]);
+  /** Settles the open dialog's `askToSurrender`; set while the dialog is open. */
+  private settleSurrender: ((isConfirmed: boolean) => void) | undefined;
+  /** Whether the player confirmed in the open dialog; what `askToSurrender` resolves with. */
+  private isSurrenderConfirmed = false;
+
+  /**
+   * Holds the board each fired turn lands on; stops with the view. When the match ends, the surrender dialog closes by
+   * itself, and focus on "Surrender" or in the dialog moves to the heading, which names the result: the button goes.
+   */
   constructor() {
+    effect(() => {
+      if (this.gameOver() === null) {
+        return;
+      }
+      untracked(() => {
+        const dialog = this.surrenderDialog().nativeElement;
+        const button = this.surrenderButton()?.nativeElement;
+        const hadFocus = dialog.open || (button !== undefined && button === document.activeElement);
+        if (dialog.open) {
+          dialog.close();
+        }
+        if (hadFocus) {
+          this.headingElement().nativeElement.focus();
+        }
+      });
+    });
     const stopListening = inject(GameSocketService).on(SERVER_EVENTS.SHOT_RESOLVED, ({ shooter }) => {
       const isMine = shooter === this.gameState.snapshot()?.me.seat;
       clearTimeout(this.holdTimer);
@@ -277,6 +327,86 @@ export class Battle {
     inject(DestroyRef).onDestroy(() => {
       stopListening();
       clearTimeout(this.holdTimer);
+    });
+  }
+
+  /**
+   * Asks before the room page is left during the match (ADR-0117), for the router's leave guard: the dialog says that
+   * leaving surrenders, and its confirm button sends `SURRENDER`.
+   * @returns Whether the player confirmed, so the page may be left: once the ack of `SURRENDER` arrives, at once when
+   * the socket is not connected, and after `ACK_TIMEOUT_MS` without an ack. `false` when the player keeps playing, when
+   * the match ends while the dialog is open before a confirmation, and while the dialog is open already.
+   */
+  confirmLeave(): Promise<boolean> {
+    return this.askToSurrender(SURRENDER_PROMPTS.LEAVE);
+  }
+
+  /** "Surrender": asks in the dialog, which sends `SURRENDER` on confirm; the game-over view follows. */
+  protected async openSurrender(): Promise<void> {
+    await this.askToSurrender(SURRENDER_PROMPTS.SURRENDER);
+  }
+
+  /**
+   * The dialog's confirm button: sends `SURRENDER` once, then closes the dialog when its ack arrives, or after
+   * `ACK_TIMEOUT_MS` without one. A refusal shows on the page (`WRONG_PHASE`: the match ended first).
+   */
+  protected async confirmSurrender(): Promise<void> {
+    this.isSurrenderConfirmed = true;
+    if ((await this.store.surrender()) === null) {
+      return;
+    }
+    const dialog = this.surrenderDialog().nativeElement;
+    if (dialog.open) {
+      dialog.close();
+    }
+  }
+
+  /** The dialog's "Keep playing", as Esc does. */
+  protected closeSurrenderDialog(): void {
+    this.surrenderDialog().nativeElement.close();
+  }
+
+  /**
+   * Keeps the dialog open while `SURRENDER` waits for its ack, so Esc cannot hide a surrender on its way.
+   * @param event The dialog's `cancel` event, from Esc.
+   */
+  protected onSurrenderCancel(event: Event): void {
+    if (this.store.isSurrendering()) {
+      event.preventDefault();
+    }
+  }
+
+  /**
+   * Runs whenever the surrender dialog closes, by Esc included: settles `askToSurrender`, and gives focus back to
+   * "Surrender" while the match goes on (the game-over effect moves it to the heading otherwise).
+   */
+  protected onSurrenderDialogClosed(): void {
+    const settle = this.settleSurrender;
+    const isConfirmed = this.isSurrenderConfirmed;
+    this.settleSurrender = undefined;
+    this.isSurrenderConfirmed = false;
+    settle?.(isConfirmed);
+    if (this.gameOver() === null) {
+      this.surrenderButton()?.nativeElement.focus();
+    }
+  }
+
+  /**
+   * Opens the surrender dialog, modal, with focus on "Keep playing".
+   * @param prompt What opens it, which picks its words.
+   * @returns Whether the player confirmed before the dialog closed; `false` at once while it is open already, or once the
+   * match is over.
+   */
+  private askToSurrender(prompt: SurrenderPrompt): Promise<boolean> {
+    const dialog = this.surrenderDialog().nativeElement;
+    if (dialog.open || this.gameOver() !== null) {
+      return Promise.resolve(false);
+    }
+    this.surrenderPrompt.set(prompt);
+    this.changeDetector.detectChanges();
+    dialog.showModal();
+    return new Promise((resolve) => {
+      this.settleSurrender = resolve;
     });
   }
 

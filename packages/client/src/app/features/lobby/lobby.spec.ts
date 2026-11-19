@@ -1,6 +1,6 @@
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Lobby, NATIVE_SHEET_FAILURE_MS, SHARE_OUTCOMES } from './lobby';
 import { LOBBY_TEXT } from './lobby.text';
@@ -124,17 +124,6 @@ async function click(scope: Element, label: string): Promise<void> {
   await Promise.resolve();
   await fixture.whenStable();
 }
-
-beforeAll(() => {
-  // jsdom has `<dialog>` without its methods; these do what the lobby relies on.
-  HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
-    this.setAttribute('open', '');
-  };
-  HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
-    this.removeAttribute('open');
-    this.dispatchEvent(new Event('close'));
-  };
-});
 
 beforeEach(() => {
   vi.resetAllMocks();

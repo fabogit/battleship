@@ -64,6 +64,17 @@ interface PendingShot {
   readonly afkCountBefore: number;
 }
 
+/** What opened the surrender dialog, which words it (ADR-0116, ADR-0117). */
+export const SURRENDER_PROMPTS = {
+  /** The "Surrender" button: the player stays in the room and sees the game over. */
+  SURRENDER: 'surrender',
+  /** Leaving the room during the match, through the router's leave guard: the page goes on once it is answered. */
+  LEAVE: 'leave',
+} as const;
+
+/** One of the `SURRENDER_PROMPTS`. */
+export type SurrenderPrompt = (typeof SURRENDER_PROMPTS)[keyof typeof SURRENDER_PROMPTS];
+
 /** Why a battle command failed: the server's refusal, or no reply at all (ADR-0035). */
 export type BattleCommandError = ErrorCode | TransportError;
 
@@ -197,6 +208,29 @@ export class BattleStore {
     }
     const kind = change.isTargeted ? BATTLE_FEEDBACK.TARGETED : BATTLE_FEEDBACK.UNTARGETED;
     this.sync.update(change.draft, { kind, coordinate });
+  }
+
+  /** True from sending `SURRENDER` until its ack; read through `isSurrendering`. */
+  private readonly isSurrenderingSignal = signal(false);
+  /** Whether a `SURRENDER` waits for its ack. */
+  readonly isSurrendering = this.isSurrenderingSignal.asReadonly();
+
+  /**
+   * Gives up the match with `SURRENDER` (ADR-0116): the opponent wins, and the game-over `STATE` follows the ack. A
+   * second call while one waits for its ack sends nothing, so a double click surrenders once. A refusal is kept in
+   * `error`: `WRONG_PHASE` when the match ended first.
+   * @returns Whether the ack accepted it, or `null` when a surrender was already on its way. Resolves within
+   * `ACK_TIMEOUT_MS`, at once when the socket is not connected.
+   */
+  async surrender(): Promise<boolean | null> {
+    if (this.isSurrenderingSignal()) {
+      return null;
+    }
+    this.isSurrenderingSignal.set(true);
+    const result = await this.socket.emitWithAck(CLIENT_EVENTS.SURRENDER, {});
+    this.isSurrenderingSignal.set(false);
+    this.errorSignal.set(result.ok ? null : result.error);
+    return result.ok;
   }
 
   /** Fires the draft with `FIRE`; does nothing until it holds the allowed number of targets. */

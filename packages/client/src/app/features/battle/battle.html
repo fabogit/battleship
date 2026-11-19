@@ -1,5 +1,5 @@
 <div class="heading">
-  <h1>{{ heading() }}</h1>
+  <h1 #headingElement tabindex="-1">{{ heading() }}</h1>
   @if (diceView(); as dice) {
     <div class="dice" aria-hidden="true">
       <span class="die">
@@ -94,3 +94,31 @@
 <p class="feedback" aria-live="polite">{{ feedbackMessage() }}</p>
 
 <p class="error" role="alert">{{ errorMessage() }}</p>
+
+@if (!gameOver()) {
+  <div class="surrender">
+    <button #surrenderButton type="button" (click)="openSurrender()">{{ text.surrender }}</button>
+  </div>
+}
+
+<dialog
+  #surrenderDialog
+  aria-labelledby="surrender-heading"
+  aria-describedby="surrender-intro"
+  (cancel)="onSurrenderCancel($event)"
+  (close)="onSurrenderDialogClosed()"
+>
+  <h2 id="surrender-heading">{{ surrenderText().heading }}</h2>
+  <p id="surrender-intro">{{ surrenderText().intro(opponentNickname()) }}</p>
+  <div class="actions">
+    <button type="button" autofocus (click)="closeSurrenderDialog()">{{ text.keepPlaying }}</button>
+    <button
+      type="button"
+      class="primary"
+      [attr.aria-disabled]="store.isSurrendering() ? 'true' : null"
+      (click)="confirmSurrender()"
+    >
+      {{ store.isSurrendering() ? text.surrendering : surrenderText().confirm }}
+    </button>
+  </div>
+</dialog>

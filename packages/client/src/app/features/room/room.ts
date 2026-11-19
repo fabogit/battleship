@@ -1,5 +1,16 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, computed, effect, inject, input, linkedSignal, resource, signal, untracked } from '@angular/core';
+import {
+  Component,
+  computed,
+  effect,
+  inject,
+  input,
+  linkedSignal,
+  resource,
+  signal,
+  untracked,
+  viewChild,
+} from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import {
   DISCONNECT_FORFEIT_MS,
@@ -95,6 +106,8 @@ export class Room {
   private readonly wake = inject(ServerWakeService);
   /** Goes home after "Leave room". */
   private readonly router = inject(Router);
+  /** The battle view, shown in `IN_PROGRESS` and `GAME_OVER`; it asks before the page is left during the match. */
+  private readonly battle = viewChild(Battle);
 
   /** The words of the page. */
   protected readonly text = ROOM_TEXT;
@@ -227,10 +240,14 @@ export class Room {
     computation: () => null,
   });
 
-  /** The message for a failed "Leave room", or `null`. */
+  /**
+   * The message for a failed "Leave room", or `null`: the room-entry messages. `NOT_ALLOWED` has none of its own since
+   * `LEAVE_ROOM` during the match surrenders it (ADR-0116): only a socket without a seat, or a room already in
+   * `GAME_OVER`, still gets it, and neither shows "Leave room".
+   */
   protected readonly leaveErrorMessage = computed(() => {
     const error = this.leaveError();
-    return error === null ? null : (this.text.leaveErrors[error] ?? roomEntryErrorMessage(error));
+    return error === null ? null : roomEntryErrorMessage(error);
   });
 
   /** The message for a failed join that keeps the form, or `null`. */
@@ -254,7 +271,9 @@ export class Room {
 
   /**
    * Gives up the seat before the match, then goes home (ADR-0078); a failure stays on the page with its
-   * message. Ignored while a leave is under way.
+   * message. Ignored while a leave is under way. Sent from placement just as the match starts, it reaches the server in
+   * `IN_PROGRESS` and surrenders the match (ADR-0116): the ack is the same, and the page goes home all the same, the
+   * guard letting it through since the snapshot is gone.
    */
   protected async leave(): Promise<void> {
     if (this.isLeavingSignal()) {
@@ -269,6 +288,19 @@ export class Room {
     } else {
       this.leaveError.set(result.error);
     }
+  }
+
+  /**
+   * Asks before the router leaves the page during the match, for `confirmSurrenderOnLeave` (ADR-0117): while this
+   * room's last snapshot is in `IN_PROGRESS`, the battle view's surrender dialog, whose confirmation sends `SURRENDER`.
+   * @returns Whether to leave: `true` at once in any other phase, without a snapshot of this room, and when the page
+   * shows another view (a refused seat), else the dialog's answer.
+   */
+  confirmLeave(): Promise<boolean> | boolean {
+    if (this.snapshot()?.phase !== ROOM_PHASES.IN_PROGRESS) {
+      return true;
+    }
+    return this.battle()?.confirmLeave() ?? true;
   }
 
   /**

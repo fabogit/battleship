@@ -13,8 +13,28 @@ import {
 
 import { TRANSPORT_ERRORS } from '../../core/game-socket';
 import { formatCoordinate } from '../../shared/board-grid/coordinates';
-import { BATTLE_FEEDBACK, type BattleCommandError, type BattleFeedback } from './battle-store';
+import {
+  BATTLE_FEEDBACK,
+  SURRENDER_PROMPTS,
+  type BattleCommandError,
+  type BattleFeedback,
+  type SurrenderPrompt,
+} from './battle-store';
 import type { TargetRefusal } from './target-draft';
+
+/** The words of the surrender dialog for one of the `SURRENDER_PROMPTS`. */
+export interface SurrenderPromptText {
+  /** The dialog's heading. */
+  readonly heading: string;
+  /**
+   * What surrendering does.
+   * @param nickname The opponent's nickname.
+   * @returns The sentence.
+   */
+  readonly intro: (nickname: string) => string;
+  /** The confirm button. */
+  readonly confirm: string;
+}
 
 /** The words of the battle and game-over view. */
 export interface BattleText {
@@ -190,6 +210,14 @@ export interface BattleText {
   readonly revealed: (nickname: string) => string;
   /** The link home at game over. */
   readonly newMatch: string;
+  /** The button that opens the surrender dialog while the match is on (ADR-0116). */
+  readonly surrender: string;
+  /** The surrender dialog, by what opened it (ADR-0116, ADR-0117). */
+  readonly surrenderPrompts: Readonly<Record<SurrenderPrompt, SurrenderPromptText>>;
+  /** The dialog's confirm button while `SURRENDER` waits for its ack. */
+  readonly surrendering: string;
+  /** The dialog's button that closes it and goes on with the match. */
+  readonly keepPlaying: string;
   /** A message for each command failure the view explains; the others get `unexpected`. */
   readonly errors: Readonly<Partial<Record<BattleCommandError, string>>>;
   /** For any command failure without its own message. */
@@ -304,6 +332,21 @@ export const BATTLE_TEXT: BattleText = {
   },
   revealed: (nickname) => `Enemy waters now shows ${nickname}'s whole fleet, the ships you did not find included.`,
   newMatch: 'New match',
+  surrender: 'Surrender',
+  surrenderPrompts: {
+    [SURRENDER_PROMPTS.SURRENDER]: {
+      heading: 'Surrender the match?',
+      intro: (nickname) => `${nickname} wins at once. You stay in the room and see both fleets.`,
+      confirm: 'Surrender',
+    },
+    [SURRENDER_PROMPTS.LEAVE]: {
+      heading: 'Leave the match?',
+      intro: (nickname) => `Leaving the room surrenders the match: ${nickname} wins at once.`,
+      confirm: 'Surrender and leave',
+    },
+  },
+  surrendering: 'Surrendering…',
+  keepPlaying: 'Keep playing',
   errors: {
     [ERROR_CODES.NOT_YOUR_TURN]: 'It is not your turn.',
     [ERROR_CODES.INVALID_TARGETS]: 'The server refused this target. Pick another cell.',
