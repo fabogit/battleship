@@ -56,6 +56,14 @@ test('leaving the room during the match asks first, and confirming surrenders it
   await expect(ada.page).toHaveURL(roomUrl);
   await expect(ada.page.getByRole('grid', { name: BATTLE_TEXT.enemyWaters })).toBeVisible();
 
+  // The next Back asks again: the cancelled one left the history as it was ('computed', ADR-0117), where 'replace'
+  // would have let this one leave the app.
+  await ada.page.goBack();
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: BATTLE_TEXT.keepPlaying }).click();
+  await expect(dialog).toBeHidden();
+  await expect(ada.page).toHaveURL(roomUrl);
+
   // The header's link home, confirmed: the surrender goes out, then the page goes home.
   await brandLink.click();
   await expect(dialog).toBeVisible();
