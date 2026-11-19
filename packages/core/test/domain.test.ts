@@ -57,24 +57,22 @@ describe('validateRules', () => {
   it.each([
     [false, false],
     [false, true],
+    [true, false],
   ])('accepts salvo %s with extra turn %s', (isSalvoModeEnabled, isExtraTurnOnHitEnabled) => {
     expect(validateRules({ ...DEFAULT_RULES, isSalvoModeEnabled, isExtraTurnOnHitEnabled })).toEqual({ ok: true });
   });
 
-  // ADR-0085: the shot engine throws on salvo until #32, which drops this test with the violation.
-  it('refuses salvo alone until the shot engine supports it, whatever the other fields', () => {
-    for (const rules of [
-      { ...DEFAULT_RULES, isSalvoModeEnabled: true },
-      {
+  // ADR-0112: salvo on its own is playable since #32, which lifted ADR-0085's refusal.
+  it('accepts salvo alone, whatever the other fields', () => {
+    expect(
+      validateRules({
         isSalvoModeEnabled: true,
         isExtraTurnOnHitEnabled: false,
         areAdjacentShipsAllowed: true,
         turnTimeLimitSeconds: 120,
         timeoutAction: TIMEOUT_ACTIONS.PASS_TURN,
-      } as const,
-    ]) {
-      expect(validateRules(rules)).toEqual({ ok: false, reason: RULES_VIOLATIONS.SALVO_NOT_IMPLEMENTED });
-    }
+      }),
+    ).toEqual({ ok: true });
   });
 
   it('refuses salvo with extra turn on hit, whatever the other fields', () => {

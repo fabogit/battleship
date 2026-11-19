@@ -6,6 +6,8 @@ import {
   DEFAULT_RULES,
   ORIENTATIONS,
   autoShotTargets,
+  countSurvivingShips,
+  otherSeat,
   randomTargets,
   resolveTurn,
   rollDice,
@@ -14,6 +16,7 @@ import {
   SHOT_OUTCOMES,
   shotsAllowed,
   TARGET_VIOLATIONS,
+  toCellIndex,
   toPlacedShip,
   validateTargets,
   type Battle,
@@ -31,6 +34,8 @@ import {
 const STANDARD: GameRules = { ...DEFAULT_RULES, isExtraTurnOnHitEnabled: false, isSalvoModeEnabled: false };
 const EXTRA_TURN: GameRules = { ...STANDARD, isExtraTurnOnHitEnabled: true };
 const SALVO: GameRules = { ...STANDARD, isSalvoModeEnabled: true };
+/** Refused by `validateRules` (ADR-0010), but `resolveTurn` must still never grant the extra turn in salvo mode. */
+const SALVO_WITH_EXTRA_TURN: GameRules = { ...SALVO, isExtraTurnOnHitEnabled: true };
 const SEED_COUNT = 200;
 
 function ship(type: ShipType, x: number, y: number, orientation: Orientation = ORIENTATIONS.HORIZONTAL): PlacedShip {
@@ -85,6 +90,29 @@ const ALL_BUT_ONE_HIT: readonly ShotResult[] = TARGET_FLEET.flatMap((placed) => 
   .filter(({ x, y }) => !(x === 1 && y === 8))
   .map(({ x, y }) => hit(x, y));
 
+/** Shots at P1's board that sink the first `count` ships of `SHOOTER_FLEET`, the carrier first, and nothing else. */
+function sinkingShooterShips(count: number): ShotResult[] {
+  return SHOOTER_FLEET.slice(0, count)
+    .flatMap((placed) => placed.coordinates)
+    .map(({ x, y }) => hit(x, y));
+}
+
+/** Shots at every cell of P2's board but `unshot`: hits on `TARGET_FLEET`, misses elsewhere, row by row. */
+function everyCellBut(...unshot: readonly Coordinate[]): ShotResult[] {
+  const shipCells = new Set(TARGET_FLEET.flatMap((placed) => placed.coordinates).map(toCellIndex));
+  const unshotCells = new Set(unshot.map(toCellIndex));
+  const shots: ShotResult[] = [];
+  for (let y = 0; y < BOARD_SIZE; y++) {
+    for (let x = 0; x < BOARD_SIZE; x++) {
+      const index = toCellIndex(cell(x, y));
+      if (!unshotCells.has(index)) {
+        shots.push(shipCells.has(index) ? hit(x, y) : miss(x, y));
+      }
+    }
+  }
+  return shots;
+}
+
 /** A battle where P1 fires at `TARGET_FLEET` with the given shots already on it. */
 function battle(targetShots: readonly ShotResult[] = [], shooterShots: readonly ShotResult[] = []): Battle {
   return {
@@ -123,8 +151,75 @@ describe('shotsAllowed', () => {
     expect(shotsAllowed(battle(), rules)).toBe(1);
   });
 
-  it('refuses salvo mode until it is implemented', () => {
-    expect(() => shotsAllowed(battle(), SALVO)).toThrow(/#32/);
+  it('allows one target in standard mode whatever the shooter has lost', () => {
+    expect(shotsAllowed(battle([], sinkingShooterShips(4)), STANDARD)).toBe(1);
+  });
+
+  describe('salvo mode (ADR-0112)', () => {
+    it.each([0, 1, 2, 3, 4])(
+      "allows one target per surviving ship of the shooter, with %i of the shooter's ships sunk",
+      (sunkCount) => {
+        expect(shotsAllowed(battle([], sinkingShooterShips(sunkCount)), SALVO)).toBe(5 - sunkCount);
+      },
+    );
+
+    it('counts a ship hit but not sunk as surviving', () => {
+      const allButLastCell = SHOOTER_FLEET.flatMap((placed) => placed.coordinates.slice(0, -1)).map(({ x, y }) =>
+        hit(x, y),
+      );
+      expect(shotsAllowed(battle([], allButLastCell), SALVO)).toBe(5);
+    });
+
+    it("reads the fleet of the seat whose turn it is, not P1's", () => {
+      const p2Turn: Battle = { ...battle(ALL_BUT_ONE_HIT.slice(5)), currentTurn: SEATS.P2 };
+      // P2's own fleet keeps the carrier (its 5 cells are left out) and the destroyer; P1's fleet is whole.
+      expect(shotsAllowed(p2Turn, SALVO)).toBe(2);
+      expect(shotsAllowed({ ...p2Turn, currentTurn: SEATS.P1 }, SALVO)).toBe(5);
+    });
+
+    it("caps the allowance by the opponent's unshot cells", () => {
+      // P1 has 3 ships left; P2's board has 2 unshot cells, one of them the destroyer's last.
+      const nearlyFull = battle(everyCellBut(cell(1, 8), cell(9, 9)), sinkingShooterShips(2));
+      expect(shotsAllowed(nearlyFull, SALVO)).toBe(2);
+      expect(shotsAllowed(battle(everyCellBut(cell(1, 8)), sinkingShooterShips(2)), SALVO)).toBe(1);
+    });
+
+    it('is not capped while the unshot cells outnumber the surviving ships', () => {
+      const cells = [cell(1, 8), cell(9, 9), cell(8, 9), cell(7, 9)];
+      expect(shotsAllowed(battle(everyCellBut(...cells), sinkingShooterShips(2)), SALVO)).toBe(3);
+    });
+
+    it('derives the sunk ships from the coordinates, not from the stored outcomes', () => {
+      const recordedAsMisses = SHOOTER_FLEET.slice(0, 2)
+        .flatMap((placed) => placed.coordinates)
+        .map(({ x, y }) => miss(x, y));
+      expect(shotsAllowed(battle([], recordedAsMisses), SALVO)).toBe(3);
+    });
+
+    it('never mutates the battle', () => {
+      const before = deepFreeze(battle([hit(0, 0)], sinkingShooterShips(1)));
+      expect(shotsAllowed(before, SALVO)).toBe(4);
+      expect(before).toEqual(battle([hit(0, 0)], sinkingShooterShips(1)));
+    });
+  });
+});
+
+describe('countSurvivingShips', () => {
+  it('counts a whole fleet', () => {
+    expect(countSurvivingShips({ ships: TARGET_FLEET, shots: [] })).toBe(5);
+  });
+
+  it('leaves out each sunk ship, and only those', () => {
+    expect(countSurvivingShips({ ships: TARGET_FLEET, shots: ALL_BUT_ONE_HIT })).toBe(1);
+    expect(countSurvivingShips({ ships: SHOOTER_FLEET, shots: sinkingShooterShips(3) })).toBe(2);
+  });
+
+  it('reaches zero once the fleet is destroyed', () => {
+    expect(countSurvivingShips({ ships: TARGET_FLEET, shots: [...ALL_BUT_ONE_HIT, hit(1, 8)] })).toBe(0);
+  });
+
+  it('ignores misses and shots at other cells', () => {
+    expect(countSurvivingShips({ ships: TARGET_FLEET, shots: [miss(9, 9), hit(0, 0), hit(1, 0)] })).toBe(5);
   });
 });
 
@@ -246,9 +341,138 @@ describe('resolveTurn', () => {
         targetIndex: 0,
       });
     });
+  });
 
-    it('throws in salvo mode until it is implemented', () => {
-      expect(() => resolveTurn(battle(), [cell(9, 9)], SALVO)).toThrow(/#32/);
+  describe('salvo mode', () => {
+    /** A salvo of `count` targets for P1: `sinkingShooterShips` leaves P1 with that many ships afloat. */
+    function salvoBattle(count: number, targetShots: readonly ShotResult[] = []): Battle {
+      return battle(targetShots, sinkingShooterShips(5 - count));
+    }
+
+    it('fires a whole first salvo, one target per ship', () => {
+      const targets = [cell(0, 0), cell(9, 9), cell(0, 8), cell(5, 5), cell(1, 8)];
+      const turn = fired(resolveTurn(battle(), targets, SALVO));
+      expect(turn.results).toEqual([
+        hit(0, 0),
+        miss(9, 9),
+        hit(0, 8),
+        miss(5, 5),
+        { coordinate: cell(1, 8), outcome: SHOT_OUTCOMES.SUNK, sunkShip: TARGET_FLEET[4] },
+      ]);
+      expect(turn.battle.currentTurn).toBe(SEATS.P2);
+      expect(turn.battle.boards.P2.shots).toEqual(turn.results);
+      expect(turn.winner).toBeNull();
+    });
+
+    it.each([
+      ['fewer', [cell(9, 9)]],
+      ['more', [cell(9, 9), cell(8, 9), cell(7, 9), cell(6, 9), cell(5, 9), cell(4, 9)]],
+    ])('rejects %s targets than the allowance with WRONG_TARGET_COUNT', (_name, targets) => {
+      expect(resolveTurn(battle(), targets, SALVO)).toEqual({
+        ok: false,
+        reason: TARGET_VIOLATIONS.WRONG_TARGET_COUNT,
+        targetIndex: null,
+      });
+    });
+
+    it('fires as many targets as the shooter has ships left', () => {
+      expect(resolveTurn(salvoBattle(2), [cell(9, 9), cell(8, 9)], SALVO).ok).toBe(true);
+      expect(resolveTurn(salvoBattle(2), [cell(9, 9), cell(8, 9), cell(7, 9)], SALVO).ok).toBe(false);
+    });
+
+    it('rejects a cell twice in one salvo, pointing at the second', () => {
+      expect(resolveTurn(salvoBattle(3), [cell(9, 9), cell(2, 2), cell(9, 9)], SALVO)).toEqual({
+        ok: false,
+        reason: TARGET_VIOLATIONS.DUPLICATE_TARGET,
+        targetIndex: 2,
+      });
+    });
+
+    it.each([
+      ['in ship order', [cell(0, 8), cell(1, 8)]],
+      ['in reverse order', [cell(1, 8), cell(0, 8)]],
+    ])('hits then sinks a ship with two targets of the same salvo (%s)', (_name, targets) => {
+      const turn = fired(resolveTurn(salvoBattle(2), targets, SALVO));
+      const [first, second] = targets;
+      expect(turn.results).toEqual([
+        { coordinate: first, outcome: SHOT_OUTCOMES.HIT },
+        { coordinate: second, outcome: SHOT_OUTCOMES.SUNK, sunkShip: TARGET_FLEET[4] },
+      ]);
+      expect(turn.winner).toBeNull();
+    });
+
+    it('sinks a ship hit in non-consecutive cells over earlier turns with a later salvo', () => {
+      // P1 has 2 ships afloat, P2 all 5: the turns alternate a salvo of 2 and a salvo of 5.
+      const p2Misses = (x: number) => [0, 1, 2, 3, 4].map((y) => cell(x, y));
+      let turn = fired(resolveTurn(salvoBattle(2), [cell(0, 0), cell(2, 0)], SALVO));
+      expect(turn.results).toEqual([hit(0, 0), hit(2, 0)]);
+      expect(shotsAllowed(turn.battle, SALVO)).toBe(5);
+      turn = fired(resolveTurn(turn.battle, p2Misses(0), SALVO));
+      expect(shotsAllowed(turn.battle, SALVO)).toBe(2);
+      turn = fired(resolveTurn(turn.battle, [cell(4, 0), cell(9, 9)], SALVO));
+      expect(turn.results).toEqual([hit(4, 0), miss(9, 9)]);
+      turn = fired(resolveTurn(turn.battle, p2Misses(1), SALVO));
+      turn = fired(resolveTurn(turn.battle, [cell(3, 0), cell(1, 0)], SALVO));
+      expect(turn.results).toEqual([
+        hit(3, 0),
+        { coordinate: cell(1, 0), outcome: SHOT_OUTCOMES.SUNK, sunkShip: TARGET_FLEET[0] },
+      ]);
+      expect(turn.battle.boards.P2.shots.map((shot) => shot.coordinate)).toEqual([
+        cell(0, 0),
+        cell(2, 0),
+        cell(4, 0),
+        cell(9, 9),
+        cell(3, 0),
+        cell(1, 0),
+      ]);
+    });
+
+    it.each([
+      ['first', [cell(1, 8), cell(9, 9), cell(8, 9)]],
+      ['in the middle', [cell(9, 9), cell(1, 8), cell(8, 9)]],
+      ['last', [cell(9, 9), cell(8, 9), cell(1, 8)]],
+    ])('resolves every target when the last ship sinks %s, and the shooter wins (ADR-0113)', (_name, targets) => {
+      const turn = fired(resolveTurn(salvoBattle(3, ALL_BUT_ONE_HIT), targets, SALVO));
+      expect(turn.results).toHaveLength(3);
+      expect(turn.results).toEqual(
+        targets.map((target) =>
+          target.x === 1 && target.y === 8
+            ? { coordinate: target, outcome: SHOT_OUTCOMES.SUNK, sunkShip: TARGET_FLEET[4] }
+            : { coordinate: target, outcome: SHOT_OUTCOMES.MISS },
+        ),
+      );
+      expect(turn.winner).toBe(SEATS.P1);
+      expect(turn.battle.currentTurn).toBe(SEATS.P1);
+      expect(turn.battle.boards.P2.shots).toEqual([...ALL_BUT_ONE_HIT, ...turn.results]);
+    });
+
+    it('sinks two last ships in one salvo, winning once both are down', () => {
+      // The cruiser and the destroyer are left, each one cell short.
+      const twoLeft = ALL_BUT_ONE_HIT.filter(({ coordinate }) => !(coordinate.x === 2 && coordinate.y === 4));
+      const turn = fired(resolveTurn(salvoBattle(2, twoLeft), [cell(2, 4), cell(1, 8)], SALVO));
+      expect(turn.results.map((result) => result.sunkShip)).toEqual([TARGET_FLEET[2], TARGET_FLEET[4]]);
+      expect(turn.winner).toBe(SEATS.P1);
+    });
+
+    it('goes on when a salvo sinks a ship but not the last', () => {
+      const twoLeft = ALL_BUT_ONE_HIT.filter(({ coordinate }) => !(coordinate.x === 2 && coordinate.y === 4));
+      const turn = fired(resolveTurn(salvoBattle(2, twoLeft), [cell(9, 9), cell(1, 8)], SALVO));
+      expect(turn.results[1]?.outcome).toBe(SHOT_OUTCOMES.SUNK);
+      expect(turn.winner).toBeNull();
+      expect(turn.battle.currentTurn).toBe(SEATS.P2);
+    });
+
+    it('never gives an extra turn, even with extra turn on hit set', () => {
+      const turn = fired(resolveTurn(salvoBattle(2), [cell(0, 0), cell(1, 0)], SALVO_WITH_EXTRA_TURN));
+      expect(turn.results.every((result) => result.outcome === SHOT_OUTCOMES.HIT)).toBe(true);
+      expect(turn.battle.currentTurn).toBe(SEATS.P2);
+    });
+
+    it("fires the opponent's last unshot cells when they are fewer than the shooter's ships", () => {
+      const nearlyFull = battle(everyCellBut(cell(1, 8), cell(9, 9)), sinkingShooterShips(2));
+      const turn = fired(resolveTurn(nearlyFull, [cell(9, 9), cell(1, 8)], SALVO));
+      expect(turn.results.map((result) => result.outcome)).toEqual([SHOT_OUTCOMES.MISS, SHOT_OUTCOMES.SUNK]);
+      expect(turn.winner).toBe(SEATS.P1);
     });
   });
 
@@ -312,6 +536,26 @@ describe('resolveTurn', () => {
       expect(before).toEqual(battle([hit(0, 0)], [miss(4, 4)]));
       expect(turn.battle.boards.P1).toBe(before.boards.P1);
       expect(turn.results[0]?.coordinate).not.toBe(targets[0]);
+    });
+
+    it('plays a whole salvo match to the end, the allowance following the ships left', () => {
+      for (let seed = 0; seed < SEED_COUNT; seed++) {
+        const rng = createSeededRng(seed);
+        let current: Battle = battle();
+        let winner: Seat | null = null;
+        while (winner === null) {
+          const count = shotsAllowed(current, SALVO);
+          const unshot = BOARD_SIZE * BOARD_SIZE - current.boards[otherSeat(current.currentTurn)].shots.length;
+          expect(count).toBe(Math.min(countSurvivingShips(current.boards[current.currentTurn]), unshot));
+          const turn = fired(resolveTurn(current, autoShotTargets(current, [], count, rng), SALVO));
+          expect(turn.results).toHaveLength(count);
+          current = turn.battle;
+          winner = turn.winner;
+        }
+        const loser = winner === SEATS.P1 ? SEATS.P2 : SEATS.P1;
+        expect(countSurvivingShips(current.boards[loser])).toBe(0);
+        expect(countSurvivingShips(current.boards[winner])).toBeGreaterThan(0);
+      }
     });
 
     it('plays a whole match to the end, one random shot per turn', () => {
@@ -447,6 +691,17 @@ describe('autoShotTargets', () => {
     for (let seed = 0; seed < SEED_COUNT; seed++) {
       const targets = autoShotTargets(battle(ALL_BUT_ONE_HIT), [cell(0, 0)], 1, createSeededRng(seed));
       expect(resolveTurn(battle(ALL_BUT_ONE_HIT), targets, STANDARD).ok).toBe(true);
+    }
+  });
+
+  it("fills a partial salvo draft up to the allowance, capped by the opponent's unshot cells", () => {
+    const nearlyFull = battle(everyCellBut(cell(1, 8), cell(9, 9), cell(8, 9)), sinkingShooterShips(1));
+    const count = shotsAllowed(nearlyFull, SALVO);
+    expect(count).toBe(3);
+    for (let seed = 0; seed < SEED_COUNT; seed++) {
+      const targets = autoShotTargets(nearlyFull, [cell(8, 9)], count, createSeededRng(seed));
+      expect(targets[0]).toEqual(cell(8, 9));
+      expect(fired(resolveTurn(nearlyFull, targets, SALVO)).winner).toBe(SEATS.P1);
     }
   });
 
