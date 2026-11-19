@@ -1,8 +1,8 @@
 // Shot engine: the starting dice roll, shot allowance, target validation, turn resolution and auto shots
-// (docs/domain.md#shot-engine, ADR-0002, ADR-0033, ADR-0034).
+// (docs/domain.md#shot-engine, ADR-0002, ADR-0033, ADR-0034, ADR-0112, ADR-0113).
 
 import { BOARD_SIZE } from './constants.js';
-import { isOnBoard, toCellIndex } from './grid.js';
+import { CELL_COUNT, isOnBoard, toCellIndex } from './grid.js';
 import type { DiceRoll, DiceRolledPayload } from './protocol.js';
 import type { Rng } from './random.js';
 import { SEATS, SHOT_OUTCOMES } from './types.js';
@@ -112,19 +112,58 @@ export function rollDice(rng: Rng): DiceRolledPayload {
 }
 
 /**
- * Counts the targets the current turn must fire (docs/domain.md#shot-engine): 1 in standard mode. Salvo mode,
- * `min(shooter's surviving ships, opponent's unshot cells)`, lands with #32; the signature already takes the battle it
- * needs.
- * @param _battle The battle before the turn; only salvo mode will read it, hence the underscore until #32.
+ * Counts the targets the current turn must fire (docs/domain.md#shot-engine, ADR-0112): 1 in standard mode; in salvo
+ * mode `min(shooter's surviving ships, opponent's unshot cells)`, for the shooter `battle.currentTurn` whoever asks. The
+ * cap keeps the count within what `randomTargets` can pick, so an auto shot near the end of a match never throws. While
+ * the match goes on both counts are at least 1: the shooter has a ship afloat, and that opponent ship has an unshot cell.
+ * @param battle The battle before the turn; salvo mode reads the shooter's fleet and the shots on the opponent's board.
  * @param rules The room's rules; `isSalvoModeEnabled` picks the mode.
- * @returns The exact number of targets `resolveTurn` accepts, also sent as `shotsAllowed` in the snapshot.
- * @throws When `rules.isSalvoModeEnabled` is true, until salvo mode is implemented (#32).
+ * @returns The exact number of targets `resolveTurn` accepts, also sent as `shotsAllowed` in the snapshot to both seats.
+ * @example
+ * shotsAllowed(battle, { ...DEFAULT_RULES, isSalvoModeEnabled: true }); // 5 on the first turn, 3 once two of the
+ * // shooter's ships are sunk, 2 when the opponent's board has only two unshot cells left
  */
-export function shotsAllowed(_battle: Battle, rules: GameRules): number {
-  if (rules.isSalvoModeEnabled) {
-    throw new Error('Salvo mode is not implemented yet (#32)');
+export function shotsAllowed(battle: Battle, rules: GameRules): number {
+  if (!rules.isSalvoModeEnabled) {
+    return STANDARD_SHOTS_PER_TURN;
   }
-  return STANDARD_SHOTS_PER_TURN;
+  const shooter = battle.currentTurn;
+  const unshotCells = CELL_COUNT - shotCellIndices(battle.boards[otherSeat(shooter)].shots).size;
+  return Math.min(countSurvivingShips(battle.boards[shooter]), unshotCells);
+}
+
+/**
+ * Counts the ships of a board's fleet that still have an intact cell (docs/domain.md#shot-engine): what salvo mode
+ * allows its owner to fire, and zero once the fleet is destroyed (`FLEET_DESTROYED`). Sinks are derived from the shot
+ * coordinates, never from the stored outcomes (ADR-0034).
+ * @param board A fleet and the shots fired at it.
+ * @returns From 0 to the number of ships in the fleet.
+ * @example
+ * countSurvivingShips({ ships: fleet, shots: [] }); // 5 for a whole fleet
+ */
+export function countSurvivingShips(board: Board): number {
+  const shotCells = shotCellIndices(board.shots);
+  return board.ships.filter((ship) => !isShipSunk(ship, shotCells)).length;
+}
+
+/**
+ * Tells whether a ship has no intact cell: the one definition of a sunk ship, which `resolveTurn` (per target and for
+ * the winner) and `shotsAllowed` (through `countSurvivingShips`) share.
+ * @param ship A placed ship.
+ * @param shotCells The `toCellIndex` of every cell shot on the ship's board.
+ * @returns True when every cell of the ship is in `shotCells`.
+ */
+function isShipSunk(ship: PlacedShip, shotCells: ReadonlySet<number>): boolean {
+  return ship.coordinates.every((cell) => shotCells.has(toCellIndex(cell)));
+}
+
+/**
+ * Collects the cells a list of shots has hit or missed.
+ * @param shots Shots fired at one board, in any order.
+ * @returns The `toCellIndex` of each shot's cell, each once.
+ */
+function shotCellIndices(shots: readonly ShotResult[]): Set<number> {
+  return new Set(shots.map((shot) => toCellIndex(shot.coordinate)));
 }
 
 /**
@@ -148,7 +187,7 @@ export function validateTargets(
   if (targets.length !== count) {
     return { ok: false, reason: TARGET_VIOLATIONS.WRONG_TARGET_COUNT, targetIndex: null };
   }
-  const shotCells = new Set(shots.map((shot) => toCellIndex(shot.coordinate)));
+  const shotCells = shotCellIndices(shots);
   const turnCells = new Set<number>();
   for (const [targetIndex, target] of targets.entries()) {
     if (!isOnBoard(target)) {
@@ -169,16 +208,15 @@ export function validateTargets(
 /**
  * Fires one turn for `battle.currentTurn` at the opponent's board (ADR-0033), after `validateTargets` with
  * `shotsAllowed` as the count. Valid targets resolve in input order, each one seeing the hits of the targets before
- * it: a hit that leaves a ship with no intact cell is `SUNK` and carries the whole ship. Victory is checked once, after
- * the last target. The shooter fires again when `isExtraTurnOnHitEnabled` is on in standard mode and any target hit;
- * otherwise the turn passes to the opponent. Pure: the input is never mutated, and the new battle shares the parts the
- * turn left unchanged.
+ * it: a hit that leaves a ship with no intact cell is `SUNK` and carries the whole ship. Every target resolves, even
+ * after a salvo has sunk the last ship, and victory is checked once, after the last target (ADR-0113). The shooter
+ * fires again when `isExtraTurnOnHitEnabled` is on in standard mode and any target hit; otherwise the turn passes to
+ * the opponent. Pure: the input is never mutated, and the new battle shares the parts the turn left unchanged.
  * @param battle The battle before the turn; `currentTurn` is the shooter.
  * @param targets The cells to fire at, in firing order.
  * @param rules The room's rules; `isSalvoModeEnabled` and `isExtraTurnOnHitEnabled` matter.
- * @returns The results, the battle after the turn and the winner, or the first constraint broken and the target that
- * broke it.
- * @throws When `rules.isSalvoModeEnabled` is true, until salvo mode is implemented (#32).
+ * @returns The results, one per target, the battle after the turn and the winner, or the first constraint broken and
+ * the target that broke it.
  * @example
  * const turn = resolveTurn(battle, [{ x: 4, y: 0 }], DEFAULT_RULES);
  * // { ok: true, results: [{ coordinate: { x: 4, y: 0 }, outcome: 'MISS' }], battle: { …, currentTurn: 'P2' },
@@ -193,14 +231,13 @@ export function resolveTurn(battle: Battle, targets: readonly Coordinate[], rule
     return validation;
   }
 
-  const shotCells = new Set(board.shots.map((shot) => toCellIndex(shot.coordinate)));
+  const shotCells = shotCellIndices(board.shots);
   const shipAtCell = new Map<number, PlacedShip>();
   for (const ship of board.ships) {
     for (const cell of ship.coordinates) {
       shipAtCell.set(toCellIndex(cell), ship);
     }
   }
-  const isSunk = (ship: PlacedShip): boolean => ship.coordinates.every((cell) => shotCells.has(toCellIndex(cell)));
 
   const results = targets.map(({ x, y }): ShotResult => {
     const coordinate = { x, y };
@@ -210,17 +247,17 @@ export function resolveTurn(battle: Battle, targets: readonly Coordinate[], rule
     if (ship === undefined) {
       return { coordinate, outcome: SHOT_OUTCOMES.MISS };
     }
-    return isSunk(ship)
+    return isShipSunk(ship, shotCells)
       ? { coordinate, outcome: SHOT_OUTCOMES.SUNK, sunkShip: ship }
       : { coordinate, outcome: SHOT_OUTCOMES.HIT };
   });
 
-  const winner = board.ships.every(isSunk) ? shooter : null;
+  const nextBoard: Board = { ships: board.ships, shots: [...board.shots, ...results] };
+  const winner = countSurvivingShips(nextBoard) === 0 ? shooter : null;
   const isExtraTurnEarned =
     rules.isExtraTurnOnHitEnabled &&
     !rules.isSalvoModeEnabled &&
     results.some((result) => result.outcome !== SHOT_OUTCOMES.MISS);
-  const nextBoard: Board = { ships: board.ships, shots: [...board.shots, ...results] };
   return {
     ok: true,
     results,

@@ -1,9 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0112
 date: 2026-10-29
 ---
 
 # ADR-0085: Salvo refused until it is implemented
+
+> Superseded by [ADR-0112](0112-salvo-shot-allowance.md): salvo mode landed with #32, which dropped `SALVO_NOT_IMPLEMENTED`, the check and the tests that pinned it. `SALVO_WITH_EXTRA_TURN` stays.
 
 Until salvo mode lands with #32 (M4), `validateRules` refuses `isSalvoModeEnabled: true` with the violation `SALVO_NOT_IMPLEMENTED`, so `UPDATE_RULES` answers `INVALID_RULES` and the room keeps its rules and `rulesVersion`. The exclusivity with extra turn on hit ([ADR-0010](0010-salvo-vs-extra-turn.md)) is checked first and keeps its own violation, `SALVO_WITH_EXTRA_TURN`. Extra turn on hit stays allowed: the engine already resolves it in standard mode. #32 drops the violation, the check and the test that pins it, and nothing else in the negotiation changes.
 

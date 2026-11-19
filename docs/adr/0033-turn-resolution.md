@@ -28,4 +28,5 @@ date: 2026-10-07
 - Added on 2026-10-07 for the shot engine ([#12](https://github.com/fabogit/battleship/issues/12)).
 - Spec: [Domain: Shot engine](../domain.md#shot-engine) · [ADR-0010](0010-salvo-vs-extra-turn.md)
 - Related: [ADR-0031](0031-payload-guard-strictness.md) (payload guards, `INVALID_PAYLOAD`) · [ADR-0032](0032-fleet-placement.md) (placement results) · [ADR-0034](0034-shot-history.md) (shot history)
+- Amended on 2026-11-19 for salvo mode ([#32](https://github.com/fabogit/battleship/issues/32)): `shotsAllowed` and `resolveTurn` no longer throw on salvo; a salvo fires `min(shooter's surviving ships, opponent's unshot cells)` targets ([ADR-0112](0112-salvo-shot-allowance.md)), and every target resolves before victory is checked ([ADR-0113](0113-every-salvo-target-resolves.md)).
 - Issues: [#12](https://github.com/fabogit/battleship/issues/12) · [#32](https://github.com/fabogit/battleship/issues/32) (salvo)

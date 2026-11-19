@@ -40,7 +40,7 @@ import {
 
 afterEach(stop);
 
-/** Rules the tests edit to: every field changed but salvo, which is refused until #32 (ADR-0085). */
+/** Rules the tests edit to: every field changed but salvo, which extra turn on hit excludes (ADR-0010). */
 const EDITED_RULES: GameRules = {
   isExtraTurnOnHitEnabled: true,
   areAdjacentShipsAllowed: true,
@@ -99,27 +99,28 @@ describe('UPDATE_RULES', () => {
     await expectNothingPending(p2);
   });
 
-  // ADR-0085: agreeing on salvo would make the shot engine throw inside a handler, which ends the server process.
-  it('refuses salvo until #32: the rules and rulesVersion stay, and the server serves the next command', async () => {
+  // ADR-0112: the path ADR-0085 closed until #32. Agreeing on salvo used to make the snapshot of the match's start
+  // throw inside a handler, which ended the server process.
+  it('agrees on salvo: the match starts with five targets allowed, and the server serves the next command', async () => {
     await start();
     const { p1, p2, roomId } = await seatedPlayers();
-    const version = await edit(p2, p1, EDITED_RULES);
-    expect(
-      await send(p1, CLIENT_EVENTS.UPDATE_RULES, { rules: { ...DEFAULT_RULES, isSalvoModeEnabled: true } }),
-    ).toEqual({
-      ok: false,
-      error: ERROR_CODES.INVALID_RULES,
-    });
-    expect(rooms.get(roomId)).toMatchObject({ rules: EDITED_RULES, rulesVersion: version });
+    const salvo = { ...DEFAULT_RULES, isSalvoModeEnabled: true };
+    const version = await edit(p1, p2, salvo);
+    expect(rooms.get(roomId)).toMatchObject({ rules: salvo, rulesVersion: version });
 
-    // Both confirm the rules in place; the match starts and is played as usual.
     await agreeOnRules(p1, p2, version);
     for (const { inbox } of [p1, p2]) {
       await inbox.states(2);
     }
     await placeFleets(p1, p2);
     expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.IN_PROGRESS);
+    for (const { inbox } of [p1, p2]) {
+      await inbox.states(4);
+      await inbox.dice();
+      expect((await inbox.state()).battle?.shotsAllowed).toBe(5);
+    }
     expect(app.server.listening).toBe(true);
+    await expectNothingPending(p2);
   });
 
   // ADR-0082: the rules in place, sent again, are not an edit.

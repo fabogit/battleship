@@ -8,6 +8,7 @@ import {
   randomTargets,
   ROOM_PHASES,
   SEATS,
+  SHOT_OUTCOMES,
   START_COUNTDOWN_MS,
   TIMEOUT_ACTIONS,
   type Coordinate,
@@ -21,6 +22,7 @@ import { projectSnapshot } from '../../src/room/snapshot.js';
 import {
   apply,
   battleRoom,
+  battleRoomWith,
   cellsOf,
   fleet,
   negotiationRoom,
@@ -30,6 +32,7 @@ import {
   placeAndConfirm,
   placementRoom,
   ROOM_ID,
+  SALVO_RULES,
   waitingRoom,
 } from './fixtures.js';
 
@@ -212,6 +215,30 @@ describe('projectSnapshot', () => {
       afkCount: { me: 0, opponent: 0 },
     });
     expect(projectSnapshot(state, SEATS.P2, NOW).battle?.myDraftTargets).toEqual([]);
+  });
+
+  // ADR-0112: the allowance is the shooter's, whoever receives the snapshot.
+  it('gives both seats the salvo allowance of the seat whose turn it is', () => {
+    const state = battleRoomWith(SALVO_RULES);
+    const shooter = state.battle.currentTurn;
+    const other = otherSeat(shooter);
+    const sunk = (seat: Seat, count: number) => ({
+      ...state.battle.boards[seat],
+      shots: cellsOf(state.battle.boards[seat].ships.slice(0, count)).map((coordinate) => ({
+        coordinate,
+        outcome: SHOT_OUTCOMES.HIT,
+      })),
+    });
+    const boards = { ...state.battle.boards, [shooter]: sunk(shooter, 2), [other]: sunk(other, 1) };
+    for (const [currentTurn, allowance] of [
+      [shooter, 3],
+      [other, 4],
+    ] as const) {
+      const turn = { ...state, battle: { boards, currentTurn } };
+      for (const seat of Object.values(SEATS)) {
+        expect(projectSnapshot(turn, seat, NOW).battle?.shotsAllowed).toBe(allowance);
+      }
+    }
   });
 
   it('splits the boards into own fleet, incoming and outgoing shots', () => {
