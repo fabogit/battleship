@@ -340,6 +340,43 @@ describe('AFK (ADR-0009)', () => {
     expect(rooms.get(roomId)).toMatchObject({ phase: ROOM_PHASES.IN_PROGRESS, afkCount: { P1: 1, P2: 0 } });
   });
 
+  // ADR-0120, and the health check's gap on #33: the extra turn of a hit fired by hand.
+  it('keeps the turn after a FIRE that hits under extra turn on hit, with a fresh timer and the count reset', async () => {
+    await start();
+    const rules: GameRules = { ...PASS_TURN_RULES, isExtraTurnOnHitEnabled: true };
+    const { p1, p2, roomId } = await firstTurn(rules);
+    // P1 lets one turn run out, P2 misses, and P1 fires a hit 10 s into the turn.
+    clock.advance(TURN_LIMIT_MS);
+    await p1.inbox.state();
+    await p2.inbox.state();
+    await fire(p2, p1, WATER);
+    expect(rooms.get(roomId)).toMatchObject({ afkCount: { P1: 1, P2: 0 } });
+    clock.advance(10_000);
+    const shipCell = placedFleet(P2_FLEET_SEED)[0]?.coordinates[0] ?? WATER;
+
+    expect(await send(p1, CLIENT_EVENTS.FIRE, { targets: [shipCell] })).toEqual({ ok: true });
+
+    expect(await p1.inbox.shot()).toEqual({
+      shooter: SEATS.P1,
+      results: [{ coordinate: shipCell, outcome: SHOT_OUTCOMES.HIT }],
+    });
+    expect((await p1.inbox.state()).battle).toMatchObject({
+      currentTurn: SEATS.P1,
+      turnRemainingMs: TURN_LIMIT_MS,
+      afkCount: { me: 0, opponent: 0 },
+    });
+    await p2.inbox.shot();
+    expect((await p2.inbox.state()).battle).toMatchObject({ currentTurn: SEATS.P1, turnRemainingMs: TURN_LIMIT_MS });
+    expect(rooms.get(roomId)).toMatchObject({ turnTimerStartsAt: clock.now(), afkCount: { P1: 0, P2: 0 } });
+
+    // The fresh timer runs the whole limit from the hit: nothing times out a moment before it ends.
+    clock.advance(TURN_LIMIT_MS - 1);
+    expect(rooms.get(roomId)).toMatchObject({ battle: { currentTurn: SEATS.P1 } });
+    clock.advance(1);
+    expect((await p1.inbox.state()).battle).toMatchObject({ currentTurn: SEATS.P2, afkCount: { me: 1, opponent: 0 } });
+    await p2.inbox.state();
+  });
+
   it('ends the match with AFK_FORFEIT at the third timeout in a row, without firing it', async () => {
     await start();
     const { p1, p2, roomId } = await firstTurn();

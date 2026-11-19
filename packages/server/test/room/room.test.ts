@@ -986,6 +986,56 @@ describe('the turn timer (ADR-0009, ADR-0074, ADR-0093, ADR-0099)', () => {
     });
   });
 
+  // ADR-0120: an extra turn earned by an automatic hit is still a timeout, so a chain of them cannot hold a match.
+  it('counts every timeout of an extra-turn chain of automatic hits, and ends the match at the third', () => {
+    const { state, seat, opponent, endsAt } = firstTurn();
+    const extraTurn = { ...state, rules: { ...DEFAULT_RULES, isExtraTurnOnHitEnabled: true } };
+    const ship = state.battle.boards[opponent].ships.find(({ coordinates }) => coordinates.length >= 2);
+    const [firstCell, secondCell] = ship?.coordinates ?? [];
+    if (firstCell === undefined || secondCell === undefined) {
+      throw new Error('No ship of two cells or more');
+    }
+    const timeOutAiming = (room: BattleRoom, target: Coordinate, now: number) =>
+      timeOutTurn(
+        apply(room, { type: CLIENT_EVENTS.UPDATE_TARGETS, seat, payload: { targets: [target] } }) as BattleRoom,
+        now,
+        createSeededRng(1),
+      );
+
+    const first = timeOutAiming(extraTurn, firstCell, endsAt);
+    expect(first).toMatchObject({
+      seat,
+      afkCount: 1,
+      effects: [{ payload: { results: [{ coordinate: firstCell, outcome: SHOT_OUTCOMES.HIT }] } }],
+    });
+    expect(first?.state).toMatchObject({
+      battle: { currentTurn: seat },
+      turnTimerStartsAt: endsAt,
+      afkCount: { [seat]: 1, [opponent]: 0 },
+    });
+
+    const secondEndsAt = endsAt + TURN_LIMIT_MS;
+    const second = timeOutAiming(first?.state as BattleRoom, secondCell, secondEndsAt);
+    expect(second).toMatchObject({
+      seat,
+      afkCount: 2,
+      effects: [{ payload: { results: [{ coordinate: secondCell }] } }],
+    });
+    expect(second?.state).toMatchObject({
+      battle: { currentTurn: seat },
+      turnTimerStartsAt: secondEndsAt,
+      afkCount: { [seat]: 2, [opponent]: 0 },
+    });
+
+    const third = timeOutTurn(second?.state as BattleRoom, secondEndsAt + TURN_LIMIT_MS, createSeededRng(1));
+    expect(third).toMatchObject({ seat, afkCount: MAX_CONSECUTIVE_AFK_TURNS, action: null, effects: [] });
+    expect(third?.state).toMatchObject({
+      phase: ROOM_PHASES.GAME_OVER,
+      winner: opponent,
+      reason: GAME_OVER_REASONS.AFK_FORFEIT,
+    });
+  });
+
   it('counts a FIRE handled after the deadline, before the timer ran, which then finds nothing to time out', () => {
     const { state, seat, opponent, endsAt } = firstTurn();
     const late = endsAt + 5;
