@@ -17,7 +17,7 @@ export type RoomLeaveResult =
   | {
       /** The player still holds the seat, or may: after `NO_ACK` the next `STATE` or handshake tells. */
       readonly ok: false;
-      /** Why; `NOT_ALLOWED` once the match has started (docs/server.md#leaving). */
+      /** Why; `NOT_ALLOWED` without a seat, or once the match is over (docs/server.md#leaving). */
       readonly error: RoomEntryError;
     };
 
@@ -114,7 +114,8 @@ export class RoomEntryService {
   /**
    * Gives up the seat before the match (`LEAVE_ROOM`, docs/server.md#leaving, ADR-0078): the opponent, if any, goes
    * back to waiting, and the stored credentials and the room's snapshot are dropped, so the room link shows the join
-   * form.
+   * form. Should the match have started on the server meanwhile, the same ack means it was surrendered with the seat
+   * kept (ADR-0116); the credentials are dropped all the same, as the player chose to go.
    * @param roomId The room the tab is in, from the address.
    * @returns Whether the seat was given up, or why not; a refusal keeps the credentials and the snapshot.
    */

@@ -145,8 +145,11 @@ const STEPS: readonly Step[] = [
   { request: 'Seat P2', disconnect: true },
   { request: 'Seat P1', message: `${CLIENT_EVENTS.SET_PAUSED} — resume`, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.SET_PAUSED, ack: OK },
-  // Leaving a match is a surrender (#35).
+  // Either seat may give up the match, here with the opponent away: the absent P2 wins (ADR-0116). Once it is over,
+  // leaving waits for the rematch choice (#36), and a second surrender finds the wrong phase.
+  { request: 'Seat P1', message: CLIENT_EVENTS.SURRENDER, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.LEAVE_ROOM, ack: NOT_ALLOWED },
+  { request: 'Seat P1', message: CLIENT_EVENTS.SURRENDER, ack: { ok: false, error: ERROR_CODES.WRONG_PHASE } },
   {
     request: 'Seat P1',
     message: `${CLIENT_EVENTS.CREATE_ROOM} — invalid payload`,

@@ -28,8 +28,11 @@ description: |-
      opponent away (`isConnected: false`, `forfeitRemainingMs`) and the match paused. Now `SET_PAUSED — resume`
      and `SET_PAUSED` are accepted, each followed by a `STATE`. After 3 minutes P2's seat is forfeited:
      `GAME_OVER` with reason `DISCONNECT_FORFEIT`.
-  7. `LEAVE_ROOM` (P1) during the match: `NOT_ALLOWED` (leaving a match is a surrender, #35).
-  8. `CREATE_ROOM` (P1) again: P1 moves to a new room. `LEAVE_ROOM` there frees the seat at once and closes
+  7. `SURRENDER` (P1) during the match, on either player's turn and paused or not: the ack is `{ "ok": true }`, then a
+     `STATE` in `GAME_OVER` won by P2 with reason `SURRENDER`, both seats kept (ADR-0116). `LEAVE_ROOM` during a match
+     does the same. Once the match is over, `LEAVE_ROOM` is `NOT_ALLOWED` (it becomes a rematch choice, #36) and
+     `SURRENDER` is `WRONG_PHASE`.
+  8. `CREATE_ROOM` (P1) again: P1 moves to a new room, and its seat in the finished one is away. `LEAVE_ROOM` there frees the seat at once and closes
      the room; before the match it sends the other player, if any, back to `WAITING_FOR_OPPONENT`. Moving on with
      `CREATE_ROOM` or `JOIN_ROOM` from a room still waiting for an opponent closes that room the same way (ADR-0095).
 

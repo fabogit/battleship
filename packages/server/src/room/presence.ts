@@ -15,6 +15,8 @@ import {
   endMatch,
   pauseTurnTimer,
   resumeTurnTimer,
+  surrender,
+  type GameOverRoom,
   type NegotiationRoom,
   type PlacementRoom,
   type RejectedTransition,
@@ -33,12 +35,19 @@ export interface PendingForfeit {
   readonly at: number;
 }
 
-/** An accepted `LEAVE_ROOM`. */
+/**
+ * An accepted `LEAVE_ROOM` (docs/server.md#leaving). Before the match the seat is freed: the room waits for a player
+ * again, or closes when nobody is left in it (ADR-0073). During the match the seat stays, and the match ends as a
+ * surrender (ADR-0116), so the room is in `GAME_OVER`.
+ */
 export interface LeftRoom {
   /** Discriminant: the ack reports success. */
   readonly ok: true;
-  /** The room after the seat was freed, or `null` when nobody is left in it and it closes (ADR-0073). */
-  readonly state: RoomState | null;
+  /**
+   * The room after the leave: `WAITING_FOR_OPPONENT` or `null` when the seat was freed, `GAME_OVER` when the match
+   * ended with the seat still taken.
+   */
+  readonly state: WaitingRoom | GameOverRoom | null;
 }
 
 /**
@@ -130,21 +139,24 @@ export function forfeitSeat(state: RoomState, seat: Seat): RoomState | null {
 }
 
 /**
- * Frees the sender's seat (`LEAVE_ROOM`, docs/server.md#leaving), with the same effect as a forfeit before the match.
+ * Leaves the sender's room (`LEAVE_ROOM`, docs/server.md#leaving). Before the match it frees the seat, with the same
+ * effect as a forfeit then. During the match it is a surrender (ADR-0116): the seat stays and the opponent wins.
  * @param state The sender's room.
  * @param seat The sender's seat.
- * @returns The room after the seat was freed, `null` when the room closes, or `NOT_ALLOWED` in `IN_PROGRESS`, where
- * leaving is a surrender (#35), and in `GAME_OVER`, where it is a rematch choice (#36).
+ * @returns The waiting room after the seat was freed, `null` when the room closes, the room in `GAME_OVER` after a
+ * surrender, or `NOT_ALLOWED` in `GAME_OVER`, where leaving is a rematch choice (#36).
  */
 export function leaveRoom(state: RoomState, seat: Seat): LeftRoom | RejectedTransition {
-  if (
-    state.phase === ROOM_PHASES.WAITING_FOR_OPPONENT ||
-    state.phase === ROOM_PHASES.RULES_NEGOTIATION ||
-    state.phase === ROOM_PHASES.PLACEMENT
-  ) {
-    return { ok: true, state: freeSeat(state, seat) };
+  switch (state.phase) {
+    case ROOM_PHASES.WAITING_FOR_OPPONENT:
+    case ROOM_PHASES.RULES_NEGOTIATION:
+    case ROOM_PHASES.PLACEMENT:
+      return { ok: true, state: freeSeat(state, seat) };
+    case ROOM_PHASES.IN_PROGRESS:
+      return { ok: true, state: surrender(state, seat) };
+    case ROOM_PHASES.GAME_OVER:
+      return { ok: false, error: ERROR_CODES.NOT_ALLOWED };
   }
-  return { ok: false, error: ERROR_CODES.NOT_ALLOWED };
 }
 
 /**

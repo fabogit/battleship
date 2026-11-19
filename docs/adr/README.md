@@ -118,5 +118,8 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0112](0112-salvo-shot-allowance.md)                | Salvo shot allowance                         | Accepted, 2026-11-19   |
 | [ADR-0113](0113-every-salvo-target-resolves.md)         | Every target of a salvo resolves             | Accepted, 2026-11-19   |
 | [ADR-0114](0114-salvo-time-budget.md)                   | Salvo time budget                            | Accepted, 2026-11-19   |
+| [ADR-0116](0116-surrender-keeps-the-seat.md)            | Surrender keeps the seat                     | Accepted, 2026-11-19   |
+| [ADR-0117](0117-leave-guard.md)                         | Leave guard                                  | Accepted, 2026-11-19   |
+| [ADR-0118](0118-protocol-version-7.md)                  | Protocol version 7 for surrender             | Accepted, 2026-11-19   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

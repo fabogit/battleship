@@ -179,19 +179,21 @@ export interface GameOverRoom extends RoomBase {
   readonly battle: Battle;
   /** The seat that won; `null` only when the reason is `ABANDONED`. */
   readonly winner: Seat | null;
-  /** How the match ended; the wire's `SURRENDER` reason joins `GameOverRoomReason` when surrender lands (#35). */
+  /** How the match ended. */
   readonly reason: GameOverRoomReason;
 }
 
 /**
- * The ways a match can end so far: the last ship sunk, a seat away for `DISCONNECT_FORFEIT_MS` (ADR-0072), or turns
- * timed out `MAX_CONSECUTIVE_AFK_TURNS` times in a row by one seat (`AFK_FORFEIT`) or by both (`ABANDONED`, ADR-0009).
+ * The ways a match can end: the last ship sunk, a seat away for `DISCONNECT_FORFEIT_MS` (ADR-0072), turns timed out
+ * `MAX_CONSECUTIVE_AFK_TURNS` times in a row by one seat (`AFK_FORFEIT`) or by both (`ABANDONED`, ADR-0009), or a seat
+ * giving up with `SURRENDER` or `LEAVE_ROOM` (ADR-0116). Every reason of `GAME_OVER_REASONS` can now reach a client.
  */
 export type GameOverRoomReason =
   | typeof GAME_OVER_REASONS.FLEET_DESTROYED
   | typeof GAME_OVER_REASONS.DISCONNECT_FORFEIT
   | typeof GAME_OVER_REASONS.AFK_FORFEIT
-  | typeof GAME_OVER_REASONS.ABANDONED;
+  | typeof GAME_OVER_REASONS.ABANDONED
+  | typeof GAME_OVER_REASONS.SURRENDER;
 
 /** Everything the server keeps about one room, one variant per phase it can be in (ADR-0037). */
 export type RoomState = WaitingRoom | NegotiationRoom | PlacementRoom | BattleRoom | GameOverRoom;
@@ -205,7 +207,8 @@ export type SeatCommandEvent =
   | typeof CLIENT_EVENTS.UNLOCK_PLACEMENT
   | typeof CLIENT_EVENTS.UPDATE_TARGETS
   | typeof CLIENT_EVENTS.FIRE
-  | typeof CLIENT_EVENTS.SET_PAUSED;
+  | typeof CLIENT_EVENTS.SET_PAUSED
+  | typeof CLIENT_EVENTS.SURRENDER;
 
 /** The rules commands, handled by `applyRulesCommand`. */
 type RulesCommandEvent = typeof CLIENT_EVENTS.UPDATE_RULES | typeof CLIENT_EVENTS.CONFIRM_RULES;
@@ -351,6 +354,10 @@ export function applyCommand(state: RoomState, command: RoomCommand, now: number
         : reject(ERROR_CODES.WRONG_PHASE);
     case CLIENT_EVENTS.SET_PAUSED:
       return state.phase === ROOM_PHASES.IN_PROGRESS ? setPaused(state, command, now) : reject(ERROR_CODES.WRONG_PHASE);
+    case CLIENT_EVENTS.SURRENDER:
+      return state.phase === ROOM_PHASES.IN_PROGRESS
+        ? accept(surrender(state, command.seat))
+        : reject(ERROR_CODES.WRONG_PHASE);
   }
 }
 
@@ -548,6 +555,19 @@ export function endMatch(
     winner,
     reason,
   };
+}
+
+/**
+ * Ends the match because a seat gave it up (docs/server.md#transition-rules, ADR-0116): the other seat wins with
+ * `SURRENDER`, on the turn of either and paused or not, so an absent opponent wins too. Both seats stay taken and keep
+ * their presence, so the room can still offer a rematch; leaving for good is the rematch's `LEAVE` (#36). The one
+ * transition behind `SURRENDER` and `LEAVE_ROOM` during the match.
+ * @param state The room in `IN_PROGRESS`.
+ * @param seat The seat that gives up.
+ * @returns The room in `GAME_OVER`, with the boards as they were.
+ */
+export function surrender(state: BattleRoom, seat: Seat): GameOverRoom {
+  return endMatch(state, state.battle, otherSeat(seat), GAME_OVER_REASONS.SURRENDER);
 }
 
 /**

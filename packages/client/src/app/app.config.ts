@@ -4,7 +4,7 @@ import {
   provideBrowserGlobalErrorListeners,
   provideZonelessChangeDetection,
 } from '@angular/core';
-import { provideRouter, withComponentInputBinding } from '@angular/router';
+import { provideRouter, withComponentInputBinding, withRouterConfig } from '@angular/router';
 
 import { routes } from './app.routes';
 
@@ -15,7 +15,8 @@ export const appConfig: ApplicationConfig = {
     // Already the Angular 22 default; explicit because the app relies on it (no zone.js, docs/client.md#reactive-model).
     provideZonelessChangeDetection(),
     provideHttpClient(),
-    // Route parameters reach the page components as inputs, e.g. `Room.roomId`.
-    provideRouter(routes, withComponentInputBinding()),
+    // Route parameters reach the page components as inputs, e.g. `Room.roomId`. A navigation the leave guard cancels
+    // puts the browser history back where it was, so a cancelled back button leaves the next one working (ADR-0117).
+    provideRouter(routes, withComponentInputBinding(), withRouterConfig({ canceledNavigationResolution: 'computed' })),
   ],
 };

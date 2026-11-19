@@ -136,6 +136,63 @@ h2 {
   color: var(--color-error);
 }
 
+/*
+ * On a narrow screen "Surrender" closes the page on the right, under the feedback and error lines: away from "Fire",
+ * which leads its row on the left, and outside the lines above "Fire" that a short screen keeps in view (ADR-0110,
+ * ADR-0116). A wide screen puts it beside the heading row (below).
+ */
+.surrender {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.surrender button {
+  padding: 0 0.75rem;
+}
+
+dialog {
+  width: calc(100% - 2rem);
+  max-width: 24rem;
+  box-sizing: border-box;
+  padding: 1.5rem;
+  border: 0.0625rem solid var(--color-border);
+  border-radius: 0.5rem;
+  background: Canvas;
+  color: CanvasText;
+}
+
+dialog[open] {
+  display: grid;
+  gap: 1rem;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 50%);
+}
+
+/* The dialog's heading keeps its size and stays visible on a narrow screen, unlike the boards' headings. */
+dialog h2 {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+  font-size: 1.25rem;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.actions button {
+  padding: 0 0.75rem;
+}
+
 /* Short screens, under 42rem (672px) tall: tighter spacing, so that "Fire" is in view without a scroll at 320 × 568. */
 @media (height < 42rem) {
   :host,
@@ -199,6 +256,26 @@ h2 {
  * it says the opponent is away (ADR-0110), never below 1.5rem (24px).
  */
 @media (width >= 52rem) {
+  /* "Surrender" moves up beside the heading row, away from "Fire" and in view without scrolling (ADR-0116). */
+  :host {
+    grid-template-columns: 1fr auto;
+  }
+
+  :host > * {
+    grid-column: 1 / -1;
+  }
+
+  .heading {
+    grid-column: 1;
+  }
+
+  .surrender {
+    grid-row: 1;
+    grid-column: 2;
+    align-self: center;
+    margin-top: 0;
+  }
+
   .toggle {
     display: none;
   }

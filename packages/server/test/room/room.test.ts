@@ -44,6 +44,7 @@ import {
   pauseTurnTimer,
   placementEndsAt,
   resumeTurnTimer,
+  surrender,
   timeOutTurn,
   turnTimerEndsAt,
   type BattleRoom,
@@ -53,6 +54,7 @@ import {
   type RoomCommand,
   type RoomState,
   type SeatCommand,
+  type TransitionResult,
 } from '../../src/room/room.js';
 import {
   apply,
@@ -1124,6 +1126,61 @@ describe('a full match', () => {
   });
 });
 
+describe('SURRENDER (ADR-0116)', () => {
+  /** Sends `SURRENDER` from a seat. */
+  const surrenderFrom = (state: RoomState, seat: Seat): TransitionResult =>
+    applyCommand(state, { type: CLIENT_EVENTS.SURRENDER, seat, payload: {} }, NOW);
+
+  it.each([
+    ['on its turn', SEATS.P1],
+    ['on the opponent turn', SEATS.P2],
+  ] as const)('ends the match won by the other seat, from a seat %s', (_label, seat) => {
+    const state = battleRoom();
+    expect(state.battle.currentTurn).toBe(SEATS.P1);
+    const ended = expectAccepted(surrenderFrom(state, seat));
+    expect(ended.effects).toEqual([]);
+    expect(ended.state).toEqual({
+      phase: ROOM_PHASES.GAME_OVER,
+      roomId: state.roomId,
+      rules: state.rules,
+      rulesVersion: state.rulesVersion,
+      players: state.players,
+      disconnectedAt: state.disconnectedAt,
+      battle: state.battle,
+      winner: seat === SEATS.P1 ? SEATS.P2 : SEATS.P1,
+      reason: GAME_OVER_REASONS.SURRENDER,
+    });
+    expect(ended.state).toEqual(surrender(state, seat));
+  });
+
+  it('ends a paused match won by the absent opponent, whose seat stays away', () => {
+    const paused = disconnectSeat(battleRoom(), SEATS.P2, NOW);
+    expect(paused).toMatchObject({ isPaused: true });
+    expect(expectAccepted(surrenderFrom(paused, SEATS.P1)).state).toMatchObject({
+      phase: ROOM_PHASES.GAME_OVER,
+      winner: SEATS.P2,
+      reason: GAME_OVER_REASONS.SURRENDER,
+      disconnectedAt: { P1: null, P2: NOW },
+    });
+  });
+
+  it('keeps the shots fired so far', () => {
+    const fired = apply(battleRoom(), { type: CLIENT_EVENTS.FIRE, seat: SEATS.P1, payload: { targets: [cell(0, 0)] } });
+    const ended = expectAccepted(surrenderFrom(fired, SEATS.P2)).state;
+    expect(ended).toMatchObject({
+      winner: SEATS.P1,
+      battle: { boards: { P2: { shots: [{ coordinate: cell(0, 0) }] } } },
+    });
+  });
+
+  it('never mutates the room', () => {
+    const state = deepFreeze(battleRoom());
+    const before = structuredClone(state);
+    expectAccepted(surrenderFrom(state, SEATS.P1));
+    expect(state).toEqual(before);
+  });
+});
+
 describe('refusals', () => {
   const seatCommands: SeatCommand[] = [
     { type: CLIENT_EVENTS.UPDATE_RULES, seat: SEATS.P1, payload: { rules: EDITED_RULES } },
@@ -1134,6 +1191,7 @@ describe('refusals', () => {
     { type: CLIENT_EVENTS.UPDATE_TARGETS, seat: SEATS.P1, payload: { targets: [] } },
     { type: CLIENT_EVENTS.FIRE, seat: SEATS.P1, payload: { targets: [cell(0, 0)] } },
     { type: CLIENT_EVENTS.SET_PAUSED, seat: SEATS.P1, payload: { isPaused: true } },
+    { type: CLIENT_EVENTS.SURRENDER, seat: SEATS.P1, payload: {} },
   ];
   // The seat commands each phase accepts; every other one is WRONG_PHASE there.
   const acceptedIn: Record<RoomPhase, ReadonlySet<string>> = {
@@ -1144,7 +1202,12 @@ describe('refusals', () => {
       CLIENT_EVENTS.CONFIRM_PLACEMENT,
       CLIENT_EVENTS.UNLOCK_PLACEMENT,
     ]),
-    IN_PROGRESS: new Set([CLIENT_EVENTS.UPDATE_TARGETS, CLIENT_EVENTS.FIRE, CLIENT_EVENTS.SET_PAUSED]),
+    IN_PROGRESS: new Set([
+      CLIENT_EVENTS.UPDATE_TARGETS,
+      CLIENT_EVENTS.FIRE,
+      CLIENT_EVENTS.SET_PAUSED,
+      CLIENT_EVENTS.SURRENDER,
+    ]),
     GAME_OVER: new Set(),
   };
   const rooms: [RoomPhase, () => RoomState][] = [

@@ -1,6 +1,6 @@
 import { Location } from '@angular/common';
 import { TestBed } from '@angular/core/testing';
-import { Router, provideRouter, withComponentInputBinding } from '@angular/router';
+import { Router, provideRouter, withComponentInputBinding, withRouterConfig } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
   CLIENT_EVENTS,
@@ -34,6 +34,7 @@ import { GameStateService } from '../../core/game-state';
 import { TRANSPORT_ERRORS } from '../../core/game-socket';
 import { ROOM_ENTRY_TEXT } from '../../core/room-entry.text';
 import { SessionStore } from '../../core/session-store';
+import { SURRENDER_PROMPTS } from '../battle/battle-store';
 import { BATTLE_TEXT } from '../battle/battle.text';
 import { LOBBY_TEXT } from '../lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../placement/placement.text';
@@ -74,7 +75,12 @@ async function startApp(): Promise<void> {
     providers: [
       provideFakeGameSocket(socket),
       provideFakeServerWake(wake),
-      provideRouter(routes, withComponentInputBinding()),
+      // As `appConfig` sets it up, so a navigation the leave guard cancels keeps the history as it was.
+      provideRouter(
+        routes,
+        withComponentInputBinding(),
+        withRouterConfig({ canceledNavigationResolution: 'computed' }),
+      ),
     ],
   });
   // Created up front, as the app does through the shell, so it listens to `STATE` from the start.
@@ -729,6 +735,155 @@ describe('Room', () => {
     });
   });
 
+  describe('leaving during the match (#35, ADR-0117)', () => {
+    beforeEach(async () => {
+      TestBed.inject(Router).initialNavigation();
+      await harness.navigateByUrl('/');
+      await createRoom(ROOM_ID);
+      await receive(battleSnapshot(ROOM_ID));
+      socket.emitWithAck.mockReset();
+    });
+
+    /** @returns The surrender dialog of the battle view. */
+    function dialog(): HTMLDialogElement | null {
+      return page().querySelector('dialog');
+    }
+
+    /**
+     * Clicks one of the dialog's buttons and lets the page render.
+     * @param label Its text.
+     */
+    async function answer(label: string): Promise<void> {
+      [...(dialog()?.querySelectorAll('button') ?? [])].find((button) => button.textContent.trim() === label)?.click();
+      await harness.fixture.whenStable();
+    }
+
+    /**
+     * Starts a navigation, as a link does, and waits for the guard's dialog: `whenStable` would wait for the navigation,
+     * which waits for the dialog.
+     * @param url Where to.
+     * @returns The navigation, which resolves with whether the router went there; wrapped, so awaiting this does not
+     * wait for it.
+     */
+    async function navigateAway(url: string): Promise<{ readonly navigation: Promise<boolean> }> {
+      const navigation = TestBed.inject(Router).navigateByUrl(url);
+      await vi.waitFor(() => {
+        expect(dialog()?.open).toBe(true);
+      });
+      return { navigation };
+    }
+
+    const leavePrompt = BATTLE_TEXT.surrenderPrompts[SURRENDER_PROMPTS.LEAVE];
+
+    it('asks before the header link goes home, and "Keep playing" stays in the room without a command', async () => {
+      const { navigation } = await navigateAway('/');
+
+      expect(dialog()?.open).toBe(true);
+      expect(dialog()?.querySelector('h2')?.textContent).toBe(leavePrompt.heading);
+      await answer(BATTLE_TEXT.keepPlaying);
+
+      await expect(navigation).resolves.toBe(false);
+      expect(TestBed.inject(Router).url).toBe(`/r/${ROOM_ID}`);
+      expect(socket.emitWithAck).not.toHaveBeenCalled();
+      expect(page().querySelector('[role="grid"]')).not.toBeNull();
+    });
+
+    it('surrenders on confirm, then goes home once the ack arrives', async () => {
+      socket.emitWithAck.mockResolvedValue({ ok: true });
+      const { navigation } = await navigateAway('/');
+
+      await answer(leavePrompt.confirm);
+
+      await expect(navigation).resolves.toBe(true);
+      expect(TestBed.inject(Router).url).toBe('/');
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.SURRENDER, {});
+      // The seat stays the player's at game over (ADR-0116), so the stored session does too.
+      expect(TestBed.inject(SessionStore).get(ROOM_ID)).not.toBeNull();
+    });
+
+    it('asks on Back too, and a cancelled Back leaves the history as it was', async () => {
+      TestBed.inject(Location).back();
+      await vi.waitFor(() => {
+        expect(dialog()?.open).toBe(true);
+      });
+      await answer(BATTLE_TEXT.keepPlaying);
+      await vi.waitFor(() => {
+        expect(TestBed.inject(Location).path()).toBe(`/r/${ROOM_ID}`);
+      });
+      expect(TestBed.inject(Router).url).toBe(`/r/${ROOM_ID}`);
+
+      // The next Back asks again, and goes home once confirmed.
+      socket.emitWithAck.mockResolvedValue({ ok: true });
+      TestBed.inject(Location).back();
+      await vi.waitFor(() => {
+        expect(dialog()?.open).toBe(true);
+      });
+      await answer(leavePrompt.confirm);
+      await vi.waitFor(() => {
+        expect(TestBed.inject(Router).url).toBe('/');
+      });
+    });
+
+    it("asks when another room's link opens in the same tab, which reuses the page", async () => {
+      socket.emitWithAck.mockResolvedValue({ ok: true });
+      const { navigation } = await navigateAway(`/r/${NEXT_ROOM_ID}`);
+
+      expect(dialog()?.open).toBe(true);
+      await answer(leavePrompt.confirm);
+
+      await expect(navigation).resolves.toBe(true);
+      expect(TestBed.inject(Router).url).toBe(`/r/${NEXT_ROOM_ID}`);
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.SURRENDER, {});
+    });
+
+    it.each([
+      ['at game over', () => receive(gameOverSnapshot(ROOM_ID))],
+      ['once the server closed the room', () => receiveClosed()],
+      ['once the stored seat was refused', () => refuseSeat()],
+    ])('lets the navigation through at once %s', async (_case, change) => {
+      await change();
+
+      await expect(TestBed.inject(Router).navigateByUrl('/')).resolves.toBe(true);
+      expect(socket.emitWithAck).not.toHaveBeenCalled();
+    });
+
+    /** Delivers `ROOM_CLOSED` for the room, which drops its snapshot. */
+    async function receiveClosed(): Promise<void> {
+      socket.fire(SERVER_EVENTS.ROOM_CLOSED, { roomId: ROOM_ID, reason: ROOM_CLOSED_REASONS.SERVER_ERROR });
+      await harness.fixture.whenStable();
+      expect(heading()).toBe(ROOM_TEXT.closedHeading);
+    }
+
+    /** Refuses the stored seat as the handshake does: the snapshot is kept, the battle view goes. */
+    async function refuseSeat(): Promise<void> {
+      TestBed.inject(SessionStore).refuse(ROOM_ID);
+      await harness.fixture.whenStable();
+      expect(page().querySelector('app-battle')).toBeNull();
+    }
+
+    it('lets "Leave room" go home when it reached the server as the match started, a surrender (ADR-0116)', async () => {
+      // Back to placement on screen: the server had started the match when "Leave room" arrived, so the ack is the
+      // surrender's, and the game-over STATE follows it.
+      TestBed.inject(GameStateService).clear();
+      await receive(placementSnapshot(ROOM_ID));
+      socket.emitWithAck.mockImplementation(() => {
+        setTimeout(() => {
+          socket.fire(SERVER_EVENTS.STATE, gameOverSnapshot(ROOM_ID));
+        });
+        return Promise.resolve({ ok: true });
+      });
+
+      [...page().querySelectorAll('button')].find((button) => button.textContent.trim() === ROOM_TEXT.leave)?.click();
+
+      await vi.waitFor(() => {
+        expect(TestBed.inject(Router).url).toBe('/');
+      });
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.LEAVE_ROOM, {});
+      expect(TestBed.inject(SessionStore).get(ROOM_ID)).toBeNull();
+      expect(dialog()).toBeNull();
+    });
+  });
+
   describe('leaving before the match (#25)', () => {
     beforeEach(async () => {
       TestBed.inject(SessionStore).save({ roomId: ROOM_ID, playerSecret: PLAYER_SECRET });
@@ -779,12 +934,14 @@ describe('Room', () => {
 
     it('stays with the reason when the server refuses', async () => {
       await receive(placementSnapshot(ROOM_ID));
-      socket.emitWithAck.mockResolvedValue({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: ERROR_CODES.RATE_LIMITED });
 
       leaveButton()?.click();
 
       await vi.waitFor(() => {
-        expect(page().querySelector('.leave-error[role="alert"]')?.textContent).toBe(ROOM_TEXT.leaveErrors.NOT_ALLOWED);
+        expect(page().querySelector('.leave-error[role="alert"]')?.textContent).toBe(
+          ROOM_ENTRY_TEXT.errors.RATE_LIMITED,
+        );
       });
       expect(TestBed.inject(Router).url).toBe(`/r/${ROOM_ID}`);
       expect(TestBed.inject(SessionStore).get(ROOM_ID)).not.toBeNull();

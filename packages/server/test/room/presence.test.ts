@@ -20,7 +20,7 @@ import {
   nextForfeit,
   reconnectSeat,
 } from '../../src/room/presence.js';
-import { applyCommand, endMatch, type BattleRoom, type RoomState } from '../../src/room/room.js';
+import { applyCommand, endMatch, surrender, type BattleRoom, type RoomState } from '../../src/room/room.js';
 import { projectSnapshot } from '../../src/room/snapshot.js';
 import {
   apply,
@@ -259,11 +259,26 @@ describe('leaveRoom', () => {
     expect(left).toEqual({ ok: true, state: forfeitSeat(state, SEATS.P2) });
   });
 
-  it.each([
-    [ROOM_PHASES.IN_PROGRESS, battleRoom],
-    [ROOM_PHASES.GAME_OVER, gameOverRoom],
-  ])('answers NOT_ALLOWED in %s until surrender and rematch land', (_phase, room) => {
-    expect(leaveRoom(room(), SEATS.P1)).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
+  it.each([SEATS.P1, SEATS.P2])(
+    'ends the match in IN_PROGRESS as a surrender by %s, the seat kept (ADR-0116)',
+    (seat) => {
+      const state = battleRoom();
+      const left = leaveRoom(state, seat);
+      expect(left).toEqual({ ok: true, state: surrender(state, seat) });
+      expect(left).toMatchObject({
+        ok: true,
+        state: {
+          phase: ROOM_PHASES.GAME_OVER,
+          winner: seat === SEATS.P1 ? SEATS.P2 : SEATS.P1,
+          reason: GAME_OVER_REASONS.SURRENDER,
+          players: state.players,
+        },
+      });
+    },
+  );
+
+  it('answers NOT_ALLOWED in GAME_OVER until the rematch lands', () => {
+    expect(leaveRoom(gameOverRoom(), SEATS.P1)).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
   });
 });
 

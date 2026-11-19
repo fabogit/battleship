@@ -1,6 +1,5 @@
-import { ERROR_CODES, ROOM_CLOSED_REASONS, type RoomClosedReason } from '@battleship/core';
+import { ROOM_CLOSED_REASONS, type RoomClosedReason } from '@battleship/core';
 
-import type { RoomEntryError } from '../../core/room-entry';
 import { SEAT_LOSSES, type SeatLoss } from './seat-loss';
 
 /** What the room page says about a seat the server refused (`SESSION_INVALID`), for one `SeatLoss`. */
@@ -66,8 +65,6 @@ export interface RoomText {
   readonly leaving: string;
   /** The leave button's description, read with it and not shown (ADR-0080). */
   readonly leaveHint: string;
-  /** A message for each `LEAVE_ROOM` failure the room page explains itself; the others get the room-entry messages. */
-  readonly leaveErrors: Readonly<Partial<Record<RoomEntryError, string>>>;
 }
 
 /**
@@ -124,7 +121,4 @@ export const ROOM_TEXT: RoomText = {
   leave: 'Leave room',
   leaving: 'Leaving…',
   leaveHint: 'Your seat is freed for someone else, and you go back to the home screen.',
-  leaveErrors: {
-    [ERROR_CODES.NOT_ALLOWED]: 'The match has started, so the room can no longer be left.',
-  },
 };
