@@ -23,6 +23,7 @@ During their turn the player aims by tapping cells of "Enemy waters" and fires w
 ## Links
 
 - Added on 2026-10-10 for the battle view ([#20](https://github.com/fabogit/battleship/issues/20)).
+- Amended on 2026-11-19 for the salvo UI ([#34](https://github.com/fabogit/battleship/issues/34)): salvo is played since #32, so standard mode is no longer "the only mode". A salvo draft fills up to `shotsAllowed` and refuses a new cell when full, as written here; the hint under "Fire" counts it ("2 of 5 targets: B7, C3.") and each tap announces the count ([ADR-0121](0121-salvo-counter-and-turn-wording.md)).
 - Spec: [Client: Board & interaction](../client.md#board--interaction)
 - Related: [ADR-0033](0033-turn-resolution.md) (`validateTargets`), [ADR-0035](0035-command-acks.md) (acks and transport errors), [ADR-0053](0053-placement-taps.md) (placement by taps), [ADR-0054](0054-placement-draft-sync.md) (the draft sync this reuses)
 - Issues: [#20](https://github.com/fabogit/battleship/issues/20), [#30](https://github.com/fabogit/battleship/issues/30) (turn timer), [#32](https://github.com/fabogit/battleship/issues/32) (salvo)

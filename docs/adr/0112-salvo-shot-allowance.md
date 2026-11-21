@@ -29,6 +29,7 @@ Standard mode stays at one target. The extra turn on hit stays standard-only ([A
 ## Links
 
 - Added on 2026-11-19 for salvo mode ([#32](https://github.com/fabogit/battleship/issues/32)).
+- Amended on 2026-11-19 for the salvo UI ([#34](https://github.com/fabogit/battleship/issues/34)): the client offers salvo on the rules screen ([ADR-0119](0119-salvo-extra-turn-exclusion.md)), and the battle view counts the targets and words salvo turns ([ADR-0121](0121-salvo-counter-and-turn-wording.md)).
 - Spec: [Domain: Shot engine](../domain.md#shot-engine) · [Domain: Rules](../domain.md#rules) · [Protocol: Snapshot](../protocol.md#snapshot)
 - Supersedes: [ADR-0085](0085-salvo-refused-until-implemented.md) (salvo refused until implemented)
 - Amends: [ADR-0033](0033-turn-resolution.md) (`shotsAllowed` and `resolveTurn` no longer throw on salvo)

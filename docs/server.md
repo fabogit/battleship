@@ -79,7 +79,7 @@ Decisions: [ADR-0006](adr/0006-placement-completion.md), [ADR-0090](adr/0090-pla
 
 ### Turns
 
-Decisions: [ADR-0099](adr/0099-turn-timer.md), [ADR-0100](adr/0100-timeout-actions.md), [ADR-0112](adr/0112-salvo-shot-allowance.md), [ADR-0113](adr/0113-every-salvo-target-resolves.md), [ADR-0114](adr/0114-salvo-time-budget.md).
+Decisions: [ADR-0099](adr/0099-turn-timer.md), [ADR-0100](adr/0100-timeout-actions.md), [ADR-0112](adr/0112-salvo-shot-allowance.md), [ADR-0113](adr/0113-every-salvo-target-resolves.md), [ADR-0114](adr/0114-salvo-time-budget.md), [ADR-0120](adr/0120-afk-under-extra-turn.md).
 
 - The active player edits a draft with `UPDATE_TARGETS { targets }` (any count up to the allowance, freely changeable) and commits with `FIRE { targets }`, which must carry exactly the allowance: `1`, or in salvo one target per ship the shooter has left, capped by the opponent's unshot cells ([Domain: Shot engine](domain.md#shot-engine)). One `SHOT_RESOLVED` carries every result of a salvo, in firing order. Both are `NOT_YOUR_TURN` from the other player. A draft follows the shot rules except the exact count; a refused draft or shot (`resolveTurn` rejection) → `INVALID_TARGETS`. Firing clears the draft.
 - **Turn timer:** every turn lasts `turnTimeLimitSeconds`, a salvo turn too: no time per shot and no floor for salvo ([ADR-0114](adr/0114-salvo-time-budget.md)). The first turn's time starts at the end of the dice animation, every other turn's at the end of the turn before it (a `FIRE` or a timeout), with the whole limit. The room stores `turnTimerStartsAt` and `turnTimeLeftMs`, the time from then on; the turn times out at their sum while the match runs. `turnRemainingMs` is computed when a snapshot is sent: `null` before `turnTimerStartsAt`, the frozen time while paused, the time to the end otherwise, so a reconnecting player gets the time left at that moment.
@@ -88,7 +88,7 @@ Decisions: [ADR-0099](adr/0099-turn-timer.md), [ADR-0100](adr/0100-timeout-actio
   - `AUTO_RANDOM_SHOT`: core's `autoShotTargets` keeps the draft's still valid targets, in order, and fills the rest with `randomTargets` from the server's injected `Rng`. The shot is resolved and sent like a fired one: `SHOT_RESOLVED` to the room, then `STATE`. A salvo is one `SHOT_RESOLVED` with every target, the kept ones first, and nothing in it tells drafted from random targets. It can sink the last ship and end the match (`FLEET_DESTROYED`, won by the seat that timed out), and with extra turn on hit a hit keeps the turn. An auto shot that `resolveTurn` refused (which `autoShotTargets` rules out) would throw, closing the room with `SERVER_ERROR` like any failing timer task ([ADR-0104](adr/0104-room-failure-containment.md)).
   - `PASS_TURN`: discard the draft, pass the turn; only `STATE` is sent.
   - The next turn starts at once, with the whole limit. Logged as "Turn timed out" with the seat, the `action` and the seat's `afkCount`.
-- Every timeout increments that player's AFK counter; that player's `FIRE` resets it (a draft does not). The snapshot carries both as `afkCount`.
+- Every timeout increments that player's AFK counter; that player's `FIRE` resets it (a draft does not). The snapshot carries both as `afkCount`. An automatic shot that hits under extra turn on hit counts too, though the seat keeps the turn: a chain of them reaches the AFK forfeit at the third timeout in a row like any other ([ADR-0120](adr/0120-afk-under-extra-turn.md)).
 
 ### AFK
 

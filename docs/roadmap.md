@@ -26,8 +26,8 @@ Every phase ends deployed and playable on the production URLs.
    - Also delivered: the room place limits (a socket that moves on frees its waiting seat, and the waiting TTL, #113; the negotiation TTL, #128), room failure containment (#123), the browser journeys as a required CI job (#120), and the review's fixes (#134–#139).
    - Handed on: a bound on how long a played match holds a room (#133, M5); library updates and the production advisories (#110); bundle size, judged on a nearly final client (#63).
 4. **Variants & end-game**
-   - Salvo: the engine and the server (#32); the rules toggle, the shot counter and the wording (#34).
-   - Extra turn on hit is already in: the engine since #80, the rules toggle since #121, and the board held in view for it since #139. What is left for M4 is its journey, wording and AFK edge cases (see #33).
+   - Salvo: the engine and the server (#32); on the rules screen, exclusive with extra turn on hit, the target counter and one message per fired turn (#34, ADR-0119, ADR-0121).
+   - Extra turn on hit: the engine since #80, the rules toggle since #121, the board held in view for it since #139; its wording ("Fire again."), a browser journey and the AFK count across extra turns came with #34 (#33, ADR-0120).
    - Surrender (#35): `SURRENDER`, and `LEAVE_ROOM` during the match, end it with both seats kept; the battle view asks first, and so does leaving the room page during the match (protocol version 7, ADR-0116–0118). Rematch flow (#36).
 5. **Polish**
    - i18n (IT/EN), mobile layout refinement, accessibility pass, animations (dice, shots).
