@@ -21,7 +21,7 @@ A countdown warns that it is running out over its last `LOW_TIME_MS` (10 seconds
 ## Links
 
 - Added on 2026-11-01 for the timers and dice UI ([#31](https://github.com/fabogit/battleship/issues/31)).
-- Amended on 2026-11-19 for the salvo UI ([#34](https://github.com/fabogit/battleship/issues/34)): under "Random shot" the sentence is "Fire now, or a shot is fired for you.", since the drafted target fires first, and "Fire now, or random shots fill the rest." while the turn fires more than one target ([ADR-0121](0121-salvo-counter-and-turn-wording.md)).
+- Amended on 2026-11-19 for the salvo UI ([#34](https://github.com/fabogit/battleship/issues/34)): under "Random shot" the sentence is "Fire now, or a shot is fired for you.", since the drafted target fires first, and "Fire now, or random shots fill in." while the turn fires more than one target ([ADR-0121](0121-salvo-counter-and-turn-wording.md)).
 - Spec: [Client: Board & interaction](../client.md#board--interaction)
 - Related: [ADR-0099](0099-turn-timer.md) (turn timer) · [ADR-0100](0100-timeout-actions.md) (timeout actions) · [ADR-0090](0090-placement-timer.md) (placement timer) · [ADR-0074](0074-pause.md) (pause)
 - Issues: [#31](https://github.com/fabogit/battleship/issues/31)

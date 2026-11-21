@@ -119,7 +119,7 @@ export const RULES_TEXT: RulesText = {
     `Agree on the rules with ${nickname}. The match starts when you have both confirmed them; if you have not within ${String(minutes)} minutes, the room closes.`,
   legend: 'Rules',
   extraTurn: 'Extra turn on hit',
-  salvo: 'Salvo: a shot per ship afloat',
+  salvo: 'Salvo: one shot per ship',
   excluded: {
     isExtraTurnOnHitEnabled: 'Not with salvo. Turn salvo off first.',
     isSalvoModeEnabled: 'Not with extra turn on hit. Turn it off first.',

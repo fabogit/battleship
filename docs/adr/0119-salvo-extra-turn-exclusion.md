@@ -5,7 +5,7 @@ date: 2026-11-19
 
 # ADR-0119: Salvo and extra turn exclude each other on the rules screen
 
-The rules screen offers salvo as a switch, "Salvo: a shot per ship afloat", right under "Extra turn on hit". The server refuses both rules together ([ADR-0010](0010-salvo-vs-extra-turn.md), `SALVO_WITH_EXTRA_TURN`), so while one of the two is on, the screen keeps the other one off and inactive:
+The rules screen offers salvo as a switch, "Salvo: one shot per ship", right under "Extra turn on hit". The server refuses both rules together ([ADR-0010](0010-salvo-vs-extra-turn.md), `SALVO_WITH_EXTRA_TURN`), so while one of the two is on, the screen keeps the other one off and inactive:
 
 - **Which one:** `RulesStore.excludedRule` reads the rules on screen, so the player's own edit excludes the other switch at once, before its ack, and the opponent's edit does so when its `STATE` arrives. It is `null` while both are off.
 - **The inactive switch** stays focusable with `aria-disabled="true"`, as "Fire" and "Confirm rules" do. A click, a tap on its row or Space is cancelled (`preventDefault` on `click`), so it never checks, and `RulesStore.change` sends nothing for the excluded rule either. A dashed outline and the `not-allowed` cursor draw it as inactive.

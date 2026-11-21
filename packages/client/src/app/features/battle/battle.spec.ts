@@ -567,7 +567,7 @@ describe('Battle', () => {
     it.each(RECEIVER_SEATS)('says how many cells the turn fires, for either player, as %s', async (seat) => {
       socket.fire(SERVER_EVENTS.STATE, { ...battleFrom(seat, { currentTurn: seat, shotsAllowed: 5 }), rules: SALVO });
       await fixture.whenStable();
-      expect(text('.status [aria-live]')).toBe('Aim at 5 cells in Enemy waters, then fire.');
+      expect(text('.status [aria-live]')).toBe('Aim at 5 cells, then fire.');
 
       socket.fire(SERVER_EVENTS.STATE, {
         ...battleFrom(seat, { currentTurn: otherSeat(seat), shotsAllowed: 4 }),
@@ -610,13 +610,13 @@ describe('Battle', () => {
         vi.useFakeTimers();
       });
 
-      it('says that random shots fill the rest of the draft, only while the turn fires more than one', () => {
+      it('says that random shots fill in of the draft, only while the turn fires more than one', () => {
         socket.fire(SERVER_EVENTS.STATE, {
           ...battleSnapshot(ROOM_ID, { shotsAllowed: 3, turnRemainingMs: 5_000 }),
           rules: SALVO,
         });
         fixture.detectChanges();
-        expect(text('.status [aria-live]')).toBe('Fire now, or random shots fill the rest.');
+        expect(text('.status [aria-live]')).toBe('Fire now, or random shots fill in.');
 
         socket.fire(SERVER_EVENTS.STATE, {
           ...battleSnapshot(ROOM_ID, { shotsAllowed: 1, turnRemainingMs: 5_000 }),
