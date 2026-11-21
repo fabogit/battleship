@@ -610,7 +610,7 @@ describe('Battle', () => {
         vi.useFakeTimers();
       });
 
-      it('says that random shots fill in of the draft, only while the turn fires more than one', () => {
+      it('says that random shots fill in the rest of the draft, only while the turn fires more than one', () => {
         socket.fire(SERVER_EVENTS.STATE, {
           ...battleSnapshot(ROOM_ID, { shotsAllowed: 3, turnRemainingMs: 5_000 }),
           rules: SALVO,
