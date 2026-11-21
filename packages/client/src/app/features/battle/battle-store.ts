@@ -70,7 +70,7 @@ export type BattleFeedback =
        */
       readonly isAutomatic: boolean;
       /**
-       * Whether the shooter fires again: an extra turn on a hit (ADR-0120). Decided by the same `STATE`, which names
+       * Whether the shooter fires again: an extra turn on a hit (ADR-0121). Decided by the same `STATE`, which names
        * the shooter as `currentTurn` again, the turn #139's board hold follows; `false` at game over.
        */
       readonly keepsTurn: boolean;

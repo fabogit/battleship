@@ -18,11 +18,11 @@ import {
 const TURN_LIMIT_MS = DEFAULT_RULES.turnTimeLimitSeconds * 1_000;
 
 /**
- * The start of the sentence announcing a random shot, up to its cell, whatever the shot found.
+ * The start of the sentence announcing an automatic shot, up to its cell, whatever the shot found (ADR-0121).
  * @param words `BATTLE_TEXT.myAutoShot` or `.opponentAutoShot`.
  * @param target The cell it landed on, e.g. `B7`.
  * @param nickname The nickname the sentence names.
- * @returns A pattern matching "Your time ran out: a random shot at B7…".
+ * @returns A pattern matching "Your time ran out: a shot was fired for you at B7…".
  */
 function autoShotStart(words: typeof BATTLE_TEXT.myAutoShot, target: string, nickname: string): RegExp {
   const sentence = words(target, SHOT_OUTCOMES.MISS, null, nickname);

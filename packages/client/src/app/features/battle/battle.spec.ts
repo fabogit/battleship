@@ -635,7 +635,7 @@ describe('Battle', () => {
     });
   });
 
-  describe('an extra turn on a hit (ADR-0120)', () => {
+  describe('an extra turn on a hit (ADR-0121)', () => {
     it.each(RECEIVER_SEATS)('says the shooter fires again, for either player, as %s', async (seat) => {
       const hit = [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }];
       socket.fire(SERVER_EVENTS.STATE, battleFrom(seat, { currentTurn: seat }));
@@ -1209,7 +1209,7 @@ describe('battleFeedbackMessage (ADR-0121)', () => {
     [
       "the opponent's automatic single shot that sinks",
       fired([sink(at(1, 0))], { isMine: false, isAutomatic: true }),
-      "Grace's time ran out: a shot fired for them at A2 sank your destroyer.",
+      "Grace's time ran out: a shot was fired for them at A2 and sank your destroyer.",
     ],
     ['my hit that keeps the turn', fired([hit(at(6, 1))], { keepsTurn: true }), 'You fired at B7: hit! Fire again.'],
     [

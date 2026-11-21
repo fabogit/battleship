@@ -1,7 +1,16 @@
 // Steps the journeys share: entering a room, agreeing on the rules, placing a fleet, firing. Selectors go by ARIA role and the client's own
 // text constants, imported from its sources, so a reworded label changes the journeys with it.
 
-import { BOARD_SIZE, DEFAULT_RULES, DICE_ANIMATION_MS, START_COUNTDOWN_MS, type TimeoutAction } from '@battleship/core';
+import {
+  BOARD_SIZE,
+  DEFAULT_RULES,
+  DICE_ANIMATION_MS,
+  ORIENTATIONS,
+  SHIP_TYPES,
+  START_COUNTDOWN_MS,
+  type ShipType,
+  type TimeoutAction,
+} from '@battleship/core';
 import type { Locator, Page } from '@playwright/test';
 
 import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
@@ -166,6 +175,40 @@ export async function confirmRandomFleet(player: Player): Promise<void> {
   await page.getByRole('button', { name: PLACEMENT_TEXT.randomize }).click();
   // Disabled until the fleet is valid; `click` waits for it.
   await page.getByRole('button', { name: PLACEMENT_TEXT.confirm }).click();
+}
+
+/**
+ * A legal fleet under the default rules, one ship every other row from column 1, so a journey knows where each ship
+ * is: carrier A1–A5, battleship C1–C4, cruiser E1–E3, submarine G1–G3, destroyer I1–I2. Row J is all water.
+ */
+export const SPREAD_FLEET: readonly (readonly [ShipType, string])[] = [
+  [SHIP_TYPES.CARRIER, 'A1'],
+  [SHIP_TYPES.BATTLESHIP, 'C1'],
+  [SHIP_TYPES.CRUISER, 'E1'],
+  [SHIP_TYPES.SUBMARINE, 'G1'],
+  [SHIP_TYPES.DESTROYER, 'I1'],
+];
+
+/**
+ * Places a known fleet ship by ship, through the dock and the board as a player would, and confirms it.
+ * @param player A player in placement.
+ * @param fleet Each ship and its start, placed horizontally.
+ */
+export async function placeFleet(player: Player, fleet: readonly (readonly [ShipType, string])[]): Promise<void> {
+  const { page } = player;
+  await expect(mainHeading(page)).toHaveText(PLACEMENT_TEXT.heading);
+  const dock = page.getByRole('list', { name: PLACEMENT_TEXT.dockLabel });
+  const myFleet = board(page, PLACEMENT_TEXT.boardLabel);
+  for (const [type, start] of fleet) {
+    const name = PLACEMENT_TEXT.shipNames[type];
+    await dock.getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
+    await cell(myFleet, start).click();
+    await expect(
+      page.getByText(PLACEMENT_TEXT.placedAt(name, start, PLACEMENT_TEXT.orientations[ORIENTATIONS.HORIZONTAL])),
+    ).toBeVisible();
+  }
+  await page.getByRole('button', { name: PLACEMENT_TEXT.confirm }).click();
+  await expect(page.getByRole('button', { name: PLACEMENT_TEXT.unlock })).toBeVisible();
 }
 
 /**

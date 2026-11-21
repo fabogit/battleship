@@ -231,10 +231,10 @@ export interface BattleText {
    * @returns The sentence.
    */
   readonly opponentAutoShot: (cell: string, outcome: ShotOutcome, sunkShip: string | null, nickname: string) => string;
-  /** After a shot of the player's that keeps the turn: an extra turn on a hit (ADR-0120). */
+  /** After a shot of the player's that keeps the turn: an extra turn on a hit (ADR-0121). */
   readonly myFireAgain: string;
   /**
-   * After a shot of the opponent's that keeps their turn: an extra turn on a hit (ADR-0120).
+   * After a shot of the opponent's that keeps their turn: an extra turn on a hit (ADR-0121).
    * @param nickname The opponent's nickname.
    * @returns The sentence.
    */
@@ -430,7 +430,7 @@ export const BATTLE_TEXT: BattleText = {
       case SHOT_OUTCOMES.HIT:
         return `Your time ran out: a shot was fired for you at ${cell}, hit!`;
       case SHOT_OUTCOMES.SUNK:
-        return `Your time ran out: a shot fired for you at ${cell} sank ${nickname}'s ${sunkShip ?? 'ship'}!`;
+        return `Your time ran out: a shot was fired for you at ${cell} and sank ${nickname}'s ${sunkShip ?? 'ship'}!`;
     }
   },
   opponentAutoShot: (cell, outcome, sunkShip, nickname) => {
@@ -440,7 +440,7 @@ export const BATTLE_TEXT: BattleText = {
       case SHOT_OUTCOMES.HIT:
         return `${nickname}'s time ran out: a shot was fired for them at ${cell}, hit.`;
       case SHOT_OUTCOMES.SUNK:
-        return `${nickname}'s time ran out: a shot fired for them at ${cell} sank your ${sunkShip ?? 'ship'}.`;
+        return `${nickname}'s time ran out: a shot was fired for them at ${cell} and sank your ${sunkShip ?? 'ship'}.`;
     }
   },
   myFireAgain: 'Fire again.',
@@ -528,7 +528,7 @@ export function battleFeedbackMessage(
 
 /**
  * Words a fired turn (ADR-0121): the single-shot sentence for one target, else one message for all of them, the extra
- * turn on a hit (ADR-0120) and, in salvo mode, the next allowance after a sunk ship.
+ * turn on a hit (ADR-0121) and, in salvo mode, the next allowance after a sunk ship.
  * @param feedback What `SHOT_RESOLVED` and the `STATE` after it told.
  * @param nickname The opponent's nickname.
  * @param text The words to use.
