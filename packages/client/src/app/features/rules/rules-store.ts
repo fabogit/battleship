@@ -57,6 +57,9 @@ export type RulesNotice =
 /** Why a rules command failed: the server's refusal, or no reply at all (ADR-0035). */
 export type RulesCommandError = ErrorCode | TransportError;
 
+/** The two rules that may not both be on (ADR-0010): salvo, and extra turn on hit. */
+export type ExclusiveRule = Extract<keyof GameRules, 'isSalvoModeEnabled' | 'isExtraTurnOnHitEnabled'>;
+
 /** What the store remembers of the last negotiation snapshot, to tell what the next one changed. */
 interface SeenRules {
   /** The room the snapshot belongs to. */
@@ -169,6 +172,18 @@ export class RulesStore {
   /** Whether a `CONFIRM_RULES` waits for its ack. */
   readonly isConfirmPending = this.isConfirmPendingSignal.asReadonly();
 
+  /**
+   * The rule the screen does not let the player turn on, because the other one of the pair is on (ADR-0010,
+   * ADR-0119); `null` while both are off. Read from the rules on screen, so it follows the player's own edit at once.
+   */
+  readonly excludedRule = computed<ExclusiveRule | null>(() => {
+    const rules = this.rules();
+    if (rules.isSalvoModeEnabled) {
+      return 'isExtraTurnOnHitEnabled';
+    }
+    return rules.isExtraTurnOnHitEnabled ? 'isSalvoModeEnabled' : null;
+  });
+
   /** Whether "Confirm rules" would send: not confirmed yet, and nothing of the player's on its way. */
   readonly canConfirm = computed(() => !this.hasConfirmed().me && !this.isConfirmPending() && !this.isUpdatePending());
 
@@ -186,13 +201,13 @@ export class RulesStore {
 
   /**
    * Changes one rule and sends the whole rules with `UPDATE_RULES` (ADR-0086). A value the rules already hold sends
-   * nothing.
+   * nothing, and so does the excluded rule: it never switches the other one off by itself (ADR-0119).
    * @param field The rule.
    * @param value Its new value.
    */
   change<K extends keyof GameRules>(field: K, value: GameRules[K]): void {
     const rules = this.rules();
-    if (rules[field] === value) {
+    if (rules[field] === value || field === this.excludedRule()) {
       return;
     }
     this.sync.update({ ...rules, [field]: value });

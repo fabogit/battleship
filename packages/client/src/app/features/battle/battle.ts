@@ -12,7 +12,7 @@ import {
   type ElementRef,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { MAX_CONSECUTIVE_AFK_TURNS, ROOM_PHASES, SERVER_EVENTS } from '@battleship/core';
+import { MAX_CONSECUTIVE_AFK_TURNS, ROOM_PHASES, SERVER_EVENTS, TIMEOUT_ACTIONS } from '@battleship/core';
 
 import { GameSocketService } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
@@ -136,7 +136,8 @@ export class Battle {
 
   /**
    * Under the heading: why the match ended; the dice while they show; who the dice picked while the first turn's timer
-   * waits for the animation; a warning once the turn's time runs low; or what to do this turn.
+   * waits for the animation; a warning once the turn's time runs low; or what to do this turn, with how many cells to
+   * pick when the turn fires more than one (ADR-0121).
    */
   protected readonly subheading = computed(() => {
     const nickname = this.opponentNickname();
@@ -158,14 +159,22 @@ export class Battle {
     if (battle !== null && battle.turnRemainingMs === null && this.gameState.shotCount() === 0) {
       return this.text.diceStarter(nickname, isMyTurn);
     }
+    const shotsAllowed = battle?.shotsAllowed ?? 1;
     if (this.timer()?.isLow === true && battle?.isPaused === false) {
       const timeoutAction = this.gameState.snapshot()?.rules.timeoutAction;
       if (isMyTurn && timeoutAction !== undefined) {
-        return this.text.myTimeLow[timeoutAction];
+        return timeoutAction === TIMEOUT_ACTIONS.AUTO_RANDOM_SHOT && shotsAllowed > 1
+          ? this.text.mySalvoTimeLow
+          : this.text.myTimeLow[timeoutAction];
       }
       if (!isMyTurn) {
         return this.text.opponentTimeLow(nickname);
       }
+    }
+    if (shotsAllowed > 1) {
+      return isMyTurn
+        ? this.text.mySalvoTurnHint(shotsAllowed)
+        : this.text.opponentSalvoTurnHint(nickname, shotsAllowed);
     }
     return isMyTurn ? this.text.myTurnHint : this.text.opponentTurnHint(nickname);
   });
@@ -219,7 +228,7 @@ export class Battle {
     ];
   });
 
-  /** Under "Fire": the picked targets, or what to do before firing. */
+  /** Under "Fire": the picked targets, or what to do before firing; in salvo mode after the target counter (ADR-0121). */
   protected readonly fireHint = computed(() => {
     if (this.dice.isPlaying()) {
       return this.text.waitForDice;
@@ -228,7 +237,12 @@ export class Battle {
       return this.text.waitForTurn;
     }
     const targets = this.store.draftTargets();
-    return targets.length === 0 ? this.text.pickTarget : this.text.aimingAt(targets.map(formatCoordinate).join(', '));
+    const cells = targets.map(formatCoordinate).join(', ');
+    if (this.store.isSalvo()) {
+      const count = this.text.targetCount({ picked: targets.length, allowed: this.store.shotsAllowed() });
+      return this.text.salvoAiming(count, cells);
+    }
+    return targets.length === 0 ? this.text.pickTarget : this.text.aimingAt(cells);
   });
 
   /** What the last tap or fired turn did, for the live region; empty before the first one. */

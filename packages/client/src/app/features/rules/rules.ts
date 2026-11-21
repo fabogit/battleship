@@ -3,7 +3,7 @@ import { NEGOTIATION_TTL_MS, TIMEOUT_ACTIONS, type GameRules } from '@battleship
 
 import { GameStateService } from '../../core/game-state';
 import { wholeMinutes } from '../../shared/countdown';
-import { RulesStore, TURN_TIME_LIMIT_OPTIONS } from './rules-store';
+import { RulesStore, TURN_TIME_LIMIT_OPTIONS, type ExclusiveRule } from './rules-store';
 import { RULES_TEXT, rulesErrorMessage, rulesNoticeMessage } from './rules.text';
 
 /**
@@ -11,8 +11,8 @@ import { RULES_TEXT, rulesErrorMessage, rulesNoticeMessage } from './rules.text'
  * controls are native inputs in a fieldset, and every change is sent at once (ADR-0086, ADR-0087); "Confirm rules"
  * accepts the version on screen. Both confirmations are listed, and a polite live region says who changed what and
  * whose confirmation it cleared (ADR-0088). The intro says how long the room waits for both confirmations
- * (ADR-0102). Salvo is not offered until its engine lands (#32, #34). Its content goes
- * beside the heading: the room page's "Leave room" (ADR-0080).
+ * (ADR-0102). Salvo and extra turn on hit exclude each other: while one is on, the other switch is inactive and says
+ * why (ADR-0010, ADR-0119). Its content goes beside the heading: the room page's "Leave room" (ADR-0080).
  */
 @Component({
   selector: 'app-rules',
@@ -76,6 +76,18 @@ export class Rules {
         }
       },
     });
+  }
+
+  /**
+   * Keeps the excluded switch as it is (ADR-0119): it stays focusable with `aria-disabled`, so a click or Space would
+   * otherwise check it before the store ignores the change.
+   * @param event The `click` event of an exclusive switch, from a tap, its label or Space.
+   * @param field The rule the switch sets.
+   */
+  protected holdExcluded(event: Event, field: ExclusiveRule): void {
+    if (this.store.excludedRule() === field) {
+      event.preventDefault();
+    }
   }
 
   /**

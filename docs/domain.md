@@ -151,7 +151,7 @@ export type RoomClosedReason = (typeof ROOM_CLOSED_REASONS)[keyof typeof ROOM_CL
 - `DEFAULT_RULES`: no extra turn on hit, adjacency not allowed, 30 s turns, no salvo, `AUTO_RANDOM_SHOT`.
 - `validateRules(rules)`: checks whether a match can be played with a well-formed `GameRules`. It returns `{ ok: true }` or `{ ok: false, reason }`, the first of `RULES_VIOLATIONS` that applies; the server logs the reason and never sends it, as with the placement and target violations.
   - `SALVO_WITH_EXTRA_TURN`: salvo and extra turn on hit are exclusive ([ADR-0010](adr/0010-salvo-vs-extra-turn.md)). Salvo on its own and extra turn on hit on its own are both playable; #32 dropped the refusal of salvo, `SALVO_NOT_IMPLEMENTED` ([ADR-0112](adr/0112-salvo-shot-allowance.md)).
-  - The rules screen has no salvo control until #34 ([Client: Rules screen](client.md#rules-screen)); the server accepts salvo from any client that sends it. Field types and enum membership are checked earlier by the `UPDATE_RULES` guard (`INVALID_PAYLOAD`, [Payload validation](protocol.md#payload-validation)).
+  - The rules screen offers both and disables the one that is off while the other is on ([Client: Rules screen](client.md#rules-screen), [ADR-0119](adr/0119-salvo-extra-turn-exclusion.md)); the server refuses both together from any client that sends them. Field types and enum membership are checked earlier by the `UPDATE_RULES` guard (`INVALID_PAYLOAD`, [Payload validation](protocol.md#payload-validation)).
 
 ## Randomness
 

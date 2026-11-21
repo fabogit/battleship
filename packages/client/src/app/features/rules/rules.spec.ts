@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FakeGameSocket, negotiationSnapshot, provideFakeGameSocket } from '../../../testing/fake-game-socket';
 import { createRoomId } from '../../../testing/session-fixtures';
-import { TRANSPORT_ERRORS } from '../../core/game-socket';
+import { TRANSPORT_ERRORS, type CommandResult } from '../../core/game-socket';
 import { GameStateService } from '../../core/game-state';
 import { RULES_EDITORS, RULES_NOTICE_KINDS } from './rules-store';
 import { Rules } from './rules';
@@ -53,7 +53,9 @@ function screen(): HTMLElement {
  * @returns The checkbox.
  */
 function toggle(label: string): HTMLInputElement {
-  const row = [...screen().querySelectorAll('label')].find((element) => element.textContent.trim() === label);
+  const row = [...screen().querySelectorAll('label')].find(
+    (element) => element.querySelector('.name > span:first-child')?.textContent.trim() === label,
+  );
   const input = row?.querySelector<HTMLInputElement>('input[role="switch"]');
   if (!input) {
     throw new Error(`No switch "${label}"`);
@@ -108,16 +110,95 @@ afterEach(() => {
 });
 
 describe('Rules', () => {
-  it('offers the M3 rules as native inputs in a fieldset with a legend, and no salvo (#32, #34)', async () => {
+  it('offers every rule as native inputs in a fieldset with a legend, salvo next to extra turn on hit (#34)', async () => {
     await render();
 
     const fieldset = screen().querySelector('fieldset');
     expect(fieldset?.querySelector(':scope > legend')?.textContent.trim()).toBe(RULES_TEXT.legend);
-    expect(screen().querySelectorAll('input[role="switch"]')).toHaveLength(2);
+    expect([...screen().querySelectorAll<HTMLInputElement>('input[role="switch"]')].map((input) => input.name)).toEqual(
+      ['isExtraTurnOnHitEnabled', 'isSalvoModeEnabled', 'areAdjacentShipsAllowed'],
+    );
+    expect(toggle(RULES_TEXT.salvo).checked).toBe(false);
     expect(screen().querySelectorAll('input[name="turnTimeLimitSeconds"]')).toHaveLength(4);
     expect(screen().querySelectorAll('input[name="timeoutAction"]')).toHaveLength(2);
-    expect(screen().querySelectorAll('input')).toHaveLength(8);
-    expect(screen().textContent.toLowerCase()).not.toContain('salvo');
+    expect(screen().querySelectorAll('input')).toHaveLength(9);
+  });
+
+  it('leaves both exclusive switches active, with no hint, while both rules are off', async () => {
+    await render();
+
+    for (const label of [RULES_TEXT.extraTurn, RULES_TEXT.salvo]) {
+      expect(toggle(label).hasAttribute('aria-disabled')).toBe(false);
+      expect(toggle(label).hasAttribute('aria-describedby')).toBe(false);
+    }
+    expect(screen().querySelector('.hint')).toBeNull();
+  });
+
+  it.each([
+    ['salvo', { isSalvoModeEnabled: true }, RULES_TEXT.extraTurn, RULES_TEXT.salvo, 'isExtraTurnOnHitEnabled'],
+    [
+      'extra turn on hit',
+      { isExtraTurnOnHitEnabled: true },
+      RULES_TEXT.salvo,
+      RULES_TEXT.extraTurn,
+      'isSalvoModeEnabled',
+    ],
+  ] as const)(
+    'while %s is on, keeps the other switch focusable but inactive, says why, and sends nothing on a tap (ADR-0119)',
+    async (_name, on, excludedLabel, onLabel, excludedRule) => {
+      await render({ rules: { ...DEFAULT_RULES, ...on } });
+      const excluded = toggle(excludedLabel);
+
+      expect(excluded.getAttribute('aria-disabled')).toBe('true');
+      expect(excluded.disabled).toBe(false);
+      const hint = screen().querySelector(`[id="${excluded.getAttribute('aria-describedby') ?? ''}"]`);
+      expect(hint?.textContent.trim()).toBe(RULES_TEXT.excluded[excludedRule]);
+      expect(hint?.getAttribute('aria-hidden')).toBe('true');
+      expect(toggle(onLabel).hasAttribute('aria-disabled')).toBe(false);
+
+      excluded.click();
+      await fixture.whenStable();
+
+      expect(excluded.checked).toBe(false);
+      expect(toggle(onLabel).checked).toBe(true);
+      expect(sentRules()).toEqual([]);
+    },
+  );
+
+  it('disables extra turn on hit at once when the player turns salvo on, and sends that one change', async () => {
+    await render();
+    socket.emitWithAck.mockReturnValue(new Promise(() => undefined));
+
+    toggle(RULES_TEXT.salvo).click();
+    await fixture.whenStable();
+
+    expect(toggle(RULES_TEXT.extraTurn).getAttribute('aria-disabled')).toBe('true');
+    expect(sentRules()).toEqual([{ ...DEFAULT_RULES, isSalvoModeEnabled: true }]);
+  });
+
+  it("re-syncs both switches with the room's rules after SALVO_WITH_EXTRA_TURN is refused (ADR-0087)", async () => {
+    await render({ rulesVersion: 0 });
+    let answer: (result: CommandResult<typeof CLIENT_EVENTS.UPDATE_RULES>) => void = () => undefined;
+    socket.emitWithAck.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    // The player turns salvo on while the opponent's extra turn on hit reaches the server first.
+    toggle(RULES_TEXT.salvo).click();
+    await fixture.whenStable();
+    await receive({ rules: { ...DEFAULT_RULES, isExtraTurnOnHitEnabled: true }, rulesVersion: 1 });
+    expect(toggle(RULES_TEXT.salvo).checked).toBe(true);
+    answer({ ok: false, error: ERROR_CODES.INVALID_RULES });
+
+    await vi.waitFor(() => {
+      expect(screen().querySelector('[role="alert"]')?.textContent).toBe(RULES_TEXT.errors.INVALID_RULES);
+    });
+    expect(toggle(RULES_TEXT.salvo).checked).toBe(false);
+    expect(toggle(RULES_TEXT.salvo).getAttribute('aria-disabled')).toBe('true');
+    expect(toggle(RULES_TEXT.extraTurn).checked).toBe(true);
+    expect(toggle(RULES_TEXT.extraTurn).hasAttribute('aria-disabled')).toBe(false);
   });
 
   it('says the room closes if the rules are not confirmed by both within NEGOTIATION_TTL_MS (#128)', async () => {
@@ -308,7 +389,7 @@ describe('rulesNoticeMessage', () => {
     );
   });
 
-  it('words every rule, salvo included, both ways', () => {
+  it('words every rule both ways', () => {
     expect(
       [true, false].flatMap((value) => [
         RULES_TEXT.changes.isExtraTurnOnHitEnabled(value),

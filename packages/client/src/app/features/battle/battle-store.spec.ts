@@ -1,12 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 import {
   CLIENT_EVENTS,
+  DEFAULT_RULES,
   ERROR_CODES,
+  ORIENTATIONS,
   SEATS,
+  SHIP_TYPES,
   SERVER_EVENTS,
   SHOT_OUTCOMES,
   TARGET_VIOLATIONS,
   otherSeat,
+  toPlacedShip,
   type BattleSnapshot,
   type ShotResult,
 } from '@battleship/core';
@@ -17,6 +21,7 @@ import {
   RECEIVER_SEATS,
   battleSnapshot,
   fromSeat,
+  gameOverSnapshot,
   provideFakeGameSocket,
 } from '../../../testing/fake-game-socket';
 import { TRANSPORT_ERRORS, type CommandResult } from '../../core/game-socket';
@@ -100,6 +105,52 @@ describe('BATTLE_FEEDBACK', () => {
 });
 
 describe('BattleStore', () => {
+  describe('in salvo mode (ADR-0121)', () => {
+    const SALVO = { ...DEFAULT_RULES, isSalvoModeEnabled: true };
+
+    /**
+     * Delivers a battle snapshot of a salvo match.
+     * @param battle Fields of the `IN_PROGRESS` part to override.
+     */
+    function receiveSalvo(battle: Partial<BattleSnapshot> = {}): void {
+      socket.fire(SERVER_EVENTS.STATE, { ...battleSnapshot(ROOM_ID, battle), rules: SALVO });
+    }
+
+    beforeEach(() => {
+      TestBed.inject(GameStateService);
+      receiveSalvo({ shotsAllowed: 5 });
+      store = TestBed.inject(BattleStore);
+    });
+
+    it('counts the draft against the allowance with every tap', () => {
+      expect(store.isSalvo()).toBe(true);
+
+      store.activateCell(B7);
+      expect(store.feedback()).toEqual({
+        kind: BATTLE_FEEDBACK.TARGETED,
+        coordinate: B7,
+        count: { picked: 1, allowed: 5 },
+      });
+      store.activateCell(C3);
+      expect(store.feedback()).toMatchObject({ count: { picked: 2, allowed: 5 } });
+      store.activateCell(B7);
+      expect(store.feedback()).toEqual({
+        kind: BATTLE_FEEDBACK.UNTARGETED,
+        coordinate: B7,
+        count: { picked: 1, allowed: 5 },
+      });
+    });
+
+    it("gives the next shooter's allowance from the STATE after a salvo", () => {
+      const sunkShip = toPlacedShip({ type: SHIP_TYPES.DESTROYER, start: B7, orientation: ORIENTATIONS.HORIZONTAL });
+      const results: ShotResult[] = [{ coordinate: B7, outcome: SHOT_OUTCOMES.SUNK, sunkShip }, MISS_ON_J10];
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P1, results });
+      receiveSalvo({ currentTurn: SEATS.P2, shotsAllowed: 4 });
+
+      expect(store.feedback()).toMatchObject({ isMine: true, keepsTurn: false, nextShotsAllowed: 4 });
+    });
+  });
+
   it("starts from the server's draft", () => {
     createStore({ myDraftTargets: [B7] });
 
@@ -117,7 +168,7 @@ describe('BattleStore', () => {
 
       expect(store.draftTargets()).toEqual([B7]);
       expect(sent(CLIENT_EVENTS.UPDATE_TARGETS)).toStrictEqual([[B7]]);
-      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.TARGETED, coordinate: B7 });
+      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.TARGETED, coordinate: B7, count: null });
       expect(store.canFire()).toBe(true);
     });
 
@@ -130,7 +181,7 @@ describe('BattleStore', () => {
 
       expect(store.draftTargets()).toEqual([]);
       expect(sent(CLIENT_EVENTS.UPDATE_TARGETS)).toStrictEqual([[B7], [C3], []]);
-      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.UNTARGETED, coordinate: C3 });
+      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.UNTARGETED, coordinate: C3, count: null });
       expect(store.canFire()).toBe(false);
     });
 
@@ -183,7 +234,7 @@ describe('BattleStore', () => {
       answerFirst({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
       await settle();
       expect(store.draftTargets()).toEqual([C3]);
-      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.TARGETED, coordinate: C3 });
+      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.TARGETED, coordinate: C3, count: null });
 
       answerSecond({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
       await settle();
@@ -265,7 +316,13 @@ describe('BattleStore', () => {
       'announces every fired turn, by either player, once the STATE after it arrives, as %s',
       (seat) => {
         const results = [MISS_ON_J10];
-        const fired = { kind: BATTLE_FEEDBACK.FIRED, results, isAutomatic: false };
+        const fired = {
+          kind: BATTLE_FEEDBACK.FIRED,
+          results,
+          isAutomatic: false,
+          keepsTurn: false,
+          nextShotsAllowed: null,
+        };
         socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: seat })));
         store.activateCell(B7);
         expect(store.feedback()).toMatchObject({ kind: BATTLE_FEEDBACK.TARGETED });
@@ -290,10 +347,18 @@ describe('BattleStore', () => {
       socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P1, results });
 
       store.activateCell(C3);
-      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.TARGETED, coordinate: C3 });
+      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.TARGETED, coordinate: C3, count: null });
+      // The STATE names P1 again: the hit kept the turn, as under extra turn on hit.
       receive({ outgoingShots: results, myDraftTargets: [C3] });
 
-      expect(store.feedback()).toEqual({ kind: BATTLE_FEEDBACK.FIRED, isMine: true, results, isAutomatic: false });
+      expect(store.feedback()).toEqual({
+        kind: BATTLE_FEEDBACK.FIRED,
+        isMine: true,
+        results,
+        isAutomatic: false,
+        keepsTurn: true,
+        nextShotsAllowed: null,
+      });
     });
 
     it.each(RECEIVER_SEATS.flatMap((seat) => [true, false].map((isMine) => [seat, isMine] as const)))(
@@ -334,6 +399,57 @@ describe('BattleStore', () => {
           fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: shooter, afkCount: counts(2, 0) })),
         );
         expect(store.feedback()).toMatchObject({ isMine, isAutomatic: true });
+      },
+    );
+
+    it.each(RECEIVER_SEATS.flatMap((seat) => [true, false].map((isMine) => [seat, isMine] as const)))(
+      'tells an extra turn by the shooter named again in the STATE after the shot, as %s (own shot: %s)',
+      (seat, isMine) => {
+        const shooter = isMine ? seat : otherSeat(seat);
+        const hit = [{ coordinate: B7, outcome: SHOT_OUTCOMES.HIT }];
+        socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: shooter })));
+
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter, results: hit });
+        socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: shooter })));
+        expect(store.feedback()).toMatchObject({ isMine, keepsTurn: true });
+
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter, results: [MISS_ON_J10] });
+        socket.fire(SERVER_EVENTS.STATE, fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: otherSeat(shooter) })));
+        expect(store.feedback()).toMatchObject({ isMine, keepsTurn: false });
+      },
+    );
+
+    it('gives no extra turn and no allowance for the shot that ends the match (its STATE is GAME_OVER)', () => {
+      socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: SEATS.P1, results: [MISS_ON_J10] });
+      socket.fire(SERVER_EVENTS.STATE, {
+        ...gameOverSnapshot(ROOM_ID),
+        rules: { ...DEFAULT_RULES, isSalvoModeEnabled: true },
+      });
+
+      expect(store.feedback()).toMatchObject({ isAutomatic: false, keepsTurn: false, nextShotsAllowed: null });
+    });
+
+    it.each(RECEIVER_SEATS)(
+      'keeps isAutomatic per shot across two STATEs from the same seat under extra turn on hit, as %s (#33)',
+      (seat) => {
+        // The shooter's time runs out twice in a row, and both automatic shots hit: the turn stays, the count goes on.
+        const hit = (coordinate: { x: number; y: number }) => [{ coordinate, outcome: SHOT_OUTCOMES.HIT }];
+        const shooterTurn = (shooterCount: number) =>
+          fromSeat(seat, battleSnapshot(ROOM_ID, { currentTurn: seat, afkCount: { me: shooterCount, opponent: 0 } }));
+        socket.fire(SERVER_EVENTS.STATE, shooterTurn(0));
+
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results: hit(B7) });
+        socket.fire(SERVER_EVENTS.STATE, shooterTurn(1));
+        expect(store.feedback()).toMatchObject({ isMine: true, isAutomatic: true, keepsTurn: true });
+
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results: hit(C3) });
+        socket.fire(SERVER_EVENTS.STATE, shooterTurn(2));
+        expect(store.feedback()).toMatchObject({ isMine: true, isAutomatic: true, keepsTurn: true });
+
+        // Then the player fires a hit by hand: their count is reset, so the shot is not automatic, and the turn stays.
+        socket.fire(SERVER_EVENTS.SHOT_RESOLVED, { shooter: seat, results: hit({ x: 0, y: 0 }) });
+        socket.fire(SERVER_EVENTS.STATE, shooterTurn(0));
+        expect(store.feedback()).toMatchObject({ isMine: true, isAutomatic: false, keepsTurn: true });
       },
     );
 

@@ -8,18 +8,47 @@
   <legend class="visually-hidden">{{ text.legend }}</legend>
 
   <label class="switch">
-    <span>{{ text.extraTurn }}</span>
+    <span class="name">
+      <span>{{ text.extraTurn }}</span>
+      @if (store.excludedRule() === 'isExtraTurnOnHitEnabled') {
+        <span id="extra-turn-hint" class="hint" aria-hidden="true">{{ text.excluded.isExtraTurnOnHitEnabled }}</span>
+      }
+    </span>
     <input
       #ruleInput
       type="checkbox"
       role="switch"
       name="isExtraTurnOnHitEnabled"
       [checked]="store.rules().isExtraTurnOnHitEnabled"
+      [attr.aria-disabled]="store.excludedRule() === 'isExtraTurnOnHitEnabled' ? 'true' : null"
+      [attr.aria-describedby]="store.excludedRule() === 'isExtraTurnOnHitEnabled' ? 'extra-turn-hint' : null"
+      (click)="holdExcluded($event, 'isExtraTurnOnHitEnabled')"
       (change)="store.change('isExtraTurnOnHitEnabled', isChecked($event))"
     />
   </label>
   <label class="switch">
-    <span>{{ text.adjacentShips }}</span>
+    <span class="name">
+      <span>{{ text.salvo }}</span>
+      @if (store.excludedRule() === 'isSalvoModeEnabled') {
+        <span id="salvo-hint" class="hint" aria-hidden="true">{{ text.excluded.isSalvoModeEnabled }}</span>
+      }
+    </span>
+    <input
+      #ruleInput
+      type="checkbox"
+      role="switch"
+      name="isSalvoModeEnabled"
+      [checked]="store.rules().isSalvoModeEnabled"
+      [attr.aria-disabled]="store.excludedRule() === 'isSalvoModeEnabled' ? 'true' : null"
+      [attr.aria-describedby]="store.excludedRule() === 'isSalvoModeEnabled' ? 'salvo-hint' : null"
+      (click)="holdExcluded($event, 'isSalvoModeEnabled')"
+      (change)="store.change('isSalvoModeEnabled', isChecked($event))"
+    />
+  </label>
+  <label class="switch">
+    <span class="name">
+      <span>{{ text.adjacentShips }}</span>
+    </span>
     <input
       #ruleInput
       type="checkbox"
