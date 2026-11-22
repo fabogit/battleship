@@ -7,6 +7,7 @@ import {
   DEFAULT_RULES,
   DISCONNECT_FORFEIT_MS,
   ERROR_CODES,
+  GAME_OVER_REASONS,
   GAME_OVER_TTL_MS,
   ROOM_CLOSED_REASONS,
   ROOM_PHASES,
@@ -351,18 +352,22 @@ describe('Room', () => {
       expect(page().querySelector('a')?.getAttribute('href')).toBe('/');
     });
 
-    it('says the first room was left after "New match" at game over and Back', async () => {
+    it('offers the freed seat again after "Leave room" at game over and Back: the seat was given up (ADR-0126)', async () => {
       await receive(battleSnapshot(ROOM_ID));
       await receive(gameOverSnapshot(ROOM_ID));
-      const newMatch = [...page().querySelectorAll('a')].find((link) => link.textContent === BATTLE_TEXT.newMatch);
-      newMatch?.click();
+      socket.emitWithAck.mockResolvedValueOnce({ ok: true });
+      const leave = [...page().querySelectorAll('a')].find(
+        (link) => link.textContent.trim() === BATTLE_TEXT.rematch.leave,
+      );
+      leave?.click();
       await vi.waitFor(() => {
         expect(TestBed.inject(Router).url).toBe('/');
       });
+      expect(socket.emitWithAck).toHaveBeenLastCalledWith(CLIENT_EVENTS.LEAVE_ROOM, {});
 
       await createNextRoomAndGoBack();
 
-      expect(heading()).toBe(ROOM_TEXT.leftHeading);
+      expect(heading()).toBe(ROOM_TEXT.joinHeading);
       expect(page().querySelector('[role="grid"]')).toBeNull();
     });
 
@@ -788,7 +793,7 @@ describe('Room', () => {
       expect(page().querySelector('[role="grid"]')).not.toBeNull();
     });
 
-    it('surrenders on confirm, then goes home once the ack arrives', async () => {
+    it('surrenders on confirm, then leaves the seat, then goes home once both acks arrived (ADR-0126)', async () => {
       socket.emitWithAck.mockResolvedValue({ ok: true });
       const { navigation } = await navigateAway('/');
 
@@ -796,9 +801,25 @@ describe('Room', () => {
 
       await expect(navigation).resolves.toBe(true);
       expect(TestBed.inject(Router).url).toBe('/');
-      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.SURRENDER, {});
-      // The seat stays the player's at game over (ADR-0116), so the stored session does too.
-      expect(TestBed.inject(SessionStore).get(ROOM_ID)).not.toBeNull();
+      expect(socket.emitWithAck.mock.calls).toEqual([
+        [CLIENT_EVENTS.SURRENDER, {}],
+        [CLIENT_EVENTS.LEAVE_ROOM, {}],
+      ]);
+      // The surrender kept the seat (ADR-0116); the LEAVE_ROOM after it freed it, so the session is gone.
+      expect(TestBed.inject(SessionStore).get(ROOM_ID)).toBeNull();
+    });
+
+    it('goes home after a confirmed surrender even when the LEAVE_ROOM after it is not answered', async () => {
+      socket.emitWithAck
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: false, error: TRANSPORT_ERRORS.NO_ACK });
+      const { navigation } = await navigateAway('/');
+
+      await answer(leavePrompt.confirm);
+
+      await expect(navigation).resolves.toBe(true);
+      // The server may still hold the seat: the socket reconnects, and the handshake says which (ADR-0070).
+      expect(socket.reconnect).toHaveBeenCalledOnce();
     });
 
     it('asks on Back too, and a cancelled Back leaves the history as it was', async () => {
@@ -833,11 +854,13 @@ describe('Room', () => {
 
       await expect(navigation).resolves.toBe(true);
       expect(TestBed.inject(Router).url).toBe(`/r/${NEXT_ROOM_ID}`);
-      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.SURRENDER, {});
+      expect(socket.emitWithAck.mock.calls).toEqual([
+        [CLIENT_EVENTS.SURRENDER, {}],
+        [CLIENT_EVENTS.LEAVE_ROOM, {}],
+      ]);
     });
 
     it.each([
-      ['at game over', () => receive(gameOverSnapshot(ROOM_ID))],
       ['once the server closed the room', () => receiveClosed()],
       ['once the stored seat was refused', () => refuseSeat()],
     ])('lets the navigation through at once %s', async (_case, change) => {
@@ -881,6 +904,191 @@ describe('Room', () => {
       expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.LEAVE_ROOM, {});
       expect(TestBed.inject(SessionStore).get(ROOM_ID)).toBeNull();
       expect(dialog()).toBeNull();
+    });
+  });
+
+  describe('leaving at game over (#36, ADR-0126)', () => {
+    beforeEach(async () => {
+      TestBed.inject(Router).initialNavigation();
+      await harness.navigateByUrl('/');
+      await createRoom(ROOM_ID);
+      await receive(battleSnapshot(ROOM_ID));
+      await receive(gameOverSnapshot(ROOM_ID));
+      socket.emitWithAck.mockReset();
+    });
+
+    /** @returns The game-over "Leave room" link. */
+    function leaveLink(): HTMLAnchorElement | undefined {
+      return [...page().querySelectorAll('a')].find((link) => link.textContent.trim() === BATTLE_TEXT.rematch.leave);
+    }
+
+    it('sends LEAVE_ROOM without asking on "Leave room", then goes home with the seat given up', async () => {
+      socket.emitWithAck.mockResolvedValue({ ok: true });
+
+      leaveLink()?.click();
+
+      await vi.waitFor(() => {
+        expect(TestBed.inject(Router).url).toBe('/');
+      });
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.LEAVE_ROOM, {});
+      expect(page().querySelector('dialog[open]')).toBeNull();
+      expect(TestBed.inject(SessionStore).get(ROOM_ID)).toBeNull();
+      expect(TestBed.inject(GameStateService).snapshot()).toBeNull();
+    });
+
+    it.each([
+      ['the header link', () => TestBed.inject(Router).navigateByUrl('/'), '/'],
+      ["another room's link", () => TestBed.inject(Router).navigateByUrl(`/r/${NEXT_ROOM_ID}`), `/r/${NEXT_ROOM_ID}`],
+    ])('holds %s until LEAVE_ROOM is answered, showing "Leaving…"', async (_case, navigate, url) => {
+      let answer: (response: { ok: true }) => void = () => undefined;
+      socket.emitWithAck.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      );
+
+      const navigation = navigate();
+      await vi.waitFor(() => {
+        expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.LEAVE_ROOM, {});
+      });
+      // `whenStable` would wait for the navigation, which waits for the ack.
+      harness.fixture.detectChanges();
+      expect(TestBed.inject(Router).url).toBe(`/r/${ROOM_ID}`);
+      expect(page().textContent).toContain(BATTLE_TEXT.rematch.leaving);
+
+      answer({ ok: true });
+      await expect(navigation).resolves.toBe(true);
+      expect(TestBed.inject(Router).url).toBe(url);
+    });
+
+    it('sends LEAVE_ROOM on Back too', async () => {
+      socket.emitWithAck.mockResolvedValue({ ok: true });
+
+      TestBed.inject(Location).back();
+
+      await vi.waitFor(() => {
+        expect(TestBed.inject(Router).url).toBe('/');
+      });
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.LEAVE_ROOM, {});
+    });
+
+    it.each([
+      ['refused', { ok: false, error: ERROR_CODES.NOT_ALLOWED }],
+      ['not answered', { ok: false, error: TRANSPORT_ERRORS.NO_ACK }],
+      ['not sent while offline', { ok: false, error: TRANSPORT_ERRORS.NOT_CONNECTED }],
+    ] as const)('lets the navigation through when LEAVE_ROOM is %s', async (_case, response) => {
+      socket.emitWithAck.mockResolvedValue(response);
+
+      await expect(TestBed.inject(Router).navigateByUrl('/')).resolves.toBe(true);
+      expect(socket.emitWithAck).toHaveBeenCalledExactlyOnceWith(CLIENT_EVENTS.LEAVE_ROOM, {});
+    });
+
+    it('sends one LEAVE_ROOM for two navigations started while it waits', async () => {
+      let answer: (response: { ok: true }) => void = () => undefined;
+      socket.emitWithAck.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      );
+
+      void TestBed.inject(Router).navigateByUrl('/');
+      await vi.waitFor(() => {
+        expect(socket.emitWithAck).toHaveBeenCalledOnce();
+      });
+      const second = TestBed.inject(Router).navigateByUrl('/');
+      answer({ ok: true });
+
+      await expect(second).resolves.toBe(true);
+      expect(socket.emitWithAck).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('after game over (#36, ADR-0126)', () => {
+    beforeEach(async () => {
+      TestBed.inject(Router).initialNavigation();
+      await harness.navigateByUrl('/');
+      await createRoom(ROOM_ID);
+      await receive(battleSnapshot(ROOM_ID));
+      await receive(gameOverSnapshot(ROOM_ID, { winner: SEATS.P1, reason: GAME_OVER_REASONS.SURRENDER }));
+    });
+
+    it.each([
+      ['RULES_NEGOTIATION', () => negotiationSnapshot(ROOM_ID), RULES_TEXT.heading],
+      ['PLACEMENT', () => placementSnapshot(ROOM_ID), PLACEMENT_TEXT.heading],
+    ])('moves focus to the heading of %s once the rematch resolves', async (_phase, snapshot, title) => {
+      page().querySelector<HTMLButtonElement>('app-rematch-controls button')?.focus();
+
+      await receive(snapshot());
+
+      await vi.waitFor(() => {
+        expect(document.activeElement?.textContent.trim()).toBe(title);
+      });
+      expect(document.activeElement?.tagName).toBe('H1');
+    });
+
+    it('opens the rules screen of a CHANGE_RULES rematch with nobody confirmed and no changed-rules notice', async () => {
+      await receive(negotiationSnapshot(ROOM_ID, { rulesVersion: 0 }));
+
+      expect(heading()).toBe(RULES_TEXT.heading);
+      expect(page().querySelector('.notice')?.textContent.trim()).toBe('');
+      expect(page().textContent).not.toContain(RULES_TEXT.opponentConfirmed('Grace'));
+    });
+
+    it('says the opponent left, with the result of the match, on the waiting screen, and moves focus there', async () => {
+      await receive(waitingSnapshot(ROOM_ID));
+
+      expect(heading()).toBe(LOBBY_TEXT.heading);
+      expect(page().textContent).toContain(PRESENCE_TEXT.departed('Grace'));
+      expect(page().querySelector('.last-match')?.textContent.trim()).toBe(
+        LOBBY_TEXT.lastMatch(true, false, BATTLE_TEXT.reasons.SURRENDER('Grace', true)),
+      );
+      await vi.waitFor(() => {
+        expect(document.activeElement?.textContent.trim()).toBe(LOBBY_TEXT.heading);
+      });
+    });
+
+    it('keeps the result of a surrender that the surrenderer followed at once with LEAVE_ROOM (decision 4)', async () => {
+      TestBed.inject(GameStateService).clear();
+      await receive(battleSnapshot(ROOM_ID));
+      // The surrenderer's two commands: the game-over STATE, then the waiting one, back to back.
+      socket.fire(
+        SERVER_EVENTS.STATE,
+        gameOverSnapshot(ROOM_ID, { winner: SEATS.P1, reason: GAME_OVER_REASONS.SURRENDER }),
+      );
+      socket.fire(SERVER_EVENTS.STATE, waitingSnapshot(ROOM_ID));
+      await harness.fixture.whenStable();
+
+      expect(page().querySelector('.last-match')?.textContent).toContain(BATTLE_TEXT.reasons.SURRENDER('Grace', true));
+      expect(page().querySelector('.last-match')?.textContent).toContain('You won');
+    });
+
+    it('drops the result once someone takes the free seat', async () => {
+      await receive(waitingSnapshot(ROOM_ID));
+      await receive(negotiationSnapshot(ROOM_ID));
+      await receive(waitingSnapshot(ROOM_ID));
+
+      expect(page().querySelector('.last-match')).toBeNull();
+    });
+
+    it('shows a plain waiting screen after a reload: the result was never sent by the server', async () => {
+      await reload();
+      await harness.navigateByUrl(`/r/${ROOM_ID}`);
+      await receive(waitingSnapshot(ROOM_ID));
+
+      expect(heading()).toBe(LOBBY_TEXT.heading);
+      expect(page().querySelector('.last-match')).toBeNull();
+      expect(page().textContent).not.toContain(PRESENCE_TEXT.departed('Grace'));
+    });
+
+    it("shows a plain waiting screen when the snapshot kept is another room's game over", async () => {
+      // The guard's LEAVE_ROOM is refused, so this tab keeps the first room's game-over snapshot.
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
+      await harness.navigateByUrl(`/r/${NEXT_ROOM_ID}`);
+      expect(TestBed.inject(GameStateService).snapshot()?.phase).toBe(ROOM_PHASES.GAME_OVER);
+      await receive(waitingSnapshot(NEXT_ROOM_ID));
+
+      expect(page().querySelector('.last-match')).toBeNull();
+      expect(page().textContent).not.toContain(PRESENCE_TEXT.departed('Grace'));
     });
   });
 

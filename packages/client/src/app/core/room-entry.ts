@@ -1,4 +1,4 @@
-import { DestroyRef, Service, inject } from '@angular/core';
+import { DestroyRef, Service, inject, signal } from '@angular/core';
 import { CLIENT_EVENTS, SERVER_EVENTS, type ErrorCode } from '@battleship/core';
 
 import { GameSocketService, TRANSPORT_ERRORS, type TransportError } from './game-socket';
@@ -17,7 +17,7 @@ export type RoomLeaveResult =
   | {
       /** The player still holds the seat, or may: after `NO_ACK` the next `STATE` or handshake tells. */
       readonly ok: false;
-      /** Why; `NOT_ALLOWED` without a seat, or once the match is over (docs/server.md#leaving). */
+      /** Why; `NOT_ALLOWED` without a seat (docs/server.md#leaving). */
       readonly error: RoomEntryError;
     };
 
@@ -38,9 +38,9 @@ export type RoomEntryResult =
 
 /**
  * Takes a seat: `CREATE_ROOM` from the home screen, `JOIN_ROOM` from a room link (docs/protocol.md#client--server), or
- * the stored seat of a room link opened in a new tab; and gives it up before the match with `LEAVE_ROOM`. The
- * credentials of an accepted command go to `SessionStore`; the room itself arrives as `STATE` in `GameStateService`.
- * A room the server closes (`ROOM_CLOSED`) loses its seat the same way.
+ * the stored seat of a room link opened in a new tab; and gives it up with `LEAVE_ROOM`, before the match and at game
+ * over. The credentials of an accepted command go to `SessionStore`; the room itself arrives as `STATE` in
+ * `GameStateService`. A room the server closes (`ROOM_CLOSED`) loses its seat the same way.
  */
 @Service()
 export class RoomEntryService {
@@ -50,6 +50,12 @@ export class RoomEntryService {
   private readonly sessions = inject(SessionStore);
   /** Forgets the room's snapshot once the seat is given up: the server sends the leaver nothing more. */
   private readonly gameState = inject(GameStateService);
+  /** The `leave` waiting for its ack, which a second call shares; `null` when none does. */
+  private pendingLeave: Promise<RoomLeaveResult> | null = null;
+  /** Written by `leave` only; read through `isLeaving`. */
+  private readonly isLeavingSignal = signal(false);
+  /** Whether `LEAVE_ROOM` waits for its ack, from "Leave room" or from the leave guard (ADR-0126). */
+  readonly isLeaving = this.isLeavingSignal.asReadonly();
 
   /**
    * Drops the seat and the snapshot of a room the server closes (`ROOM_CLOSED`, ADR-0097): the server sends nothing
@@ -112,14 +118,31 @@ export class RoomEntryService {
   }
 
   /**
-   * Gives up the seat before the match (`LEAVE_ROOM`, docs/server.md#leaving, ADR-0078): the opponent, if any, goes
-   * back to waiting, and the stored credentials and the room's snapshot are dropped, so the room link shows the join
-   * form. Should the match have started on the server meanwhile, the same ack means it was surrendered with the seat
-   * kept (ADR-0116); the credentials are dropped all the same, as the player chose to go.
+   * Gives up the seat (`LEAVE_ROOM`, docs/server.md#leaving): before the match (ADR-0078) and at game over, where it is
+   * the `LEAVE` rematch choice (ADR-0123, ADR-0126). The opponent, if any, goes back to waiting, and the stored
+   * credentials and the room's snapshot are dropped, so the room link shows the join form. Should the match have
+   * started on the server meanwhile, the same ack means it was surrendered with the seat kept (ADR-0116); the
+   * credentials are dropped all the same, as the player chose to go. A call while one waits for its ack sends nothing
+   * and shares its result.
    * @param roomId The room the tab is in, from the address.
-   * @returns Whether the seat was given up, or why not; a refusal keeps the credentials and the snapshot.
+   * @returns Whether the seat was given up, or why not; a refusal keeps the credentials and the snapshot. Resolves within
+   * `ACK_TIMEOUT_MS`, at once when the socket is not connected.
    */
-  async leave(roomId: string): Promise<RoomLeaveResult> {
+  leave(roomId: string): Promise<RoomLeaveResult> {
+    this.pendingLeave ??= this.sendLeave(roomId).finally(() => {
+      this.pendingLeave = null;
+      this.isLeavingSignal.set(false);
+    });
+    return this.pendingLeave;
+  }
+
+  /**
+   * Sends `LEAVE_ROOM` and drops the seat once it is acked.
+   * @param roomId The room the tab is in.
+   * @returns What `leave` resolves with.
+   */
+  private async sendLeave(roomId: string): Promise<RoomLeaveResult> {
+    this.isLeavingSignal.set(true);
     const response = await this.socket.emitWithAck(CLIENT_EVENTS.LEAVE_ROOM, {});
     if (!response.ok) {
       return this.failure(response.error);

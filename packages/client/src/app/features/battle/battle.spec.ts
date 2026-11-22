@@ -656,7 +656,7 @@ describe('Battle', () => {
   });
 
   describe('at game over', () => {
-    it('names the winner and the reason, reveals the fleet under the shots, and offers only a new match', async () => {
+    it('names the winner and the reason, reveals the fleet under the shots, and offers a rematch or leaving instead of the match controls', async () => {
       // Straight to game over, as after a reload: both boards come from the snapshot (ADR-0064).
       await receiveGameOver({
         incomingShots: [{ coordinate: { x: 0, y: 0 }, outcome: SHOT_OUTCOMES.HIT }],
@@ -684,8 +684,14 @@ describe('Battle', () => {
       const actions = Array.from(view().querySelectorAll('button:not([role="grid"] button, dialog button)')).map(
         (element) => element.textContent.trim(),
       );
-      expect(actions).toEqual([BATTLE_TEXT.myFleet, BATTLE_TEXT.enemyWaters]);
-      expect(view().querySelector('a')?.textContent).toBe(BATTLE_TEXT.newMatch);
+      // The game-over controls replace "Fire" and "Surrender" (ADR-0126).
+      expect(actions).toEqual([
+        BATTLE_TEXT.rematch.playAgain,
+        BATTLE_TEXT.rematch.changeRules,
+        BATTLE_TEXT.myFleet,
+        BATTLE_TEXT.enemyWaters,
+      ]);
+      expect(view().querySelector('a')?.textContent.trim()).toBe(BATTLE_TEXT.rematch.leave);
       expect(view().querySelector('a')?.getAttribute('href')).toBe('/');
     });
 

@@ -4,6 +4,7 @@ import {
   SERVER_EVENTS,
   type Coordinate,
   type DiceRolledPayload,
+  type GameOverReason,
   type PlacedShip,
   type PlayerStateSnapshot,
   type RoomPhase,
@@ -38,6 +39,17 @@ export interface ReceivedDiceRoll extends DiceRolledPayload {
   readonly receivedAt: number;
 }
 
+/**
+ * The result of the match a player left at game over, as the one left behind saw it (ADR-0126). The client keeps it from
+ * the room's last game-over snapshot; the server sends nothing of the match once a seat is freed, so a reload loses it.
+ */
+export interface DepartedMatch {
+  /** Whether the receiver won; `false` for a match without a winner (`ABANDONED`). */
+  readonly hasWon: boolean;
+  /** How the match ended. */
+  readonly reason: GameOverReason;
+}
+
 /** A snapshot with the moment it arrived, which every countdown counts from, and what changed for the opponent. */
 interface SyncedSnapshot {
   /** The latest `STATE`. */
@@ -46,8 +58,10 @@ interface SyncedSnapshot {
   readonly receivedAt: number;
   /** The opponent's nickname when this snapshot brought them back from a disconnection, else `null`. */
   readonly returnedNickname: string | null;
-  /** The nickname of a player whose seat was freed before the match, while the seat stays free; else `null`. */
+  /** The nickname of a player whose seat was freed, before the match or at game over, while it stays free; else `null`. */
   readonly departedNickname: string | null;
+  /** The match the departed player left at game over, while their seat stays free; `null` for a seat freed before it. */
+  readonly departedMatch: DepartedMatch | null;
 }
 
 /** Where a countdown reads its remaining time in a snapshot. */
@@ -189,10 +203,17 @@ export class GameStateService {
   readonly opponentReturned = computed(() => this.synced()?.returnedNickname ?? null);
 
   /**
-   * The player whose seat was freed before the match while this client followed the room (ADR-0073, ADR-0077): their
-   * nickname until someone takes the seat or another room's snapshot arrives, else `null`.
+   * The player whose seat was freed while this client followed the room, before the match or at game over (ADR-0073,
+   * ADR-0077, ADR-0123): their nickname until someone takes the seat or another room's snapshot arrives, else `null`.
    */
   readonly opponentDeparted = computed(() => this.synced()?.departedNickname ?? null);
+
+  /**
+   * The result of the match the departed player left at game over (ADR-0126), while their seat stays free; `null` for a
+   * seat freed before the match, and when this client did not keep the game-over snapshot: after a reload, or in a tab
+   * that entered the room after the match.
+   */
+  readonly departedMatch = computed(() => this.synced()?.departedMatch ?? null);
 
   /** Whether the receiver won; `null` until game over, `false` for a match without a winner (`ABANDONED`). */
   readonly hasWon = computed(() => {
@@ -257,14 +278,15 @@ export class GameStateService {
     }
     const opponent = snapshot.opponent;
     const wasAway = before?.snapshot.opponent?.isConnected === false;
+    const hasDeparted = opponent === null && before !== null;
     this.stopTicking();
     this.now.set(receivedAt);
     this.synced.set({
       snapshot,
       receivedAt,
       returnedNickname: wasAway && opponent?.isConnected === true ? opponent.nickname : null,
-      departedNickname:
-        opponent === null && before !== null ? (before.snapshot.opponent?.nickname ?? before.departedNickname) : null,
+      departedNickname: hasDeparted ? (before.snapshot.opponent?.nickname ?? before.departedNickname) : null,
+      departedMatch: hasDeparted ? (toDepartedMatch(before.snapshot) ?? before.departedMatch) : null,
     });
 
     const longestMs = Math.max(
@@ -316,4 +338,14 @@ export class GameStateService {
     const snapshot = this.snapshot();
     return snapshot?.battle ? snapshot.opponent?.isConnected === false : false;
   }
+}
+
+/**
+ * The result a game-over snapshot shows, for the player left behind once the other leaves (ADR-0126).
+ * @param snapshot The snapshot before the seat was freed.
+ * @returns Whether the receiver won and why the match ended, or `null` outside `GAME_OVER`.
+ */
+function toDepartedMatch(snapshot: PlayerStateSnapshot): DepartedMatch | null {
+  const { gameOver } = snapshot;
+  return gameOver === null ? null : { hasWon: gameOver.winner === snapshot.me.seat, reason: gameOver.reason };
 }

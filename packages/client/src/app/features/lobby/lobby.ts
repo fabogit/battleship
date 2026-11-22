@@ -1,9 +1,11 @@
 import { DOCUMENT, Location } from '@angular/common';
 import { Component, computed, inject, input, signal, viewChild, type ElementRef } from '@angular/core';
 import { Router } from '@angular/router';
-import { WAITING_TTL_MS } from '@battleship/core';
+import { GAME_OVER_REASONS, WAITING_TTL_MS } from '@battleship/core';
 
+import type { DepartedMatch } from '../../core/game-state';
 import { wholeMinutes } from '../../shared/countdown';
+import { BATTLE_TEXT } from '../battle/battle.text';
 import { QrCode } from '../../shared/qr-code/qr-code';
 import { LOBBY_TEXT } from './lobby.text';
 
@@ -27,8 +29,8 @@ export const SHARE_OUTCOMES = {
 export type ShareOutcome = (typeof SHARE_OUTCOMES)[keyof typeof SHARE_OUTCOMES];
 
 /**
- * The waiting screen of a room in `WAITING_FOR_OPPONENT` (docs/client.md#routes--lobby-flow): the room link, with
- * "Share link" and "Copy link". "Share link" opens the system share sheet on phones and tablets, and the share dialog
+ * The waiting screen of a room in `WAITING_FOR_OPPONENT` (docs/client.md#routes--lobby-flow): after an opponent who
+ * left at game over, the result of that match (ADR-0126); then the room link, with "Share link" and "Copy link". "Share link" opens the system share sheet on phones and tablets, and the share dialog
  * (a QR code of the link, the link and "Copy link") everywhere else or when the sheet fails (ADR-0079). Once the
  * opponent joins, the rules screen takes its place. Its content goes beside the heading: the room page's "Leave room"
  * (ADR-0080).
@@ -44,6 +46,8 @@ export class Lobby {
   readonly roomId = input.required<string>();
   /** The player's own nickname, as the server stored it. */
   readonly nickname = input.required<string>();
+  /** The match an opponent left at game over, with their nickname; `null` otherwise, after a reload too. */
+  readonly departedMatch = input<{ readonly match: DepartedMatch; readonly nickname: string } | null>(null);
 
   /** Builds the room's path, so the link follows the route table. */
   private readonly router = inject(Router);
@@ -82,6 +86,17 @@ export class Lobby {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('shareDialog');
   /** "Share link", which gets focus back when the dialog closes. */
   private readonly shareButton = viewChild.required<ElementRef<HTMLButtonElement>>('shareButton');
+
+  /** The result of the match the opponent left, in words; `null` without one. */
+  protected readonly lastMatch = computed(() => {
+    const departed = this.departedMatch();
+    if (departed === null) {
+      return null;
+    }
+    const { match, nickname } = departed;
+    const reason = BATTLE_TEXT.reasons[match.reason](nickname, match.hasWon);
+    return this.text.lastMatch(match.hasWon, match.reason === GAME_OVER_REASONS.ABANDONED, reason);
+  });
 
   /** The absolute address of this room's page, `/r/<roomId>` under the app's base href (ADR-0049). */
   protected readonly roomUrl = computed(() => {

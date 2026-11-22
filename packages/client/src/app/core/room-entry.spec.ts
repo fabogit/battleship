@@ -172,6 +172,32 @@ describe('roomEntryErrorMessage', () => {
       expect(socket.reconnect).toHaveBeenCalledOnce();
       expect(sessions.get(ROOM_ID)).not.toBeNull();
     });
+
+    it('says it is leaving until the ack, and shares one LEAVE_ROOM among the calls made meanwhile (ADR-0126)', async () => {
+      let answer: (response: { ok: true }) => void = () => undefined;
+      socket.emitWithAck.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      );
+      expect(service.isLeaving()).toBe(false);
+
+      const first = service.leave(ROOM_ID);
+      const second = service.leave(ROOM_ID);
+      expect(service.isLeaving()).toBe(true);
+      answer({ ok: true });
+
+      await expect(first).resolves.toEqual({ ok: true });
+      await expect(second).resolves.toEqual({ ok: true });
+      expect(socket.emitWithAck).toHaveBeenCalledOnce();
+      expect(service.isLeaving()).toBe(false);
+
+      // The next call sends again.
+      socket.emitWithAck.mockResolvedValue({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
+      await service.leave(ROOM_ID);
+      expect(socket.emitWithAck).toHaveBeenCalledTimes(2);
+      expect(service.isLeaving()).toBe(false);
+    });
   });
 
   it("forgets a refused seat's snapshot of the room before joining it again (ADR-0076)", async () => {
