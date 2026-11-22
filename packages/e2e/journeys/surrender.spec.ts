@@ -3,6 +3,7 @@ import { GAME_OVER_REASONS } from '@battleship/core';
 import { SURRENDER_PROMPTS } from '../../client/src/app/features/battle/battle-store';
 import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
 import { HOME_TEXT } from '../../client/src/app/features/home/home.text';
+import { LOBBY_TEXT } from '../../client/src/app/features/lobby/lobby.text';
 import { test, expect } from '../src/fixtures.ts';
 import { mainHeading, startBattle } from '../src/flows.ts';
 
@@ -64,13 +65,14 @@ test('leaving the room during the match asks first, and confirming surrenders it
   await expect(dialog).toBeHidden();
   await expect(ada.page).toHaveURL(roomUrl);
 
-  // The header's link home, confirmed: the surrender goes out, then the page goes home.
+  // The header's link home, confirmed: the surrender goes out, then LEAVE_ROOM frees the seat (ADR-0126), then the page
+  // goes home. Grace won, and waits for someone new with the result still readable.
   await brandLink.click();
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: prompt.confirm }).click();
 
   await expect(ada.page).toHaveURL('/');
   await expect(mainHeading(ada.page)).toHaveText(HOME_TEXT.heading);
-  await expect(mainHeading(grace.page)).toHaveText(BATTLE_TEXT.wonHeading);
+  await expect(mainHeading(grace.page)).toHaveText(LOBBY_TEXT.heading);
   await expect(grace.page.getByText(BATTLE_TEXT.reasons[GAME_OVER_REASONS.SURRENDER]('Ada', true))).toBeVisible();
 });

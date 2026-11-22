@@ -47,7 +47,8 @@ test('a full match from create and join to game over, with the fleet revealed', 
   );
   await expect(ada.page.getByText(BATTLE_TEXT.revealed('Grace'))).toBeVisible();
   for (const player of [ada, grace]) {
-    await expect(player.page.getByRole('link', { name: BATTLE_TEXT.newMatch })).toBeVisible();
+    await expect(player.page.getByRole('button', { name: BATTLE_TEXT.rematch.playAgain, exact: true })).toBeVisible();
+    await expect(player.page.getByRole('link', { name: BATTLE_TEXT.rematch.leave })).toBeVisible();
     await expect(player.page.getByRole('button', { name: BATTLE_TEXT.fire, exact: true })).toBeHidden();
   }
 });
