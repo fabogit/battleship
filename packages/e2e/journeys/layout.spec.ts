@@ -1,6 +1,7 @@
-import { NICKNAME_MAX_LENGTH } from '@battleship/core';
+import { NICKNAME_MAX_LENGTH, REMATCH_CHOICES } from '@battleship/core';
 import type { BrowserContextOptions, Locator, Page } from '@playwright/test';
 
+import { SURRENDER_PROMPTS } from '../../client/src/app/features/battle/battle-store';
 import { BATTLE_TEXT } from '../../client/src/app/features/battle/battle.text';
 import { LOBBY_TEXT } from '../../client/src/app/features/lobby/lobby.text';
 import { PLACEMENT_TEXT } from '../../client/src/app/features/placement/placement.text';
@@ -198,5 +199,35 @@ for (const viewport of PHONES) {
     await expectInView(page.getByRole('button', { name: PRESENCE_TEXT.pause }), '"Pause match"');
     await expectInView(fire, '"Fire" with the match running');
     await expect(fire).not.toHaveAttribute('aria-disabled');
+  });
+}
+
+for (const viewport of PHONES) {
+  const { width, height } = viewport;
+  test(`the game-over choices at ${String(width)}×${String(height)}`, async ({ openPlayer, skipServerClock }) => {
+    const options: BrowserContextOptions = { viewport, isMobile: true, hasTouch: true };
+    const [creatorName, joinerName] = LONGEST_NICKNAMES;
+    const creator = await openPlayer(creatorName, options);
+    const joiner = await openPlayer(joinerName, options);
+    await startBattle(creator, joiner, skipServerClock);
+    await joiner.page.getByRole('button', { name: BATTLE_TEXT.surrender, exact: true }).click();
+    await joiner.page
+      .getByRole('dialog')
+      .getByRole('button', { name: BATTLE_TEXT.surrenderPrompts[SURRENDER_PROMPTS.SURRENDER].confirm })
+      .click();
+    const { page } = creator;
+    await expect(mainHeading(page)).toHaveText(BATTLE_TEXT.wonHeading);
+    // The opponent's choice adds no line: the controls' height stays the same whatever is chosen (ADR-0126).
+    await joiner.page.getByRole('button', { name: BATTLE_TEXT.rematch.changeRules, exact: true }).click();
+    await expect(page.getByText(BATTLE_TEXT.rematch.theirs(joinerName, REMATCH_CHOICES.CHANGE_RULES))).toBeVisible();
+
+    await expectNoHorizontalScroll(page, 'game over');
+    for (const [what, name] of [
+      ['"Play again"', BATTLE_TEXT.rematch.playAgain],
+      ['"Change rules"', BATTLE_TEXT.rematch.changeRules],
+    ] as const) {
+      await expectInView(page.getByRole('button', { name, exact: true }), `${what} at game over`);
+    }
+    await expect(page.getByRole('link', { name: BATTLE_TEXT.rematch.leave })).toBeVisible();
   });
 }
