@@ -38,5 +38,6 @@ During `IN_PROGRESS`, the battle view has two ways to give up, and both ask firs
 
 - Added on 2026-11-19 for surrender ([#35](https://github.com/fabogit/battleship/issues/35)), from the M4 decisions on the issue.
 - Spec: [Client: Board & interaction](../client.md#board--interaction) · [Client: Routes & lobby flow](../client.md#routes--lobby-flow)
+- Amended on 2026-11-22 ([#36](https://github.com/fabogit/battleship/issues/36)): in `GAME_OVER` the guard sends `LEAVE_ROOM` without a dialog, and after a confirmed guard-surrender it sends `LEAVE_ROOM` once `SURRENDER` is answered; "New match" is now "Leave room" ([ADR-0126](0126-leaving-the-page-at-game-over.md)).
 - Related: [ADR-0116](0116-surrender-keeps-the-seat.md) (surrender keeps the seat) · [ADR-0078](0078-leaving-before-the-match.md) (leaving before the match) · [ADR-0080](0080-leave-room-beside-the-heading.md) ("Leave room" beside the heading) · [ADR-0110](0110-compact-presence-banner.md) ("Fire" in view) · [ADR-0035](0035-command-acks.md) (command acks)
 - Issues: [#35](https://github.com/fabogit/battleship/issues/35) · [#63](https://github.com/fabogit/battleship/issues/63)

@@ -19,7 +19,7 @@ A seat no connection is bound to: its player closed the tab, lost the network or
 _Avoid_: offline, absent
 
 **Leave**:
-A player freeing their own seat before the match with `LEAVE_ROOM` ("Leave room"): the seat is free for someone else at once, and the room closes when nobody is left. During the match, leaving is a surrender, which keeps the seat; at game over, it is a rematch choice (#36).
+A player freeing their own seat with `LEAVE_ROOM` ("Leave room"): the seat is free for someone else at once, and the room closes when nobody is left. During the match, leaving is a surrender, which keeps the seat; at game over, it is the `LEAVE` rematch choice, and so is any way off the room page.
 _Avoid_: quit, exit, kick
 
 **Closed room**:
@@ -207,7 +207,7 @@ _Avoid_: resign, concede, quit
 The end of a match in which both players are AFK; it has no winner.
 
 **Rematch choice**:
-What each player picks at game over: `SAME_RULES`, `CHANGE_RULES` or `LEAVE`. `CHANGE_RULES` wins over `SAME_RULES`.
+What each player picks at game over: `SAME_RULES` ("Play again"), `CHANGE_RULES` ("Change rules") or `LEAVE`. The first two are kept, and may change, until both players have chosen while both are connected; `CHANGE_RULES` wins over `SAME_RULES`. `LEAVE` frees the seat at once.
 _Avoid_: replay
 
 ### Protocol

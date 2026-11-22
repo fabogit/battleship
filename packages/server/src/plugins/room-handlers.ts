@@ -143,7 +143,8 @@ interface CommandContext {
  * here too (docs/server.md#seat-presence, ADR-0072): a seat with no socket bound to it is away, its forfeit clock runs
  * as a room timer, and every socket of the room gets `STATE` when a seat drops or comes back. A room nobody joins expires after
  * `WAITING_TTL_MS` (ADR-0096), a room whose players do not agree on the rules after `NEGOTIATION_TTL_MS` (ADR-0102), a
- * room in `GAME_OVER` after `GAME_OVER_TTL_MS`, and one nobody is left in closes
+ * room in `GAME_OVER` after `GAME_OVER_TTL_MS` unless a rematch or a `LEAVE` takes it out first (ADR-0123), and one
+ * nobody is left in closes
  * (docs/server.md#room-lifecycle); the sockets still in an expired room lose their seat and get `ROOM_CLOSED`
  * (ADR-0097). A throw in room logic stays in its room (ADR-0104): before anything is stored it refuses the command with
  * `SERVER_ERROR`; after a change is stored, in a timer task, or in a socket's `connection` or `disconnect`, it closes

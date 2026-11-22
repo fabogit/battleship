@@ -15,3 +15,4 @@ Monotonic `rulesVersion` counter (replaces FNV-1a hash).
 
 - Added on 2026-10-03 after the requirements analysis session.
 - Implemented on 2026-10-29 ([#26](https://github.com/fabogit/battleship/issues/26)): the rules commands and the version counter in [ADR-0082](0082-rules-negotiation-commands.md).
+- Applied on 2026-11-22 ([#36](https://github.com/fabogit/battleship/issues/36)): a `CHANGE_RULES` rematch opens a negotiation at the same version, since no edit changed the rules ([ADR-0125](0125-what-a-rematch-starts-from.md)).
