@@ -15,15 +15,12 @@ import {
   parseSessionCredentials,
   PLACEMENT_TIME_LIMIT_MS,
   PROTOCOL_VERSION,
-  REMATCH_CHOICES,
   ROOM_CLOSED_REASONS,
   ROOM_PHASES,
   SEATS,
   SERVER_EVENTS,
   SHOT_OUTCOMES,
   START_COUNTDOWN_MS,
-  type CommandEvent,
-  type CommandPayload,
   type Coordinate,
   type PlayerStateSnapshot,
   type SessionCredentials,
@@ -33,10 +30,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { COMMAND_EVENTS } from '../src/plugins/room-handlers.js';
 import {
-  ACK_TIMEOUT_MS,
   agreeOnRules,
   app,
   drop,
+  expectBothDone,
   expectNothingPending,
   baseUrl,
   clock,
@@ -52,6 +49,7 @@ import {
   rooms,
   seatedPlayers,
   send,
+  sendOnTimeline,
   sendRaw,
   start,
   startedMatch,
@@ -63,11 +61,6 @@ import {
   type Inbox,
   type Player,
 } from './socket-harness.js';
-
-/** Commands whose room logic lands later; refused with `NOT_ALLOWED` after their guard (ADR-0046). */
-const NOT_YET_SUPPORTED: readonly { [E in CommandEvent]: readonly [E, CommandPayload<E>] }[CommandEvent][] = [
-  [CLIENT_EVENTS.REMATCH_CHOICE, { choice: REMATCH_CHOICES.LEAVE }],
-];
 
 afterEach(stop);
 
@@ -86,29 +79,6 @@ async function refusedHandshake(auth: object): Promise<string> {
   });
   expect(socket.active).toBe(false);
   return error.message;
-}
-
-/**
- * Sends a command and records its ack in the sender's inbox, where it arrived among the events, so a test can read the
- * order of ack and events (ADR-0047). Read the reply with `inbox.ack()`.
- */
-async function sendOnTimeline<E extends CommandEvent>(
-  from: Player,
-  event: E,
-  payload: CommandPayload<E>,
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    // The callback runs as the ack packet is read, in order with the events `onAny` sees; `emitWithAck` would resolve a
-    // microtask later.
-    (from.socket as Socket).timeout(ACK_TIMEOUT_MS).emit(event, payload, (error: Error | null, response: unknown) => {
-      if (error !== null) {
-        reject(error);
-        return;
-      }
-      from.inbox.recordAck(response);
-      resolve();
-    });
-  });
 }
 
 /**
@@ -138,16 +108,6 @@ async function skipToState(
       return snapshot;
     }
   }
-}
-
-/**
- * Proves that nothing is left in either player's inbox after the match ended. P1's probe moves its socket out of the
- * room, which leaves its seat away, so P2 gets that `STATE` before its own probe.
- */
-async function expectBothDone(p1: Player, p2: Player): Promise<void> {
-  await expectNothingPending(p1);
-  expect((await p2.inbox.state()).opponent).toMatchObject({ isConnected: false });
-  await expectNothingPending(p2);
 }
 
 /**
@@ -426,12 +386,6 @@ describe('command acks', () => {
       ok: false,
       error: ERROR_CODES.NOT_ALLOWED,
     });
-  });
-
-  it.each(NOT_YET_SUPPORTED)('refuse %s with NOT_ALLOWED until its room logic lands', async (event, payload) => {
-    await start();
-    const { p1 } = await seatedPlayers();
-    expect(await sendRaw(p1, event, payload)).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
   });
 
   it('refuse joining the other seat of the room the socket sits in', async () => {
@@ -1186,16 +1140,12 @@ describe('LEAVE_ROOM', () => {
     await expectBothDone(p1, p2);
   });
 
-  it('is refused with NOT_ALLOWED without a seat and at game over', async () => {
+  it('is refused with NOT_ALLOWED without a seat', async () => {
     await start();
     expect(await send(await player(), CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({
       ok: false,
       error: ERROR_CODES.NOT_ALLOWED,
     });
-    const { p1, p2, roomId } = await startedMatch();
-    await playToVictory(p1, p2);
-    expect(await send(p2, CLIENT_EVENTS.LEAVE_ROOM, {})).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
-    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.GAME_OVER);
   });
 
   it("keeps the next match's shots from the leaver", async () => {

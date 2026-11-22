@@ -1,25 +1,18 @@
 // Seat presence as pure transitions (docs/server.md#seat-presence, ADR-0072): a seat losing or getting back its sockets,
 // the disconnect forfeit and `LEAVE_ROOM`. Room logic never sees sockets; the socket layer reports what they did.
 
-import {
-  DISCONNECT_FORFEIT_MS,
-  ERROR_CODES,
-  GAME_OVER_REASONS,
-  otherSeat,
-  ROOM_PHASES,
-  SEATS,
-  type Seat,
-} from '@battleship/core';
+import { DISCONNECT_FORFEIT_MS, GAME_OVER_REASONS, otherSeat, ROOM_PHASES, SEATS, type Seat } from '@battleship/core';
 
 import {
   endMatch,
   pauseTurnTimer,
+  resolveRematch,
   resumeTurnTimer,
   surrender,
   type GameOverRoom,
   type NegotiationRoom,
   type PlacementRoom,
-  type RejectedTransition,
+  type RoomPlayer,
   type RoomState,
   type WaitingRoom,
 } from './room.js';
@@ -36,9 +29,9 @@ export interface PendingForfeit {
 }
 
 /**
- * An accepted `LEAVE_ROOM` (docs/server.md#leaving). Before the match the seat is freed: the room waits for a player
- * again, or closes when nobody is left in it (ADR-0073). During the match the seat stays, and the match ends as a
- * surrender (ADR-0116), so the room is in `GAME_OVER`.
+ * An accepted `LEAVE_ROOM` (docs/server.md#leaving). Before the match and at game over the seat is freed: the room
+ * waits for a player again, or closes when nobody is left in it (ADR-0073, ADR-0123). During the match the seat stays,
+ * and the match ends as a surrender (ADR-0116), so the room is in `GAME_OVER`.
  */
 export interface LeftRoom {
   /** Discriminant: the ack reports success. */
@@ -70,11 +63,12 @@ export function disconnectSeat(state: RoomState, seat: Seat, now: number): RoomS
 
 /**
  * Records that a socket is bound to a seat again (ADR-0072): its forfeit clock stops, and a paused match resumes once
- * both seats are connected, its turn timer running again with the time it had left (ADR-0074). A connected seat is
- * left as it is.
+ * both seats are connected, its turn timer running again with the time it had left (ADR-0074). At game over, a rematch
+ * both seats chose resolves now that both are connected (ADR-0124). A connected seat is left as it is.
  * @param state The room, in any phase.
  * @param seat The seat a socket came back to.
- * @param now Current time in epoch ms; a resumed turn timer runs from it.
+ * @param now Current time in epoch ms; a resumed turn timer runs from it, and so does the deadline of a placement the
+ * rematch starts.
  * @returns The room after the return; the same object when nothing changed.
  */
 export function reconnectSeat(state: RoomState, seat: Seat, now: number): RoomState {
@@ -86,6 +80,9 @@ export function reconnectSeat(state: RoomState, seat: Seat, now: number): RoomSt
     // The opponent may still be away: the match stays paused, and the returning player may resume it with SET_PAUSED.
     const returned = { ...state, disconnectedAt };
     return disconnectedAt[otherSeat(seat)] === null ? resumeTurnTimer(returned, now) : returned;
+  }
+  if (state.phase === ROOM_PHASES.GAME_OVER) {
+    return resolveRematch({ ...state, disconnectedAt }, now);
   }
   return { ...state, disconnectedAt };
 }
@@ -140,13 +137,14 @@ export function forfeitSeat(state: RoomState, seat: Seat): RoomState | null {
 
 /**
  * Leaves the sender's room (`LEAVE_ROOM`, docs/server.md#leaving). Before the match it frees the seat, with the same
- * effect as a forfeit then. During the match it is a surrender (ADR-0116): the seat stays and the opponent wins.
+ * effect as a forfeit then. During the match it is a surrender (ADR-0116): the seat stays and the opponent wins. At
+ * game over it is the `LEAVE` rematch choice, which frees the seat at once (ADR-0123).
  * @param state The sender's room.
  * @param seat The sender's seat.
- * @returns The waiting room after the seat was freed, `null` when the room closes, the room in `GAME_OVER` after a
- * surrender, or `NOT_ALLOWED` in `GAME_OVER`, where leaving is a rematch choice (#36).
+ * @returns The waiting room after the seat was freed, `null` when the room closes, or the room in `GAME_OVER` after a
+ * surrender.
  */
-export function leaveRoom(state: RoomState, seat: Seat): LeftRoom | RejectedTransition {
+export function leaveRoom(state: RoomState, seat: Seat): LeftRoom {
   switch (state.phase) {
     case ROOM_PHASES.WAITING_FOR_OPPONENT:
     case ROOM_PHASES.RULES_NEGOTIATION:
@@ -155,8 +153,21 @@ export function leaveRoom(state: RoomState, seat: Seat): LeftRoom | RejectedTran
     case ROOM_PHASES.IN_PROGRESS:
       return { ok: true, state: surrender(state, seat) };
     case ROOM_PHASES.GAME_OVER:
-      return { ok: false, error: ERROR_CODES.NOT_ALLOWED };
+      return { ok: true, state: leaveGameOver(state, seat) };
   }
+}
+
+/**
+ * Removes a player at game over, the `LEAVE` rematch choice (ADR-0123): the other player goes to
+ * `WAITING_FOR_OPPONENT` in the seat they had, with the rules and their version kept and their rematch choice dropped.
+ * Both seats are taken in `GAME_OVER`, so the room never closes here. A player left behind who is away keeps the time
+ * they dropped, so their forfeit clock, stopped at game over, runs again from it (docs/roadmap.md, the forfeit bound).
+ * @param state The room in `GAME_OVER`.
+ * @param seat The seat to free.
+ * @returns The waiting room.
+ */
+export function leaveGameOver(state: GameOverRoom, seat: Seat): WaitingRoom {
+  return waitingFor(state, seat, state.players[otherSeat(seat)]);
 }
 
 /**
@@ -168,17 +179,25 @@ export function leaveRoom(state: RoomState, seat: Seat): LeftRoom | RejectedTran
  * @returns The waiting room, or `null` when the freed seat was the last one taken.
  */
 function freeSeat(state: PreGameRoom, seat: Seat): WaitingRoom | null {
-  const stayer = otherSeat(seat);
-  const remaining = state.players[stayer];
-  if (remaining === null) {
-    return null;
-  }
+  const remaining = state.players[otherSeat(seat)];
+  return remaining === null ? null : waitingFor(state, seat, remaining);
+}
+
+/**
+ * Builds the room the player left behind waits in: their seat, the room's rules and version, the freed seat empty and
+ * connected, their own drop time kept.
+ * @param state The room the seat is freed from.
+ * @param seat The seat to free.
+ * @param remaining The player in the other seat.
+ * @returns The waiting room.
+ */
+function waitingFor(state: RoomState, seat: Seat, remaining: RoomPlayer): WaitingRoom {
   return {
     phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
     roomId: state.roomId,
     rules: state.rules,
     rulesVersion: state.rulesVersion,
-    players: stayer === SEATS.P1 ? { P1: remaining, P2: null } : { P1: null, P2: remaining },
+    players: seat === SEATS.P2 ? { P1: remaining, P2: null } : { P1: null, P2: remaining },
     disconnectedAt: { ...state.disconnectedAt, [seat]: null },
   };
 }

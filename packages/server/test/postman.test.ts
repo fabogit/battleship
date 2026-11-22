@@ -82,6 +82,7 @@ type Step =
 
 const OK = { ok: true };
 const NOT_ALLOWED = { ok: false, error: ERROR_CODES.NOT_ALLOWED };
+const WRONG_PHASE = { ok: false, error: ERROR_CODES.WRONG_PHASE };
 const OK_WITH_SECRET = { ok: true, playerSecret: expect.any(String) as unknown };
 /** The roll of the replay's match: the test registry's seed, after the one room id it drew, makes `P1` start. */
 const REPLAY_DICE: DiceRolledPayload = { rolls: [{ P1: 6, P2: 1 }], starter: SEATS.P1 };
@@ -145,23 +146,29 @@ const STEPS: readonly Step[] = [
   { request: 'Seat P2', disconnect: true },
   { request: 'Seat P1', message: `${CLIENT_EVENTS.SET_PAUSED} — resume`, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.SET_PAUSED, ack: OK },
-  // Either seat may give up the match, here with the opponent away: the absent P2 wins (ADR-0116). Once it is over,
-  // leaving waits for the rematch choice (#36), and a second surrender finds the wrong phase.
+  // Either seat may give up the match, here with the opponent away: the absent P2 wins (ADR-0116), and a second
+  // surrender finds the wrong phase.
   { request: 'Seat P1', message: CLIENT_EVENTS.SURRENDER, ack: OK },
+  { request: 'Seat P1', message: CLIENT_EVENTS.SURRENDER, ack: WRONG_PHASE },
+  // At game over a choice to play again is kept until both seats chose with both connected; P2 is away, so it stays
+  // kept. LEAVE frees P1's seat at once, so the socket has no seat for LEAVE_ROOM (ADR-0123, ADR-0124).
+  { request: 'Seat P1', message: CLIENT_EVENTS.REMATCH_CHOICE, ack: OK },
+  { request: 'Seat P1', message: `${CLIENT_EVENTS.REMATCH_CHOICE} — leave`, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.LEAVE_ROOM, ack: NOT_ALLOWED },
-  { request: 'Seat P1', message: CLIENT_EVENTS.SURRENDER, ack: { ok: false, error: ERROR_CODES.WRONG_PHASE } },
   {
     request: 'Seat P1',
     message: `${CLIENT_EVENTS.CREATE_ROOM} — invalid payload`,
     ack: { ok: false, error: ERROR_CODES.INVALID_PAYLOAD },
   },
-  // Before a match, leaving frees the seat at once; the room had no one else, so it closes (ADR-0073).
+  // Before a match, the rematch choice is the wrong phase, and leaving frees the seat at once; the room had no one
+  // else, so it closes (ADR-0073).
   {
     request: 'Seat P1',
     message: CLIENT_EVENTS.CREATE_ROOM,
     ack: { ...OK_WITH_SECRET, roomId: expect.any(String) as unknown },
     capture: 'roomId',
   },
+  { request: 'Seat P1', message: `${CLIENT_EVENTS.REMATCH_CHOICE} — leave`, ack: WRONG_PHASE },
   { request: 'Seat P1', message: CLIENT_EVENTS.LEAVE_ROOM, ack: OK },
 ];
 

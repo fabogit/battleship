@@ -17,6 +17,7 @@ import {
   type ClientToServerEvents,
   type CommandEvent,
   type CommandPayload,
+  type RematchChoice,
   type RoomClosedReason,
   type Seat,
   type UpdateRulesAckData,
@@ -342,7 +343,8 @@ export default fp<RoomHandlersOptions>(
           expire(roomId, ROOM_TIMER_KINDS.RULES_NEGOTIATION, ROOM_CLOSED_REASONS.NEGOTIATION_TTL);
         });
       }
-      // The game-over TTL counts from the end of the match; leaving `GAME_OVER` (a rematch, #36) stops it.
+      // The game-over TTL counts from the end of the match; rematch choices do not move it, and leaving `GAME_OVER` (a
+      // resolved rematch, or a seat freed by `LEAVE`) stops it (ADR-0123).
       if (room.phase !== ROOM_PHASES.GAME_OVER) {
         timers.stop(roomId, ROOM_TIMER_KINDS.GAME_OVER);
       } else if (!timers.isRunning(roomId, ROOM_TIMER_KINDS.GAME_OVER)) {
@@ -354,6 +356,7 @@ export default fp<RoomHandlersOptions>(
 
     const syncPresence = (roomId: string): boolean => {
       const at = clock.now();
+      const before = rooms.get(roomId);
       let changed: RoomState | undefined;
       for (const seat of Object.values(SEATS)) {
         const isConnected = isSeatConnected(io, roomId, seat);
@@ -365,6 +368,10 @@ export default fp<RoomHandlersOptions>(
       }
       if (changed === undefined) {
         return false;
+      }
+      // A return that resolves a rematch both seats chose moves the room on (ADR-0124).
+      if (changed.phase !== before?.phase) {
+        app.log.info({ roomId, phase: changed.phase }, 'Room phase changed');
       }
       sendState(io, changed, at);
       reviewTimers(roomId);
@@ -588,11 +595,34 @@ function listenToCommands(
   };
 
   /**
-   * Leaves the sender's room (`LEAVE_ROOM`, docs/server.md#leaving). Before the match the seat is freed: every socket
-   * bound to it loses it, since the secret that could bring it back is gone, the ack comes first, then the other
-   * player gets `STATE` and the leaver none, and a room nobody is left in closes. During the match it is a surrender
-   * (ADR-0116), handled as `SURRENDER` is: the seat stays, so its sockets keep their binding and their place in the
-   * Socket.io room, and after the ack both seats get the game-over `STATE`.
+   * Settles a seat a command freed (`LEAVE_ROOM`, or `REMATCH_CHOICE` with `LEAVE`): every socket bound to it loses it,
+   * since the secret that could bring it back is gone, the ack comes first, then the other player gets `STATE` and the
+   * leaver none, and a room nobody is left in closes.
+   * @param event The command, for the logs.
+   * @param reply Its ack.
+   * @param binding The room and the seat that was freed.
+   * @param before The room before the command, to log a change of phase.
+   * @param state The room after it, or `null` once room logic left nobody in it.
+   */
+  const settleLeaver = (
+    event: CommandEvent,
+    reply: (response: AckResponse) => void,
+    { roomId, seat }: { readonly roomId: string; readonly seat: Seat },
+    before: RoomState | undefined,
+    state: RoomState | null,
+  ): void => {
+    settle(event, roomId, reply, () => {
+      unbindSeat(roomId, seat);
+      reply({ ok: true });
+      settleFreedSeat(roomId, before, state, event);
+    });
+  };
+
+  /**
+   * Leaves the sender's room (`LEAVE_ROOM`, docs/server.md#leaving). Before the match and at game over the seat is
+   * freed (`settleLeaver`, ADR-0123). During the match it is a surrender (ADR-0116), handled as `SURRENDER` is: the
+   * seat stays, so its sockets keep their binding and their place in the Socket.io room, and after the ack both seats
+   * get the game-over `STATE`.
    * @param reply The ack.
    */
   const leave = (reply: (response: AckResponse) => void): void => {
@@ -617,23 +647,42 @@ function listenToCommands(
       });
       return;
     }
-    settle(CLIENT_EVENTS.LEAVE_ROOM, roomId, reply, () => {
-      unbindSeat(roomId, seat);
-      reply({ ok: true });
-      settleFreedSeat(roomId, before, state, CLIENT_EVENTS.LEAVE_ROOM);
-    });
+    settleLeaver(CLIENT_EVENTS.LEAVE_ROOM, reply, binding, before, state);
   };
 
   /**
-   * Refuses a command whose room logic has not landed yet with `NOT_ALLOWED`, after its guard (ADR-0046).
-   * @param event The command.
-   * @returns Its handler.
+   * Runs the sender's rematch choice (`REMATCH_CHOICE`, docs/server.md#game-over--rematch): `NOT_ALLOWED` without a
+   * seat, then `WRONG_PHASE` outside `GAME_OVER`. A choice to play again is acked, then both seats get `STATE`, in
+   * `GAME_OVER` with the choices or in the phase the rematch resolved into (ADR-0124); the same choice again is acked
+   * and sends `STATE` too. `LEAVE` frees the seat as `LEAVE_ROOM` does (`settleLeaver`, ADR-0123).
+   * @param choice The guard's copy of the choice.
+   * @param reply The ack.
    */
-  const notYetSupported =
-    <E extends CommandEvent>(event: E): CommandHandler<E> =>
-    (_payload, reply) => {
-      refuse(event, reply, { error: ERROR_CODES.NOT_ALLOWED });
-    };
+  const chooseRematch = (choice: RematchChoice, reply: (response: AckResponse) => void): void => {
+    const binding = socket.data.binding;
+    if (binding === undefined) {
+      refuse(CLIENT_EVENTS.REMATCH_CHOICE, reply, { error: ERROR_CODES.NOT_ALLOWED });
+      return;
+    }
+    const { roomId, seat } = binding;
+    const at = now();
+    const before = rooms.get(roomId);
+    const result = tryTransition(CLIENT_EVENTS.REMATCH_CHOICE, roomId, () =>
+      rooms.chooseRematch(roomId, seat, choice, at),
+    );
+    if (!result.ok) {
+      refuse(CLIENT_EVENTS.REMATCH_CHOICE, reply, result);
+      return;
+    }
+    if (result.hasLeft) {
+      settleLeaver(CLIENT_EVENTS.REMATCH_CHOICE, reply, binding, before, result.state);
+      return;
+    }
+    settle(CLIENT_EVENTS.REMATCH_CHOICE, roomId, reply, () => {
+      reply({ ok: true });
+      announce(roomId, before, result.state, [], at);
+    });
+  };
 
   /** One handler per command; the mapped type makes a command without a handler a compile error. */
   const handlers: { readonly [E in CommandEvent]: CommandHandler<E> } = {
@@ -742,7 +791,9 @@ function listenToCommands(
         NO_ACK_DATA,
       );
     },
-    REMATCH_CHOICE: notYetSupported(CLIENT_EVENTS.REMATCH_CHOICE),
+    REMATCH_CHOICE: (payload, reply) => {
+      chooseRematch(payload.choice, reply);
+    },
     LEAVE_ROOM: (_payload, reply) => {
       leave(reply);
     },

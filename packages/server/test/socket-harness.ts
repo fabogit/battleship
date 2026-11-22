@@ -272,12 +272,45 @@ export async function sendRaw(from: Player, event: string, payload: unknown): Pr
 }
 
 /**
+ * Sends a command and records its ack in the sender's inbox, where it arrived among the events, so a test can read the
+ * order of ack and events (ADR-0047). Read the reply with `inbox.ack()`.
+ */
+export async function sendOnTimeline<E extends CommandEvent>(
+  from: Player,
+  event: E,
+  payload: CommandPayload<E>,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    // The callback runs as the ack packet is read, in order with the events `onAny` sees; `emitWithAck` would resolve a
+    // microtask later.
+    (from.socket as Socket).timeout(ACK_TIMEOUT_MS).emit(event, payload, (error: Error | null, response: unknown) => {
+      if (error !== null) {
+        reject(error);
+        return;
+      }
+      from.inbox.recordAck(response);
+      resolve();
+    });
+  });
+}
+
+/**
  * Proves that nothing is left in a player's inbox. `Inbox` never checks for leftover events, so this creates a room
  * whose `STATE` must be the very next event; a stray event read first fails the check.
  */
 export async function expectNothingPending(target: Player): Promise<void> {
   const { roomId } = (await send(target, CLIENT_EVENTS.CREATE_ROOM, { nickname: 'Probe' })) as { roomId: string };
   expect((await target.inbox.state()).roomId).toBe(roomId);
+}
+
+/**
+ * Proves that nothing is left in either player's inbox after a change both got. P1's probe moves its socket out of the
+ * room, which leaves its seat away, so P2 gets that `STATE` before its own probe.
+ */
+export async function expectBothDone(p1: Player, p2: Player): Promise<void> {
+  await expectNothingPending(p1);
+  expect((await p2.inbox.state()).opponent).toMatchObject({ isConnected: false });
+  await expectNothingPending(p2);
 }
 
 /**

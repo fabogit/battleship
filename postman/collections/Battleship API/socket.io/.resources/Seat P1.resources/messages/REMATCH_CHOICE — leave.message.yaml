@@ -1,0 +1,10 @@
+$kind: socket.io-message
+eventName: REMATCH_CHOICE
+acknowledgement: true
+args:
+  - content: |-
+      {
+        "choice": "LEAVE"
+      }
+    contentType: json
+order: 9700

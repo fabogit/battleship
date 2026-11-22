@@ -1199,6 +1199,7 @@ describe('SURRENDER (ADR-0116)', () => {
       battle: state.battle,
       winner: seat === SEATS.P1 ? SEATS.P2 : SEATS.P1,
       reason: GAME_OVER_REASONS.SURRENDER,
+      rematch: { P1: null, P2: null },
     });
     expect(ended.state).toEqual(surrender(state, seat));
   });

@@ -108,6 +108,7 @@ export type {
   GameRules,
   Orientation,
   PlacedShip,
+  RecordedRematchChoice,
   RematchChoice,
   RoomClosedReason,
   RoomPhase,
