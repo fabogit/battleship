@@ -1,7 +1,10 @@
 <div class="heading">
-  <h1>{{ text.heading }}</h1>
+  <h1 tabindex="-1">{{ text.heading }}</h1>
   <ng-content />
 </div>
+@if (lastMatch(); as lastMatch) {
+  <p class="last-match">{{ lastMatch }}</p>
+}
 <p>{{ text.playingAs(nickname()) }}</p>
 <p>{{ text.instructions(waitingMinutes) }}</p>
 

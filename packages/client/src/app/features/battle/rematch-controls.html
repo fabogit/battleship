@@ -1,0 +1,34 @@
+<div class="choices" role="group" aria-labelledby="rematch-label">
+  <p id="rematch-label" class="label">{{ text.label }}</p>
+  <button
+    type="button"
+    [attr.aria-pressed]="selected() === choices.SAME_RULES"
+    [attr.aria-disabled]="pending() === null ? null : 'true'"
+    (click)="choose(choices.SAME_RULES)"
+  >
+    {{ text.playAgain }}
+  </button>
+  <button
+    type="button"
+    [attr.aria-pressed]="selected() === choices.CHANGE_RULES"
+    [attr.aria-disabled]="pending() === null ? null : 'true'"
+    (click)="choose(choices.CHANGE_RULES)"
+  >
+    {{ text.changeRules }}
+  </button>
+</div>
+
+<div class="state" aria-live="polite">
+  <p>{{ mine() }}</p>
+  <p>{{ theirs() }}</p>
+  @if (isOpponentAway()) {
+    <p>{{ text.waitsForReturn(nickname()) }}</p>
+  }
+</div>
+<p class="hint">{{ text.changeWins }} {{ text.expiry(expiryMinutes) }}</p>
+
+<p class="error" role="alert">{{ errorMessage() }}</p>
+
+<p class="leave">
+  <a routerLink="/" [attr.aria-disabled]="isLeaving() ? 'true' : null">{{ isLeaving() ? text.leaving : text.leave }}</a>
+</p>

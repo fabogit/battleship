@@ -342,6 +342,71 @@ describe('GameStateService', () => {
     });
   });
 
+  describe('a player who left at game over (#36, ADR-0126)', () => {
+    it.each([
+      ['won', SEATS.P1, GAME_OVER_REASONS.SURRENDER, true],
+      ['lost', SEATS.P2, GAME_OVER_REASONS.FLEET_DESTROYED, false],
+      ['abandoned', null, GAME_OVER_REASONS.ABANDONED, false],
+    ] as const)('keeps the result of a match the receiver %s, with who left', (_case, winner, reason, hasWon) => {
+      receive(gameOver({ winner, reason }));
+      receive(waiting());
+
+      expect(state.opponentDeparted()).toBe('Grace');
+      expect(state.departedMatch()).toEqual({ hasWon, reason });
+    });
+
+    it('keeps it while the seat stays free, and drops it once someone takes the seat', () => {
+      receive(gameOver());
+      receive(waiting());
+      receive({ ...waiting(), me: { ...ME, isConnected: true } });
+
+      expect(state.departedMatch()).toEqual({ hasWon: true, reason: GAME_OVER_REASONS.FLEET_DESTROYED });
+
+      receive({ ...placement(), opponent: { ...OPPONENT, nickname: 'Linus' } });
+      expect(state.departedMatch()).toBeNull();
+      // A joiner who leaves before the match leaves no result behind.
+      receive(waiting());
+      expect(state.opponentDeparted()).toBe('Linus');
+      expect(state.departedMatch()).toBeNull();
+    });
+
+    it('keeps no result for a seat freed before the match', () => {
+      receive(placement());
+      receive(waiting());
+
+      expect(state.opponentDeparted()).toBe('Grace');
+      expect(state.departedMatch()).toBeNull();
+    });
+
+    it('keeps the result for a socket that reconnects into the waiting room after missing the leave', () => {
+      // The snapshot stays across a reconnection, so the next one is compared with it: only the other player's leave
+      // takes a room from GAME_OVER to WAITING_FOR_OPPONENT with this seat kept.
+      receive(gameOver({ winner: SEATS.P2, reason: GAME_OVER_REASONS.DISCONNECT_FORFEIT }));
+      receive({ ...waiting(), me: { ...ME } });
+
+      expect(state.departedMatch()).toEqual({ hasWon: false, reason: GAME_OVER_REASONS.DISCONNECT_FORFEIT });
+    });
+
+    it('keeps none after a reload, or from another room', () => {
+      receive(waiting());
+      expect(state.departedMatch()).toBeNull();
+
+      receive(gameOver());
+      receive({ ...waiting(), roomId: createRoomId(1) });
+      expect(state.departedMatch()).toBeNull();
+      expect(state.opponentDeparted()).toBeNull();
+    });
+
+    it('forgets it on clear()', () => {
+      receive(gameOver());
+      receive(waiting());
+
+      state.clear();
+
+      expect(state.departedMatch()).toBeNull();
+    });
+  });
+
   describe('countdowns', () => {
     it('counts the turn down locally from the remaining time in the snapshot', () => {
       receive(battle({ turnRemainingMs: 30_000 }));

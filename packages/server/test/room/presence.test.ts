@@ -198,6 +198,7 @@ describe('forfeitSeat', () => {
       battle: (away as BattleRoom).battle,
       winner: seat === SEATS.P1 ? SEATS.P2 : SEATS.P1,
       reason: GAME_OVER_REASONS.DISCONNECT_FORFEIT,
+      rematch: { P1: null, P2: null },
     });
   });
 
@@ -210,7 +211,7 @@ describe('forfeitSeat', () => {
 describe('a seat freed before the match', () => {
   it('goes to the next joiner, P1 included', () => {
     const left = leaveRoom(placementRoom(), SEATS.P1);
-    if (!left.ok || left.state === null) {
+    if (left.state === null) {
       expect.fail('the seat was not freed');
     }
     const secret = createPlayerSecret();
@@ -227,7 +228,7 @@ describe('a seat freed before the match', () => {
 
   it('opens a new negotiation on the rules and version left behind, nobody confirmed', () => {
     const left = leaveRoom(editedNegotiation(), SEATS.P1);
-    if (!left.ok || left.state === null) {
+    if (left.state === null) {
       expect.fail('the seat was not freed');
     }
     const joined = apply(left.state, {
@@ -277,9 +278,24 @@ describe('leaveRoom', () => {
     },
   );
 
-  it('answers NOT_ALLOWED in GAME_OVER until the rematch lands', () => {
-    expect(leaveRoom(gameOverRoom(), SEATS.P1)).toEqual({ ok: false, error: ERROR_CODES.NOT_ALLOWED });
-  });
+  it.each(Object.values(SEATS))(
+    'frees the seat of %s at once in GAME_OVER, the LEAVE rematch choice (ADR-0123)',
+    (seat) => {
+      const state = gameOverRoom();
+      const stayer = seat === SEATS.P1 ? SEATS.P2 : SEATS.P1;
+      expect(leaveRoom(state, seat)).toEqual({
+        ok: true,
+        state: {
+          phase: ROOM_PHASES.WAITING_FOR_OPPONENT,
+          roomId: ROOM_ID,
+          rules: DEFAULT_RULES,
+          rulesVersion: 0,
+          players: { [seat]: null, [stayer]: state.players[stayer] },
+          disconnectedAt: { P1: null, P2: null },
+        },
+      });
+    },
+  );
 });
 
 describe('SET_PAUSED', () => {

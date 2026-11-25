@@ -74,6 +74,8 @@ type Step =
       readonly receives: string;
       /** The event's payload, compared with `toEqual`. */
       readonly payload: unknown;
+      /** Which time the event arrived, from 1: the second match's dice roll is the second `DICE_ROLLED`; any by default. */
+      readonly nth?: number;
     }
   | {
       /** Moves the clock this far, as a person waits for a countdown to run out; it sends nothing. */
@@ -82,6 +84,7 @@ type Step =
 
 const OK = { ok: true };
 const NOT_ALLOWED = { ok: false, error: ERROR_CODES.NOT_ALLOWED };
+const WRONG_PHASE = { ok: false, error: ERROR_CODES.WRONG_PHASE };
 const OK_WITH_SECRET = { ok: true, playerSecret: expect.any(String) as unknown };
 /** The roll of the replay's match: the test registry's seed, after the one room id it drew, makes `P1` start. */
 const REPLAY_DICE: DiceRolledPayload = { rolls: [{ P1: 6, P2: 1 }], starter: SEATS.P1 };
@@ -140,28 +143,61 @@ const STEPS: readonly Step[] = [
   { request: 'Seat P1', message: CLIENT_EVENTS.FIRE, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.UPDATE_TARGETS, ack: OK },
   { request: 'Seat P2', message: CLIENT_EVENTS.FIRE, ack: OK },
-  // Pausing needs the opponent away (ADR-0074); P2's seat is kept while it is (ADR-0072).
+  // Pausing needs the opponent away (ADR-0074).
   { request: 'Seat P1', message: CLIENT_EVENTS.SET_PAUSED, ack: NOT_ALLOWED },
+  // Either seat may give up the match (ADR-0116), and a second surrender finds the wrong phase.
+  { request: 'Seat P1', message: CLIENT_EVENTS.SURRENDER, ack: OK },
+  { request: 'Seat P1', message: CLIENT_EVENTS.SURRENDER, ack: WRONG_PHASE },
+  // A rematch (ADR-0123–ADR-0125): P1's choice is kept until P2's, and the same choice again changes nothing; P2's
+  // CHANGE_RULES wins, so the rules come back for a new negotiation at the same version, 2, nobody confirmed, and
+  // placement starts from empty fleets.
+  { request: 'Seat P1', message: CLIENT_EVENTS.REMATCH_CHOICE, ack: OK },
+  { request: 'Seat P1', message: CLIENT_EVENTS.REMATCH_CHOICE, ack: OK },
+  { request: 'Seat P2', message: `${CLIENT_EVENTS.REMATCH_CHOICE} — change rules`, ack: OK },
+  {
+    request: 'Seat P2',
+    message: `${CLIENT_EVENTS.CONFIRM_RULES} — stale`,
+    ack: { ok: false, error: ERROR_CODES.STALE_RULES },
+  },
+  { request: 'Seat P2', message: CLIENT_EVENTS.CONFIRM_RULES, ack: OK },
+  { request: 'Seat P1', message: CLIENT_EVENTS.CONFIRM_RULES, ack: OK },
+  { request: 'Seat P1', message: CLIENT_EVENTS.UPDATE_PLACEMENT, ack: OK },
+  { request: 'Seat P1', message: CLIENT_EVENTS.CONFIRM_PLACEMENT, ack: OK },
+  { request: 'Seat P2', message: CLIENT_EVENTS.UPDATE_PLACEMENT, ack: OK },
+  { request: 'Seat P2', message: CLIENT_EVENTS.CONFIRM_PLACEMENT, ack: OK },
+  // The second match starts with its own dice roll, as every match does (ADR-0092).
+  { waitMs: START_COUNTDOWN_MS },
+  {
+    request: 'Seat P1',
+    receives: SERVER_EVENTS.DICE_ROLLED,
+    nth: 2,
+    payload: expect.objectContaining({ rolls: expect.any(Array) as unknown }) as unknown,
+  },
+  // P2's seat is kept while it is away (ADR-0072), and pausing is now allowed.
   { request: 'Seat P2', disconnect: true },
   { request: 'Seat P1', message: `${CLIENT_EVENTS.SET_PAUSED} — resume`, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.SET_PAUSED, ack: OK },
-  // Either seat may give up the match, here with the opponent away: the absent P2 wins (ADR-0116). Once it is over,
-  // leaving waits for the rematch choice (#36), and a second surrender finds the wrong phase.
+  // Surrendering with the opponent away gives the absent P2 the win (ADR-0116). The choice to play again is kept, but
+  // a rematch needs both seats connected (ADR-0124). LEAVE frees P1's seat at once, as LEAVE_ROOM would, so the socket
+  // has no seat for LEAVE_ROOM after it (ADR-0123).
   { request: 'Seat P1', message: CLIENT_EVENTS.SURRENDER, ack: OK },
+  { request: 'Seat P1', message: CLIENT_EVENTS.REMATCH_CHOICE, ack: OK },
+  { request: 'Seat P1', message: `${CLIENT_EVENTS.REMATCH_CHOICE} — leave`, ack: OK },
   { request: 'Seat P1', message: CLIENT_EVENTS.LEAVE_ROOM, ack: NOT_ALLOWED },
-  { request: 'Seat P1', message: CLIENT_EVENTS.SURRENDER, ack: { ok: false, error: ERROR_CODES.WRONG_PHASE } },
   {
     request: 'Seat P1',
     message: `${CLIENT_EVENTS.CREATE_ROOM} — invalid payload`,
     ack: { ok: false, error: ERROR_CODES.INVALID_PAYLOAD },
   },
-  // Before a match, leaving frees the seat at once; the room had no one else, so it closes (ADR-0073).
+  // Before a match, the rematch choice is the wrong phase, and leaving frees the seat at once; the room had no one
+  // else, so it closes (ADR-0073).
   {
     request: 'Seat P1',
     message: CLIENT_EVENTS.CREATE_ROOM,
     ack: { ...OK_WITH_SECRET, roomId: expect.any(String) as unknown },
     capture: 'roomId',
   },
+  { request: 'Seat P1', message: `${CLIENT_EVENTS.REMATCH_CHOICE} — leave`, ack: WRONG_PHASE },
   { request: 'Seat P1', message: CLIENT_EVENTS.LEAVE_ROOM, ack: OK },
 ];
 
@@ -358,10 +394,13 @@ async function replay(requests: ReadonlyMap<string, LoadedRequest>): Promise<voi
     }
     if ('receives' in step) {
       await vi.waitFor(() => {
-        expect(received.get(step.request), `${label}: ${step.receives}`).toContainEqual({
-          event: step.receives,
-          payload: step.payload,
-        });
+        const events = received.get(step.request) ?? [];
+        if (step.nth === undefined) {
+          expect(events, `${label}: ${step.receives}`).toContainEqual({ event: step.receives, payload: step.payload });
+        } else {
+          const payloads = events.filter(({ event }) => event === step.receives).map(({ payload }) => payload);
+          expect(payloads[step.nth - 1], `${label}: ${step.receives} #${String(step.nth)}`).toEqual(step.payload);
+        }
       });
       continue;
     }

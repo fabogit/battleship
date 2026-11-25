@@ -7,9 +7,9 @@
  * with `SERVER_ERROR`, or closes its room with the `ROOM_CLOSED` reason `SERVER_ERROR` (ADR-0105). 6: a room whose
  * players do not agree on the rules in time closes with the `ROOM_CLOSED` reason `NEGOTIATION_TTL` (ADR-0103). 7:
  * `SURRENDER`, and `LEAVE_ROOM` during the match, end it with the reason `SURRENDER` instead of `NOT_ALLOWED`
- * (ADR-0118).
+ * (ADR-0118). 8: `REMATCH_CHOICE`, and `LEAVE_ROOM` at game over, run the rematch instead of `NOT_ALLOWED` (ADR-0127).
  */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 /** Side length of the square board, in cells. */
 export const BOARD_SIZE = 10;
@@ -33,7 +33,10 @@ export const MAX_CONSECUTIVE_AFK_TURNS = 3;
  */
 export const DISCONNECT_FORFEIT_MS = 180_000;
 
-/** Lifetime of a room idle in `GAME_OVER` without a rematch agreement. */
+/**
+ * Lifetime of a room in `GAME_OVER` without a resolved rematch, counted from the end of the match; rematch choices do
+ * not restart it (ADR-0123).
+ */
 export const GAME_OVER_TTL_MS = 120_000;
 
 /**

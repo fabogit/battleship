@@ -25,9 +25,7 @@
   </div>
   @if (gameOver()) {
     <p>{{ text.revealed(opponentNickname()) }}</p>
-    <p>
-      <a routerLink="/">{{ text.newMatch }}</a>
-    </p>
+    <app-rematch-controls />
   }
 </div>
 

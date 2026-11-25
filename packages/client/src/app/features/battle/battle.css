@@ -52,6 +52,15 @@ h2 {
   display: grid;
 }
 
+/*
+ * A nickname is one word up to 20 characters long, wider than a 320px screen in a wide letter: it breaks anywhere rather
+ * than widen the status block, and the game-over controls with it, past the screen (ADR-0126).
+ */
+.status {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Spaced by margins between parts that have content, so the AFK warnings' empty live region takes no gap (#54, F2). */
 .status > * + :not(:empty) {
   margin-top: 0.25rem;

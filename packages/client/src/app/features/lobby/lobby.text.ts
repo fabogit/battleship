@@ -3,6 +3,14 @@ export interface LobbyText {
   /** The page heading. */
   readonly heading: string;
   /**
+   * After the opponent left at game over: the result of the match they left (ADR-0126).
+   * @param hasWon Whether the player won; `false` for a match without a winner.
+   * @param isAbandoned Whether the match had no winner (`ABANDONED`).
+   * @param reason Why it ended, as the game-over view words it.
+   * @returns The sentences.
+   */
+  readonly lastMatch: (hasWon: boolean, isAbandoned: boolean, reason: string) => string;
+  /**
    * Who the player is in this room.
    * @param nickname The player's nickname.
    * @returns The sentence.
@@ -52,6 +60,8 @@ export interface LobbyText {
  */
 export const LOBBY_TEXT: LobbyText = {
   heading: 'Waiting for your opponent',
+  lastMatch: (hasWon, isAbandoned, reason) =>
+    `${isAbandoned ? 'The last match was abandoned.' : hasWon ? 'You won the last match.' : 'You lost the last match.'} ${reason}`,
   playingAs: (nickname) => `You are playing as ${nickname}.`,
   instructions: (minutes) =>
     `Send this link to a friend. The match starts when they join; if nobody joins within ${String(minutes)} minutes, the room closes.`,

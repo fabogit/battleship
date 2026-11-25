@@ -124,5 +124,10 @@ One file per decision, numbered in order. `Dnn` in older notes, issues and commi
 | [ADR-0119](0119-salvo-extra-turn-exclusion.md)          | Salvo and extra turn exclude each other      | Accepted, 2026-11-19   |
 | [ADR-0120](0120-afk-under-extra-turn.md)                | Automatic shots and AFK under extra turn     | Accepted, 2026-11-19   |
 | [ADR-0121](0121-salvo-counter-and-turn-wording.md)      | Salvo counter and fired-turn wording         | Accepted, 2026-11-19   |
+| [ADR-0123](0123-rematch-choices-and-leave.md)           | Rematch choices, and `LEAVE` at once         | Accepted, 2026-11-22   |
+| [ADR-0124](0124-rematch-needs-both-seats.md)            | A rematch needs both seats connected         | Accepted, 2026-11-22   |
+| [ADR-0125](0125-what-a-rematch-starts-from.md)          | What a rematch starts from                   | Accepted, 2026-11-22   |
+| [ADR-0126](0126-leaving-the-page-at-game-over.md)       | Game-over controls and leaving the page      | Accepted, 2026-11-22   |
+| [ADR-0127](0127-protocol-version-8.md)                  | Protocol version 8 for the rematch           | Accepted, 2026-11-22   |
 
 A new decision gets the next number in a new file here; a change to the specification edits its topic document (see [Review & consolidation](../roadmap.md#review--consolidation)).

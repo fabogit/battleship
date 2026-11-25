@@ -11,7 +11,6 @@ import {
   viewChild,
   type ElementRef,
 } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { MAX_CONSECUTIVE_AFK_TURNS, ROOM_PHASES, SERVER_EVENTS, TIMEOUT_ACTIONS } from '@battleship/core';
 
 import { GameSocketService } from '../../core/game-socket';
@@ -22,6 +21,7 @@ import { formatCoordinate } from '../../shared/board-grid/coordinates';
 import { formatCountdown, isLowTime } from '../../shared/countdown';
 import { Die } from '../../shared/die/die';
 import { BattleStore, SURRENDER_PROMPTS, type SurrenderPrompt } from './battle-store';
+import { RematchControls } from './rematch-controls';
 import { BATTLE_TEXT, battleErrorMessage, battleFeedbackMessage } from './battle.text';
 import { DiceAnimation } from './dice-animation';
 
@@ -86,13 +86,13 @@ interface TurnFocus extends BoardFocus {
  * it, warning when it runs low (ADR-0108), and with the dice that pick who starts while they roll (ADR-0107). Turns run
  * out in a row are counted for both players (ADR-0109). On a narrow screen a toggle shows one board at a time and
  * brings forward the one the turn needs, after showing where the last shot landed; a wide screen shows both side by
- * side. At game over the page names the winner and the reason, and "Enemy waters" reveals the opponent's whole fleet.
- * While the match is on, "Surrender" at the foot of the page asks in a dialog before giving it up (ADR-0116); the same
+ * side. At game over the page names the winner and the reason, "Enemy waters" reveals the opponent's whole fleet, and
+ * the game-over controls offer a rematch or leaving the room (ADR-0126). While the match is on, "Surrender" at the foot of the page asks in a dialog before giving it up (ADR-0116); the same
  * dialog asks before the room page is left during the match (ADR-0117).
  */
 @Component({
   selector: 'app-battle',
-  imports: [BoardGrid, Die, RouterLink],
+  imports: [BoardGrid, Die, RematchControls],
   providers: [BattleStore, DiceAnimation],
   templateUrl: './battle.html',
   styleUrl: './battle.css',

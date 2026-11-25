@@ -1,13 +1,15 @@
 import { NgTemplateOutlet } from '@angular/common';
 import {
   Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
   computed,
   effect,
   inject,
   input,
   linkedSignal,
   resource,
-  signal,
   untracked,
   viewChild,
 } from '@angular/core';
@@ -75,6 +77,13 @@ const SEATED_VIEWS: ReadonlySet<RoomView> = new Set([
   ROOM_VIEWS.BATTLE,
 ]);
 
+/** The views a rematch resolves into, or the one left behind waits in, whose heading takes focus then (ADR-0126). */
+const AFTER_GAME_OVER_VIEWS: ReadonlySet<RoomView> = new Set([
+  ROOM_VIEWS.LOBBY,
+  ROOM_VIEWS.RULES,
+  ROOM_VIEWS.PLACEMENT,
+]);
+
 /** The seat losses after which the room may still wait for a player, so the page offers to join it again. */
 const REJOINABLE_LOSSES: ReadonlySet<SeatLoss> = new Set([SEAT_LOSSES.GIVEN_UP, SEAT_LOSSES.UNKNOWN]);
 
@@ -82,7 +91,8 @@ const REJOINABLE_LOSSES: ReadonlySet<SeatLoss> = new Set([SEAT_LOSSES.GIVEN_UP, 
  * The page of one room, `/r/<roomId>`, for both players (ADR-0049). The creator lands here after "Create room" and
  * shares the page's own address; the joiner opens it, picks a nickname and takes the free seat. Which view it shows
  * follows from the snapshot, the stored session and the last join attempt. Before the match, "Leave room" sits beside
- * the heading of the waiting screen, the rules screen and placement, which project it (ADR-0080).
+ * the heading of the waiting screen, the rules screen and placement, which project it (ADR-0080). When the room leaves
+ * game over, for a rematch or because the opponent left, the new view's heading takes focus (ADR-0126).
  */
 @Component({
   selector: 'app-room',
@@ -108,6 +118,10 @@ export class Room {
   private readonly router = inject(Router);
   /** The battle view, shown in `IN_PROGRESS` and `GAME_OVER`; it asks before the page is left during the match. */
   private readonly battle = viewChild(Battle);
+  /** The page's element, where the heading of the view shown after game over is found. */
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  /** Runs the focus move after the new view has rendered. */
+  private readonly injector = inject(Injector);
 
   /** The words of the page. */
   protected readonly text = ROOM_TEXT;
@@ -184,6 +198,13 @@ export class Room {
     }
   });
 
+  /** The match an opponent left at game over, with their nickname, for the waiting screen (ADR-0126); else `null`. */
+  protected readonly departedMatch = computed(() => {
+    const match = this.gameState.departedMatch();
+    const nickname = this.gameState.opponentDeparted();
+    return match === null || nickname === null ? null : { match, nickname };
+  });
+
   /** Whether the opponent's presence shows above the view: the player sits in the room and has its snapshot. */
   protected readonly hasPresence = computed(() => SEATED_VIEWS.has(this.view()));
 
@@ -229,10 +250,8 @@ export class Room {
   /** Whether the refused room may still wait for a player, so the page offers the join form again. */
   protected readonly canRejoin = computed(() => REJOINABLE_LOSSES.has(this.seatLoss()));
 
-  /** Written by `leave` only; read through `isLeaving`. */
-  private readonly isLeavingSignal = signal(false);
-  /** Whether `LEAVE_ROOM` waits for its ack. */
-  protected readonly isLeaving = this.isLeavingSignal.asReadonly();
+  /** Whether `LEAVE_ROOM` waits for its ack, from "Leave room" or from the leave guard. */
+  protected readonly isLeaving = this.roomEntry.isLeaving;
 
   /** Why the last "Leave room" failed; reset when the address names another room. */
   private readonly leaveError = linkedSignal<string, RoomEntryError | null>({
@@ -242,8 +261,8 @@ export class Room {
 
   /**
    * The message for a failed "Leave room", or `null`: the room-entry messages. `NOT_ALLOWED` has none of its own since
-   * `LEAVE_ROOM` during the match surrenders it (ADR-0116): only a socket without a seat, or a room already in
-   * `GAME_OVER`, still gets it, and neither shows "Leave room".
+   * `LEAVE_ROOM` frees the seat in every phase but the match, which it surrenders (ADR-0116, ADR-0123): only a socket
+   * without a seat still gets it.
    */
   protected readonly leaveErrorMessage = computed(() => {
     const error = this.leaveError();
@@ -276,13 +295,11 @@ export class Room {
    * guard letting it through since the snapshot is gone.
    */
   protected async leave(): Promise<void> {
-    if (this.isLeavingSignal()) {
+    if (this.isLeaving()) {
       return;
     }
-    this.isLeavingSignal.set(true);
     this.leaveError.set(null);
     const result = await this.roomEntry.leave(this.roomId());
-    this.isLeavingSignal.set(false);
     if (result.ok) {
       await this.router.navigateByUrl('/');
     } else {
@@ -291,21 +308,62 @@ export class Room {
   }
 
   /**
-   * Asks before the router leaves the page during the match, for `confirmSurrenderOnLeave` (ADR-0117): while this
-   * room's last snapshot is in `IN_PROGRESS`, the battle view's surrender dialog, whose confirmation sends `SURRENDER`.
+   * Runs before the router leaves the page, for `confirmSurrenderOnLeave`. While this room's last snapshot is in
+   * `IN_PROGRESS`, the battle view's surrender dialog asks (ADR-0117); its confirmation sends `SURRENDER`, then
+   * `LEAVE_ROOM`. In `GAME_OVER` it sends `LEAVE_ROOM` without asking: leaving the page is the `LEAVE` rematch choice
+   * (ADR-0126). Either way the seat is freed, so the opponent waits for someone new instead of the game-over TTL.
    * @returns Whether to leave: `true` at once in any other phase, without a snapshot of this room, and when the page
-   * shows another view (a refused seat), else the dialog's answer.
+   * shows another view (a refused seat); `true` once `LEAVE_ROOM` is answered, refused or timed out after
+   * `ACK_TIMEOUT_MS` in `GAME_OVER`; the dialog's answer during the match.
    */
   confirmLeave(): Promise<boolean> | boolean {
-    if (this.snapshot()?.phase !== ROOM_PHASES.IN_PROGRESS) {
+    switch (this.snapshot()?.phase) {
+      case ROOM_PHASES.IN_PROGRESS:
+        return this.surrenderAndLeave();
+      case ROOM_PHASES.GAME_OVER:
+        return this.roomEntry.leave(this.roomId()).then(() => true);
+      default:
+        return true;
+    }
+  }
+
+  /**
+   * Asks in the battle view's surrender dialog, and frees the seat after a confirmed surrender, which leaves the room
+   * in `GAME_OVER` (ADR-0126). The `LEAVE_ROOM` goes even when the surrender was refused (the match ended first) or not
+   * answered: the room is then over or unknown, and its answer, whatever it is, lets the navigation through.
+   * @returns The dialog's answer, once the `LEAVE_ROOM` that follows a confirmation is answered or timed out.
+   */
+  private async surrenderAndLeave(): Promise<boolean> {
+    const battle = this.battle();
+    if (battle === undefined) {
       return true;
     }
-    return this.battle()?.confirmLeave() ?? true;
+    const isConfirmed = await battle.confirmLeave();
+    if (isConfirmed) {
+      await this.roomEntry.leave(this.roomId());
+    }
+    return isConfirmed;
+  }
+
+  /**
+   * Moves focus to the heading of the view shown after game over, once it has rendered: the game-over controls the
+   * player may have used are gone with the battle view (ADR-0126).
+   */
+  private focusHeadingAfterGameOver(): void {
+    afterNextRender(
+      {
+        write: () => {
+          this.host.nativeElement.querySelector<HTMLHeadingElement>('h1')?.focus();
+        },
+      },
+      { injector: this.injector },
+    );
   }
 
   /**
    * Takes back the stored seat of every room the page opens in a tab that is in no room yet, such as a new tab on the
-   * room link (ADR-0069).
+   * room link (ADR-0069), and moves focus to the new view's heading when the battle view gives way to another view the
+   * player stays seated in: a resolved rematch, or the waiting screen after the opponent left (ADR-0126).
    */
   constructor() {
     effect(() => {
@@ -315,6 +373,16 @@ export class Room {
           this.roomEntry.reopen(roomId);
         });
       }
+    });
+    let previous: RoomView | null = null;
+    effect(() => {
+      const view = this.view();
+      if (previous === ROOM_VIEWS.BATTLE && AFTER_GAME_OVER_VIEWS.has(view)) {
+        untracked(() => {
+          this.focusHeadingAfterGameOver();
+        });
+      }
+      previous = view;
     });
   }
 }

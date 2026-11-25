@@ -12,6 +12,7 @@ import {
   SEATS,
   type CreateRoomPayload,
   type JoinRoomPayload,
+  type RematchChoice,
   type Rng,
   type Seat,
   type SessionCredentials,
@@ -26,6 +27,7 @@ import {
   type LeftRoom,
   type PendingForfeit,
 } from './presence.js';
+import { chooseRematch, type RematchChosen } from './rematch.js';
 import {
   applyCommand,
   createRoom,
@@ -88,8 +90,8 @@ export interface ForfeitedSeat {
 /**
  * Keeps every open room in memory, by id (docs/server.md#room-lifecycle), and runs commands against them through
  * `applyCommand`, storing the state an accepted command returns. A room stays until a forfeit or `LEAVE_ROOM` leaves
- * nobody in it (`forfeitDue`, `leave`; ADR-0073), or until `remove`, which the socket handlers call when its waiting or
- * game-over TTL runs out (ADR-0065, ADR-0096).
+ * nobody in it (`forfeitDue`, `leave`; ADR-0073), or until `remove`, which the socket handlers call when its waiting,
+ * negotiation or game-over TTL runs out (ADR-0065, ADR-0096, ADR-0102).
  */
 export class RoomManager {
   /** The open rooms, by id. */
@@ -214,7 +216,8 @@ export class RoomManager {
    * @param roomId The seat's room.
    * @param seat The seat whose sockets changed.
    * @param isConnected Whether at least one socket is bound to the seat now.
-   * @param now Current time in epoch ms; a drop starts the forfeit clock from it.
+   * @param now Current time in epoch ms; a drop starts the forfeit clock from it, and a rematch a return resolves counts
+   * from it (ADR-0124).
    * @returns The stored room after the change, or `undefined` when the room is gone or its presence did not change.
    */
   setPresence(roomId: string, seat: Seat, isConnected: boolean, now: number): RoomState | undefined {
@@ -317,12 +320,13 @@ export class RoomManager {
   }
 
   /**
-   * Leaves a seated player's room (`LEAVE_ROOM`): before the match the seat is freed, and the room removed when nobody
-   * is left in it; during the match the seat stays and the match ends as a surrender (ADR-0116).
+   * Leaves a seated player's room (`LEAVE_ROOM`): before the match and at game over the seat is freed, and the room
+   * removed when nobody is left in it (ADR-0073, ADR-0123); during the match the seat stays and the match ends as a
+   * surrender (ADR-0116).
    * @param roomId The sender's room, as the caller bound it to the socket.
    * @param seat The sender's seat.
    * @returns The waiting room after the seat was freed (`null` once removed), the room in `GAME_OVER` after a
-   * surrender, `NOT_ALLOWED` in `GAME_OVER`, or `ROOM_NOT_FOUND` when the room is gone.
+   * surrender, or `ROOM_NOT_FOUND` when the room is gone.
    */
   leave(roomId: string, seat: Seat): LeftRoom | RejectedTransition {
     const room = this.#rooms.get(roomId);
@@ -330,8 +334,27 @@ export class RoomManager {
       return { ok: false, error: ERROR_CODES.ROOM_NOT_FOUND };
     }
     const result = leaveRoom(room, seat);
+    this.#store(roomId, result.state);
+    return result;
+  }
+
+  /**
+   * Runs a seated player's `REMATCH_CHOICE` against their room and stores the result (ADR-0123).
+   * @param roomId The sender's room, as the caller bound it to the socket.
+   * @param seat The sender's seat.
+   * @param choice The guard's copy of the choice.
+   * @param now Current time in epoch ms.
+   * @returns The room after the choice with whether the seat was freed, `WRONG_PHASE` outside `GAME_OVER`, or
+   * `ROOM_NOT_FOUND` when the room is gone; a refused choice leaves the room as it was.
+   */
+  chooseRematch(roomId: string, seat: Seat, choice: RematchChoice, now: number): RematchChosen | RejectedTransition {
+    const room = this.#rooms.get(roomId);
+    if (room === undefined) {
+      return { ok: false, error: ERROR_CODES.ROOM_NOT_FOUND };
+    }
+    const result = chooseRematch(room, seat, choice, now);
     if (result.ok) {
-      this.#store(roomId, result.state);
+      this.#rooms.set(roomId, result.state);
     }
     return result;
   }

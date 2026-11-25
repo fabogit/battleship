@@ -200,3 +200,9 @@ export const REMATCH_CHOICES = {
 
 /** One of the `REMATCH_CHOICES`. */
 export type RematchChoice = (typeof REMATCH_CHOICES)[keyof typeof REMATCH_CHOICES];
+
+/**
+ * A rematch choice the room keeps until the other player's choice resolves it: `SAME_RULES` or `CHANGE_RULES`. `LEAVE`
+ * is never kept, since it frees the leaver's seat at once (ADR-0123).
+ */
+export type RecordedRematchChoice = Exclude<RematchChoice, typeof REMATCH_CHOICES.LEAVE>;

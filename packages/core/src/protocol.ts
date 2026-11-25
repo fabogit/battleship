@@ -6,6 +6,7 @@ import type {
   GameOverReason,
   GameRules,
   PlacedShip,
+  RecordedRematchChoice,
   RematchChoice,
   RoomClosedReason,
   RoomPhase,
@@ -189,9 +190,9 @@ export interface SetPausedPayload {
   readonly isPaused: boolean;
 }
 
-/** `REMATCH_CHOICE`: the player's pick at game over; it can change until the rematch resolves (ADR-0012). */
+/** `REMATCH_CHOICE`: the player's pick at game over; it can change until the rematch resolves (ADR-0012, ADR-0123). */
 export interface RematchChoicePayload {
-  /** `CHANGE_RULES` wins over `SAME_RULES`; `LEAVE` frees the sender's seat. */
+  /** `CHANGE_RULES` wins over `SAME_RULES`; `LEAVE` frees the sender's seat at once, as `LEAVE_ROOM` does there. */
   readonly choice: RematchChoice;
 }
 
@@ -243,13 +244,20 @@ export interface ClientToServerEvents {
    * or not. Both seats stay seated (ADR-0116). `WRONG_PHASE` in any other phase.
    */
   SURRENDER: (payload: EmptyPayload, ack: Ack<AckResponse>) => void;
-  /** Picks what happens after `GAME_OVER`. */
+  /**
+   * Picks what happens after `GAME_OVER` (docs/server.md#game-over--rematch). `SAME_RULES` and `CHANGE_RULES` are
+   * kept, and may be changed, until both seats have chosen while both are connected: both `SAME_RULES` start
+   * `PLACEMENT` with empty fleets, any `CHANGE_RULES` opens `RULES_NEGOTIATION` (ADR-0124, ADR-0125). The same choice
+   * again changes nothing and is still acked. `LEAVE` does what `LEAVE_ROOM` does in `GAME_OVER` (ADR-0123).
+   * `NOT_ALLOWED` without a seat, `WRONG_PHASE` in any other phase, `LEAVE` included.
+   */
   REMATCH_CHOICE: (payload: RematchChoicePayload, ack: Ack<AckResponse>) => void;
   /**
-   * Frees the sender's seat before the match (`WAITING_FOR_OPPONENT`, `RULES_NEGOTIATION`, `PLACEMENT`); the leaver gets
-   * the ack and nothing more. In `IN_PROGRESS` it is a surrender: the match ends with reason `SURRENDER` as after
-   * `SURRENDER`, and the seat stays, so the leaver gets the game-over `STATE` too (ADR-0116). The contract also has it be
-   * the `LEAVE` choice at `GAME_OVER` (#36); until that lands, `GAME_OVER` refuses it with `NOT_ALLOWED` (ADR-0046).
+   * Frees the sender's seat before the match (`WAITING_FOR_OPPONENT`, `RULES_NEGOTIATION`, `PLACEMENT`) and in
+   * `GAME_OVER`, where it is the `LEAVE` rematch choice (ADR-0123): the leaver gets the ack and nothing more, and the
+   * other player, if any, waits in `WAITING_FOR_OPPONENT` with the same link. In `IN_PROGRESS` it is a surrender: the
+   * match ends with reason `SURRENDER` as after `SURRENDER`, and the seat stays, so the leaver gets the game-over
+   * `STATE` too (ADR-0116).
    */
   LEAVE_ROOM: (payload: EmptyPayload, ack: Ack<AckResponse>) => void;
 }
@@ -367,8 +375,11 @@ export interface GameOverSnapshot {
   readonly outgoingShots: readonly ShotResult[];
   /** The opponent's whole fleet, revealed now that the match is over; `outgoingShots` landed on it. */
   readonly opponentShips: readonly PlacedShip[];
-  /** Each player's pick so far; `null` until they choose. Always `null` until the rematch flow lands (#36). */
-  readonly rematch: PerPlayer<RematchChoice | null>;
+  /**
+   * Each player's rematch choice so far; `null` until they choose. Never `LEAVE`: a player who leaves frees their seat
+   * at once, and the other gets a `WAITING_FOR_OPPONENT` snapshot instead (ADR-0123).
+   */
+  readonly rematch: PerPlayer<RecordedRematchChoice | null>;
 }
 
 /**

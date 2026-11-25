@@ -153,7 +153,7 @@ function turnRemaining(state: BattleRoom, now: number): number | null {
  * revealed (ADR-0064).
  * @param state The room in `GAME_OVER`.
  * @param seat The receiver.
- * @returns The game-over part. Rematch choices stay `null` until the rematch flow lands (#36).
+ * @returns The game-over part, with both seats' rematch choices so far as the receiver sees them (ADR-0123).
  */
 function toGameOverSnapshot(state: GameOverRoom, seat: Seat): GameOverSnapshot {
   const { boards } = state.battle;
@@ -165,6 +165,6 @@ function toGameOverSnapshot(state: GameOverRoom, seat: Seat): GameOverSnapshot {
     incomingShots: boards[seat].shots,
     outgoingShots: boards[opponentSeat].shots,
     opponentShips: boards[opponentSeat].ships,
-    rematch: { me: null, opponent: null },
+    rematch: { me: state.rematch[seat], opponent: state.rematch[opponentSeat] },
   };
 }

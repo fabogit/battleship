@@ -6,6 +6,7 @@ import {
   generateRoomId,
   MAX_ROOMS,
   parseSessionCredentials,
+  REMATCH_CHOICES,
   ROOM_PHASES,
   SEATS,
   type Rng,
@@ -14,6 +15,34 @@ import { describe, expect, it } from 'vitest';
 
 import { RoomManager } from '../../src/room/room-manager.js';
 import { fleet, NOW } from './fixtures.js';
+
+/**
+ * Plays a room of the manager to game over: Alice and Bob agree on the rules, place, and Bob surrenders.
+ * @returns The room's id.
+ */
+function finishedRoom(rooms: RoomManager): string {
+  const created = rooms.createRoom({ nickname: 'Alice' });
+  if (!created.ok) {
+    expect.fail(created.error);
+  }
+  const { roomId } = created;
+  rooms.joinRoom({ roomId, nickname: 'Bob' }, NOW);
+  for (const seat of Object.values(SEATS)) {
+    rooms.dispatch(roomId, { type: CLIENT_EVENTS.CONFIRM_RULES, seat, payload: { rulesVersion: 0 } }, NOW);
+  }
+  for (const [seat, seed] of [
+    [SEATS.P1, 1],
+    [SEATS.P2, 2],
+  ] as const) {
+    rooms.dispatch(roomId, { type: CLIENT_EVENTS.UPDATE_PLACEMENT, seat, payload: { ships: fleet(seed) } }, NOW);
+    rooms.dispatch(roomId, { type: CLIENT_EVENTS.CONFIRM_PLACEMENT, seat, payload: {} }, NOW);
+  }
+  const endsAt = rooms.placementEndsAt(roomId) ?? expect.fail('no placement');
+  rooms.endPlacementDue(roomId, endsAt);
+  rooms.dispatch(roomId, { type: CLIENT_EVENTS.SURRENDER, seat: SEATS.P2, payload: {} }, endsAt);
+  expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.GAME_OVER);
+  return roomId;
+}
 
 /** An Rng whose `nextInt` replays a script and then repeats its last value. */
 function scriptedRng(values: readonly number[]): Rng {
@@ -159,6 +188,49 @@ describe('RoomManager', () => {
     expect(rooms.forfeitDue(roomId, NOW + DISCONNECT_FORFEIT_MS)).toEqual({ seat: SEATS.P1, state: null });
     expect(rooms.get(roomId)).toBeUndefined();
     expect(rooms.size).toBe(0);
+  });
+
+  it('stores an accepted rematch choice, keeps the room on a refused one, and frees the seat on LEAVE', () => {
+    const rooms = manager();
+    const roomId = finishedRoom(rooms);
+    const kept = rooms.chooseRematch(roomId, SEATS.P1, REMATCH_CHOICES.SAME_RULES, NOW);
+    expect(kept).toMatchObject({ ok: true, hasLeft: false, state: { rematch: { P1: REMATCH_CHOICES.SAME_RULES } } });
+    expect(rooms.get(roomId)).toBe(kept.ok ? kept.state : undefined);
+    const left = rooms.chooseRematch(roomId, SEATS.P2, REMATCH_CHOICES.LEAVE, NOW);
+    expect(left).toMatchObject({ ok: true, hasLeft: true, state: { phase: ROOM_PHASES.WAITING_FOR_OPPONENT } });
+    const waiting = rooms.get(roomId);
+    expect(waiting).toBe(left.ok ? left.state : undefined);
+    expect(rooms.chooseRematch(roomId, SEATS.P1, REMATCH_CHOICES.LEAVE, NOW)).toEqual({
+      ok: false,
+      error: ERROR_CODES.WRONG_PHASE,
+    });
+    expect(rooms.get(roomId)).toBe(waiting);
+    expect(rooms.chooseRematch(UNKNOWN_ROOM_ID, SEATS.P1, REMATCH_CHOICES.SAME_RULES, NOW)).toEqual({
+      ok: false,
+      error: ERROR_CODES.ROOM_NOT_FOUND,
+    });
+  });
+
+  it('frees a seat on LEAVE_ROOM at game over, and removes the room once the other leaves too', () => {
+    const rooms = manager();
+    const roomId = finishedRoom(rooms);
+    expect(rooms.leave(roomId, SEATS.P2)).toMatchObject({
+      ok: true,
+      state: { phase: ROOM_PHASES.WAITING_FOR_OPPONENT, players: { P2: null } },
+    });
+    expect(rooms.leave(roomId, SEATS.P1)).toEqual({ ok: true, state: null });
+    expect(rooms.get(roomId)).toBeUndefined();
+  });
+
+  it('resolves a kept rematch when the absent seat comes back', () => {
+    const rooms = manager();
+    const roomId = finishedRoom(rooms);
+    rooms.chooseRematch(roomId, SEATS.P2, REMATCH_CHOICES.CHANGE_RULES, NOW);
+    rooms.setPresence(roomId, SEATS.P2, false, NOW);
+    rooms.chooseRematch(roomId, SEATS.P1, REMATCH_CHOICES.SAME_RULES, NOW);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.GAME_OVER);
+    expect(rooms.setPresence(roomId, SEATS.P2, true, NOW + 1)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
+    expect(rooms.get(roomId)?.phase).toBe(ROOM_PHASES.RULES_NEGOTIATION);
   });
 
   it('frees a seat on leave, seats the next joiner there, and removes the room once empty', () => {

@@ -18,7 +18,7 @@ export interface PresenceText {
    */
   readonly back: (nickname: string) => string;
   /**
-   * After the opponent's seat was freed before the match, until someone takes it.
+   * After the opponent's seat was freed, before the match or at game over, until someone takes it.
    * @param nickname The nickname of the player who left.
    * @returns The sentence.
    */

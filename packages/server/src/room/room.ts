@@ -11,6 +11,7 @@ import {
   MAX_CONSECUTIVE_AFK_TURNS,
   otherSeat,
   PLACEMENT_TIME_LIMIT_MS,
+  REMATCH_CHOICES,
   resolveTurn,
   rollDice,
   ROOM_PHASES,
@@ -33,6 +34,7 @@ import {
   type JoinRoomPayload,
   type PlacedShip,
   type PlacementViolation,
+  type RecordedRematchChoice,
   type ResolvedTurn,
   type Rng,
   type RulesViolation,
@@ -181,6 +183,12 @@ export interface GameOverRoom extends RoomBase {
   readonly winner: Seat | null;
   /** How the match ended. */
   readonly reason: GameOverRoomReason;
+  /**
+   * Each seat's rematch choice so far, `null` until it chooses (ADR-0123). A seat may change it until the rematch
+   * resolves, which needs both choices with both seats connected (ADR-0124); a seat that drops keeps its choice.
+   * `LEAVE` is never kept: it frees the seat at once.
+   */
+  readonly rematch: Readonly<Record<Seat, RecordedRematchChoice | null>>;
 }
 
 /**
@@ -306,6 +314,9 @@ const ALL_CONNECTED: Readonly<Record<Seat, number | null>> = { P1: null, P2: nul
 
 /** No turn timed out yet. */
 const NO_AFK_TURNS: Readonly<Record<Seat, number>> = { P1: 0, P2: 0 };
+
+/** Neither seat has made a rematch choice yet. */
+const NO_REMATCH_CHOICES: Readonly<Record<Seat, RecordedRematchChoice | null>> = { P1: null, P2: null };
 
 /**
  * Opens a room in `WAITING_FOR_OPPONENT` with `DEFAULT_RULES` and seats the creator as `P1` (`CREATE_ROOM`).
@@ -536,7 +547,8 @@ export function timeOutTurn(state: BattleRoom, now: number, rng: Rng): TimedOutT
  * @param battle The final boards.
  * @param winner The seat that won, or `null` for `ABANDONED`.
  * @param reason How the match ended.
- * @returns The room in `GAME_OVER`; seat presence carries over, but no forfeit clock runs in it.
+ * @returns The room in `GAME_OVER` with no rematch choice yet; seat presence carries over, but no forfeit clock runs in
+ * it.
  */
 export function endMatch(
   state: BattleRoom,
@@ -554,13 +566,14 @@ export function endMatch(
     battle,
     winner,
     reason,
+    rematch: NO_REMATCH_CHOICES,
   };
 }
 
 /**
  * Ends the match because a seat gave it up (docs/server.md#transition-rules, ADR-0116): the other seat wins with
  * `SURRENDER`, on the turn of either and paused or not, so an absent opponent wins too. Both seats stay taken and keep
- * their presence, so the room can still offer a rematch; leaving for good is the rematch's `LEAVE` (#36). The one
+ * their presence, so the room can still offer a rematch; leaving for good is the rematch's `LEAVE` (ADR-0123). The one
  * transition behind `SURRENDER` and `LEAVE_ROOM` during the match.
  * @param state The room in `IN_PROGRESS`.
  * @param seat The seat that gives up.
@@ -568,6 +581,70 @@ export function endMatch(
  */
 export function surrender(state: BattleRoom, seat: Seat): GameOverRoom {
   return endMatch(state, state.battle, otherSeat(seat), GAME_OVER_REASONS.SURRENDER);
+}
+
+/** Where a rematch can lead: still `GAME_OVER` while it is unresolved, or the phase it resolved into. */
+export type RematchRoom = GameOverRoom | NegotiationRoom | PlacementRoom;
+
+/**
+ * Records a seat's rematch choice to play again, then resolves the rematch if it can (docs/server.md#game-over--rematch,
+ * ADR-0123). The same choice again changes nothing; a different one replaces it until the rematch resolves.
+ * @param state The room in `GAME_OVER`.
+ * @param seat The seat that chose.
+ * @param choice `SAME_RULES` or `CHANGE_RULES`; `LEAVE` frees the seat instead (`chooseRematch`).
+ * @param now Current time in epoch ms; a placement the rematch starts counts its deadline from it.
+ * @returns The same room when the choice was already in place, else as `resolveRematch` returns it.
+ */
+export function recordRematchChoice(
+  state: GameOverRoom,
+  seat: Seat,
+  choice: RecordedRematchChoice,
+  now: number,
+): RematchRoom {
+  if (state.rematch[seat] === choice) {
+    return state;
+  }
+  return resolveRematch({ ...state, rematch: { ...state.rematch, [seat]: choice } }, now);
+}
+
+/**
+ * Resolves a rematch once both seats have chosen to play again and both are connected (ADR-0124): both `SAME_RULES`
+ * start `PLACEMENT` with empty fleets and a new deadline (ADR-0125); any `CHANGE_RULES` opens `RULES_NEGOTIATION` on
+ * the rules and version in place with no confirmation. Players, seats, rules and `rulesVersion` carry over; boards,
+ * winner, reason and choices do not. The seats' presence carries over too, which here means nobody away, so no
+ * forfeit clock runs in the new phase. The one resolution, after a choice and after a seat's return.
+ * @param state The room in `GAME_OVER`.
+ * @param now Current time in epoch ms; the placement deadline counts from it.
+ * @returns The room in the phase the rematch resolved into, or the same room while a choice is missing or a seat is
+ * away.
+ */
+export function resolveRematch(state: GameOverRoom, now: number): RematchRoom {
+  const { P1, P2 } = state.rematch;
+  if (P1 === null || P2 === null || state.disconnectedAt.P1 !== null || state.disconnectedAt.P2 !== null) {
+    return state;
+  }
+  return P1 === REMATCH_CHOICES.SAME_RULES && P2 === REMATCH_CHOICES.SAME_RULES
+    ? startPlacement(state, now)
+    : openNegotiation(state);
+}
+
+/**
+ * Opens a rules negotiation for a rematch with `CHANGE_RULES`: the rules in place come pre-filled, and nobody has
+ * confirmed. `rulesVersion` stays, since only an `UPDATE_RULES` that changes the rules bumps it (ADR-0004); both
+ * players' screens start the negotiation afresh, so no confirmation of an earlier negotiation can carry over.
+ * @param state The room in `GAME_OVER`, both seats having chosen.
+ * @returns The room in `RULES_NEGOTIATION`.
+ */
+function openNegotiation(state: GameOverRoom): NegotiationRoom {
+  return {
+    phase: ROOM_PHASES.RULES_NEGOTIATION,
+    roomId: state.roomId,
+    rules: state.rules,
+    rulesVersion: state.rulesVersion,
+    players: state.players,
+    disconnectedAt: state.disconnectedAt,
+    hasConfirmedRules: NO_CONFIRMATIONS,
+  };
 }
 
 /**
@@ -646,12 +723,13 @@ function areSameRules(left: GameRules, right: GameRules): boolean {
 }
 
 /**
- * Moves a room whose rules both players confirmed into placement, with empty fleets and the deadline counting from now.
- * @param state The room in `RULES_NEGOTIATION`.
+ * Moves a room into placement, with empty fleets and the deadline counting from now: after both players confirmed the
+ * rules, or after a rematch with `SAME_RULES` from both (ADR-0125).
+ * @param state The room in `RULES_NEGOTIATION`, or in `GAME_OVER` with the rematch resolved.
  * @param now Current time in epoch ms.
  * @returns The room in `PLACEMENT`, with the agreed rules and their version.
  */
-function startPlacement(state: NegotiationRoom, now: number): PlacementRoom {
+function startPlacement(state: NegotiationRoom | GameOverRoom, now: number): PlacementRoom {
   return {
     phase: ROOM_PHASES.PLACEMENT,
     roomId: state.roomId,

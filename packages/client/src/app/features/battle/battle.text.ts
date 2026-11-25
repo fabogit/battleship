@@ -1,11 +1,13 @@
 import {
   ERROR_CODES,
   GAME_OVER_REASONS,
+  REMATCH_CHOICES,
   SHIP_TYPES,
   SHOT_OUTCOMES,
   TARGET_VIOLATIONS,
   TIMEOUT_ACTIONS,
   type GameOverReason,
+  type RecordedRematchChoice,
   type ShipType,
   type ShotOutcome,
   type ShotResult,
@@ -22,6 +24,7 @@ import {
   type SurrenderPrompt,
   type TargetCount,
 } from './battle-store';
+import type { RematchCommandError } from './rematch-controls';
 import type { TargetRefusal } from './target-draft';
 
 /** The words of the surrender dialog for one of the `SURRENDER_PROMPTS`. */
@@ -36,6 +39,51 @@ export interface SurrenderPromptText {
   readonly intro: (nickname: string) => string;
   /** The confirm button. */
   readonly confirm: string;
+}
+
+/** The words of the game-over controls (ADR-0126). */
+export interface RematchText {
+  /** The name of the group of controls, shown above them. */
+  readonly label: string;
+  /** The toggle for `SAME_RULES`. */
+  readonly playAgain: string;
+  /** The toggle for `CHANGE_RULES`. */
+  readonly changeRules: string;
+  /** The link home, which the leave guard turns into `LEAVE_ROOM`. */
+  readonly leave: string;
+  /** The link home while `LEAVE_ROOM` waits for its ack. */
+  readonly leaving: string;
+  /**
+   * The player's own choice so far.
+   * @param choice What the snapshot, or the choice on its way, holds; `null` before the first.
+   * @returns The sentence.
+   */
+  readonly mine: (choice: RecordedRematchChoice | null) => string;
+  /**
+   * The opponent's choice so far.
+   * @param nickname The opponent's nickname.
+   * @param choice What the snapshot holds; `null` before they choose.
+   * @returns The sentence.
+   */
+  readonly theirs: (nickname: string, choice: RecordedRematchChoice | null) => string;
+  /** How two different choices resolve (ADR-0012). */
+  readonly changeWins: string;
+  /**
+   * While the opponent is disconnected: the rematch waits for both seats (ADR-0124).
+   * @param nickname The opponent's nickname.
+   * @returns The sentence.
+   */
+  readonly waitsForReturn: (nickname: string) => string;
+  /**
+   * How long the room waits for a rematch.
+   * @param minutes `GAME_OVER_TTL_MS` in minutes.
+   * @returns The sentence.
+   */
+  readonly expiry: (minutes: number) => string;
+  /** A message for each `REMATCH_CHOICE` failure the controls explain; the others get `unexpected`. */
+  readonly errors: Readonly<Partial<Record<RematchCommandError, string>>>;
+  /** For any failure without its own message. */
+  readonly unexpected: string;
 }
 
 /** The words of the battle and game-over view. */
@@ -327,8 +375,8 @@ export interface BattleText {
    * @returns The sentence.
    */
   readonly revealed: (nickname: string) => string;
-  /** The link home at game over. */
-  readonly newMatch: string;
+  /** The game-over controls: play again, change the rules, or leave (ADR-0126). */
+  readonly rematch: RematchText;
   /** The button that opens the surrender dialog while the match is on (ADR-0116). */
   readonly surrender: string;
   /** The surrender dialog, by what opened it (ADR-0116, ADR-0117). */
@@ -473,7 +521,45 @@ export const BATTLE_TEXT: BattleText = {
     [GAME_OVER_REASONS.ABANDONED]: () => 'Both players let too many turns run out.',
   },
   revealed: (nickname) => `Enemy waters now shows ${nickname}'s whole fleet, the ships you did not find included.`,
-  newMatch: 'New match',
+  rematch: {
+    label: 'Play again?',
+    playAgain: 'Play again',
+    changeRules: 'Change rules',
+    leave: 'Leave room',
+    leaving: 'Leaving…',
+    mine: (choice) => {
+      switch (choice) {
+        case REMATCH_CHOICES.SAME_RULES:
+          return 'You want to play again with the same rules.';
+        case REMATCH_CHOICES.CHANGE_RULES:
+          return 'You want to change the rules first.';
+        case null:
+          return 'You have not chosen yet.';
+      }
+    },
+    theirs: (nickname, choice) => {
+      switch (choice) {
+        case REMATCH_CHOICES.SAME_RULES:
+          return `${nickname} wants to play again with the same rules.`;
+        case REMATCH_CHOICES.CHANGE_RULES:
+          return `${nickname} wants to change the rules first.`;
+        case null:
+          return `${nickname} has not chosen yet.`;
+      }
+    },
+    changeWins: 'If either of you picks "Change rules", the rules screen opens before placement.',
+    waitsForReturn: (nickname) => `The rematch starts once ${nickname} is back.`,
+    expiry: (minutes) => `Without a rematch, the room closes ${String(minutes)} minutes after the match.`,
+    errors: {
+      [ERROR_CODES.WRONG_PHASE]: 'The room has moved on, so your choice was not needed.',
+      [ERROR_CODES.NOT_ALLOWED]: 'You no longer have a seat in this room.',
+      [ERROR_CODES.RATE_LIMITED]: 'Too many taps at once. Wait a moment and try again.',
+      [ERROR_CODES.SERVER_ERROR]: 'The server ran into an error, so your choice was not saved. Try again.',
+      [TRANSPORT_ERRORS.NOT_CONNECTED]: 'Not connected to the server. Choose again once you are connected.',
+      [TRANSPORT_ERRORS.NO_ACK]: 'The server did not answer. Choose again.',
+    },
+    unexpected: 'Something went wrong. Try again.',
+  },
   surrender: 'Surrender',
   surrenderPrompts: {
     [SURRENDER_PROMPTS.SURRENDER]: {
@@ -618,5 +704,15 @@ function salvoSentences(
  * @returns The message for that failure, or the generic one.
  */
 export function battleErrorMessage(error: BattleCommandError, text: BattleText = BATTLE_TEXT): string {
+  return text.errors[error] ?? text.unexpected;
+}
+
+/**
+ * Explains a failed `REMATCH_CHOICE`.
+ * @param error Why the command failed.
+ * @param text The messages to pick from.
+ * @returns The message for that failure, or the generic one.
+ */
+export function rematchErrorMessage(error: RematchCommandError, text: RematchText = BATTLE_TEXT.rematch): string {
   return text.errors[error] ?? text.unexpected;
 }
